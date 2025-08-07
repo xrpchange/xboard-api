@@ -1,0 +1,521 @@
+openapi: 3.0.0
+info:
+  title: XRPChange API
+  description: API for managing collateral tokens and XRP transactions
+  version: 1.0.0
+servers:
+  - url: http://sandbox.core.криптотраст.рф/
+    description: Тестовая среда (XRP Ledger Testnet)
+  - url: http://prod.core.криптотраст.рф/
+    description: Продакшен-среда (XRP Ledger Mainnet)
+
+tags:
+  - name: Tokens
+    description: Operations with collateral tokens
+  - name: Reservations
+    description: Operations with reservations for exchange lots
+
+paths:
+  /api/tokens/create:
+    post:
+      tags: [Tokens]
+      summary: Create a new collateral token
+      description: Creates a new collateral token with specified gift amount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                gift_amount:
+                  type: number
+                  format: float
+                  description: Amount of XRP to be gifted with this token
+                  example: 10.5
+                special_conditions:
+                  type: boolean
+                  description: Whether to apply special conditions
+                  default: false
+              required:
+                - gift_amount
+      responses:
+        '200':
+          description: Token created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: Generated token identifier (JSON string)
+                    example: '{"version":"1.0","wallet_address":"r123...","currency":"XRP","mode":"test","encrypted_data":"..."}'
+                  transaction_id:
+                    type: string
+                    description: XRP ledger transaction ID
+                    nullable: true
+                required:
+                  - token
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/tokens/balance:
+    post:
+      tags: [Tokens]
+      summary: Get token balance
+      description: Returns balance information for the specified token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: Token identifier
+              required:
+                - token
+      responses:
+        '200':
+          description: Balance information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: number
+                    format: float
+                    description: Total balance including gift amount and reserved XRP
+                  available:
+                    type: number
+                    format: float
+                    description: Available balance after subtracting gift amount and reserved XRP
+                  gift_amount:
+                    type: number
+                    format: float
+                    description: Gift amount associated with the token
+                  reserved:
+                    type: number
+                    format: float
+                    description: Reserved XRP amount (1 XRP as of 2025)
+        '400':
+          description: Invalid token or other error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/tokens/deposit:
+    post:
+      tags: [Tokens]
+      summary: Deposit funds to token
+      description: Deposit XRP to the token from specified source address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: Token identifier
+                amount:
+                  type: number
+                  format: float
+                  description: Amount to deposit
+                source_address:
+                  type: string
+                  description: XRP address sending the funds
+              required:
+                - token
+                - amount
+                - source_address
+      responses:
+        '200':
+          description: Deposit successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                    description: XRP ledger transaction ID
+        '400':
+          description: Invalid input or insufficient funds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/tokens/withdraw:
+    post:
+      tags: [Tokens]
+      summary: Withdraw funds from token
+      description: Withdraw XRP from the token to specified exchange lot with a service fee calculated based on client type (individual or legal entity)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: Token identifier
+                amount:
+                  type: number
+                  format: float
+                  description: Amount to withdraw
+                exchange_lot_id:
+                  type: integer
+                  description: ID of the exchange lot
+                is_legal_entity:
+                  type: boolean
+                  description: Indicates if the client is a legal entity (true) or an individual (false). Affects fee calculation.
+                  default: false
+              required:
+                - token
+                - amount
+                - exchange_lot_id
+      responses:
+        '200':
+          description: Withdrawal successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                    description: XRP ledger transaction ID
+        '400':
+          description: Invalid input or insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/tokens/refund:
+    post:
+      tags: [Tokens]
+      summary: Refund funds to address
+      description: Refund XRP from token to specified destination address with a service fee calculated based on client type (individual or legal entity)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: Token identifier
+                amount:
+                  type: number
+                  format: float
+                  description: Amount to refund
+                destination_address:
+                  type: string
+                  description: XRP address to receive the refund
+                is_legal_entity:
+                  type: boolean
+                  description: Indicates if the client is a legal entity (true) or an individual (false). Affects fee calculation.
+                  default: false
+              required:
+                - token
+                - amount
+                - destination_address
+      responses:
+        '200':
+          description: Refund successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  main_transaction_id:
+                    type: string
+                    description: XRP ledger transaction ID for the main refund
+                  fee_transaction_id:
+                    type: string
+                    description: XRP ledger transaction ID for the fee
+        '400':
+          description: Invalid input or insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/tokens/compensate:
+    post:
+      tags: [Tokens]
+      summary: Compensate buyer
+      description: Compensate buyer from token for specified exchange lot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: Token identifier
+                exchange_lot_id:
+                  type: integer
+                  description: ID of the exchange lot
+                buyer_address:
+                  type: string
+                  description: XRP address of the buyer to compensate
+              required:
+                - token
+                - exchange_lot_id
+                - buyer_address
+      responses:
+        '200':
+          description: Compensation successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                    description: XRP ledger transaction ID
+        '400':
+          description: Invalid input or compensation not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/tokens/sell:
+    post:
+      tags: [Tokens]
+      summary: Sell reserved token
+      description: Transfers reserved amount to buyer and service fee to project address, with fee calculated based on client type (individual or legal entity)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: Token identifier
+                exchange_lot_id:
+                  type: integer
+                  description: ID of the exchange lot
+                buyer_address:
+                  type: string
+                  description: XRP address of the buyer
+                is_legal_entity:
+                  type: boolean
+                  description: Indicates if the client is a legal entity (true) or an individual (false). Affects fee calculation.
+                  default: false
+              required:
+                - token
+                - exchange_lot_id
+                - buyer_address
+      responses:
+        '200':
+          description: Sale successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  buyer_transaction_id:
+                    type: string
+                    description: XRP ledger transaction ID for buyer transfer
+                  fee_transaction_id:
+                    type: string
+                    description: XRP ledger transaction ID for service fee
+                  exchange_lot_id:
+                    type: integer
+                    description: ID of the exchange lot
+                required:
+                  - buyer_transaction_id
+                  - fee_transaction_id
+                  - exchange_lot_id
+        '400':
+          description: Invalid input or insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/reservations:
+    post:
+      tags: [Reservations]
+      summary: Create a new reservation
+      description: Creates a new reservation for an exchange lot with a service fee calculated based on client type (individual or legal entity)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: Token identifier
+                exchange_lot_id:
+                  type: integer
+                  description: ID of the exchange lot
+                reserved_amount:
+                  type: number
+                  format: float
+                  description: Amount of XRP to reserve
+                  example: 10.0
+                is_legal_entity:
+                  type: boolean
+                  description: Indicates if the client is a legal entity (true) or an individual (false). Affects fee calculation.
+                  default: false
+              required:
+                - token
+                - exchange_lot_id
+                - reserved_amount
+      responses:
+        '201':
+          description: Reservation created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: Reservation ID
+                  token:
+                    type: string
+                    description: Token identifier
+                  exchange_lot_id:
+                    type: integer
+                    description: ID of the exchange lot
+                  reserved_amount:
+                    type: number
+                    format: float
+                    description: Reserved XRP amount
+                  service_fee:
+                    type: number
+                    format: float
+                    description: Service fee for the reservation, calculated based on client type or special conditions
+                  expiry_time:
+                    type: string
+                    format: date-time
+                    description: Reservation expiry time
+                  created_at:
+                    type: string
+                    format: date-time
+                    description: Reservation creation time
+        '400':
+          description: Invalid input or insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/delete-reservations/{id}:
+    post:
+      tags: [Reservations]
+      summary: Delete a reservation
+      description: Deletes a reservation by its exchange lot ID and associated token
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Reservation ID (for URL routing, exchange_lot_id is used from request body)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: Token identifier associated with the reservation
+                exchange_lot_id:
+                  type: integer
+                  description: ID of the exchange lot to delete
+              required:
+                - token
+                - exchange_lot_id
+      responses:
+        '200':
+          description: Reservation deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: Confirmation message
+                    example: Reservation deleted
+                  exchange_lot_id:
+                    type: integer
+                    description: ID of the exchange lot associated with the deleted reservation
+        '400':
+          description: Invalid input or token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Reservation not found or token mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Error message
+        error_code:
+          type: string
+          description: Error code
+          enum:
+            - INVALID_REQUEST
+            - INVALID_TOKEN
+            - INSUFFICIENT_BALANCE
+            - RESERVATION_NOT_FOUND
+            - INSUFFICIENT_RESERVED
+            - NO_DEPOSIT
+            - COMPENSATION_NOT_AVAILABLE
+            - TOKEN_INACTIVE
+            - SPECIAL_FEE_NOT_FOUND
+            - CONFIG_ERROR
+            - CONFIG_FILE
+            - INTERNAL_ERROR
+            - NOT_FOUND

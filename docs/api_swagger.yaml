@@ -1,0 +1,945 @@
+openapi: 3.0.3
+info:
+  title: XBoard API - P2P Криптобиржа
+  description: |
+    API для P2P криптобиржи (доски объявлений) с залоговой гарантией.
+    
+    ## Аутентификация
+    - Залоговые токены выдаются только через мобильные приложения
+    - Bearer токены получаются через API аутентификации
+    - Тестовый режим поддерживается через test_group
+    
+    ## Структура API
+    - **Публичные роуты**: справочники (страны, валюты, банки)
+    - **Защищенные роуты**: доска объявлений, триггеры, транзакции
+  version: 1.0.0
+  contact:
+    name: XBoard Team
+    email: support@xboard.com
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development server
+  - url: https://api.xboard.com/v1
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+paths:
+  # Аутентификация
+  /auth/bearer-token:
+    post:
+      tags:
+        - Authentication
+      summary: Получить Bearer токен
+      description: Получение Bearer токена по залоговому токену
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - escrow_token
+              properties:
+                escrow_token:
+                  type: string
+                  maxLength: 500
+                  description: Залоговый токен из мобильного приложения
+                test_group:
+                  type: string
+                  maxLength: 50
+                  description: Группа для тестового режима
+      responses:
+        '200':
+          description: Bearer токен получен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      bearer_token:
+                        type: string
+                        description: Bearer токен для API
+                      expires_at:
+                        type: string
+                        format: date-time
+                        description: Дата истечения токена
+                      test_group:
+                        type: string
+                        description: Тестовая группа
+        '401':
+          description: Неверный залоговый токен
+        '422':
+          description: Ошибка валидации
+
+  /auth/validate:
+    get:
+      tags:
+        - Authentication
+      summary: Проверить Bearer токен
+      description: Проверка валидности Bearer токена
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Токен валиден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      valid:
+                        type: boolean
+                      test_group:
+                        type: string
+        '401':
+          description: Неверный Bearer токен
+
+  # Справочники (публичные)
+  /countries:
+    get:
+      tags:
+        - Reference Data
+      summary: Получить список стран
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Поиск по названию или коду страны
+      responses:
+        '200':
+          description: Список стран
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Country'
+
+  /countries/{country_id}:
+    get:
+      tags:
+        - Reference Data
+      summary: Получить страну
+      parameters:
+        - name: country_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Информация о стране
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Country'
+
+  /countries/{country_id}/banks:
+    get:
+      tags:
+        - Reference Data
+      summary: Получить банки страны
+      parameters:
+        - name: country_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: for_individuals
+          in: query
+          schema:
+            type: string
+            enum: [true, false]
+          description: Фильтр по работе с физлицами
+        - name: for_legal_entities
+          in: query
+          schema:
+            type: string
+            enum: [true, false]
+          description: Фильтр по работе с юрлицами
+      responses:
+        '200':
+          description: Список банков
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Bank'
+
+  /currencies/fiat:
+    get:
+      tags:
+        - Reference Data
+      summary: Получить фиатные валюты
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Поиск по названию или коду валюты
+      responses:
+        '200':
+          description: Список фиатных валют
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FiatCurrency'
+
+  /currencies/crypto:
+    get:
+      tags:
+        - Reference Data
+      summary: Получить криптовалюты
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Поиск по названию или тикеру
+        - name: stablecoins
+          in: query
+          schema:
+            type: string
+            enum: [true, false]
+          description: Фильтр стейблкоинов
+      responses:
+        '200':
+          description: Список криптовалют
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CryptoCurrency'
+
+  /currencies/all:
+    get:
+      tags:
+        - Reference Data
+      summary: Получить все валюты
+      responses:
+        '200':
+          description: Все валюты (фиатные и крипто)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      fiat:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/FiatCurrency'
+                      crypto:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/CryptoCurrency'
+
+  /banks:
+    get:
+      tags:
+        - Reference Data
+      summary: Получить список банков
+      parameters:
+        - name: country_id
+          in: query
+          schema:
+            type: integer
+          description: Фильтр по стране
+        - name: for_individuals
+          in: query
+          schema:
+            type: string
+            enum: [true, false]
+          description: Фильтр по работе с физлицами
+        - name: for_legal_entities
+          in: query
+          schema:
+            type: string
+            enum: [true, false]
+          description: Фильтр по работе с юрлицами
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Поиск по названию или SWIFT-коду
+      responses:
+        '200':
+          description: Список банков
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Bank'
+
+  /banks/{bank_id}:
+    get:
+      tags:
+        - Reference Data
+      summary: Получить банк
+      parameters:
+        - name: bank_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Информация о банке
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Bank'
+
+  /banks/country/{country}:
+    get:
+      tags:
+        - Reference Data
+      summary: Получить банки по стране
+      parameters:
+        - name: country
+          in: path
+          required: true
+          schema:
+            type: string
+            description: ISO код страны (например, RUS, USA)
+        - name: for_individuals
+          in: query
+          schema:
+            type: string
+            enum: [true, false]
+          description: Фильтр по работе с физлицами
+        - name: for_legal_entities
+          in: query
+          schema:
+            type: string
+            enum: [true, false]
+          description: Фильтр по работе с юрлицами
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Поиск по названию или SWIFT-коду
+      responses:
+        '200':
+          description: Список банков страны
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Bank'
+        '404':
+          description: Страна не найдена
+
+  # Защищенные роуты
+  /exchange-lots:
+    get:
+      tags:
+        - Exchange Lots
+      summary: Получить лоты обмена
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: is_test
+          in: query
+          schema:
+            type: string
+            enum: [true, false]
+          description: Фильтр тестового режима
+        - name: test_group
+          in: query
+          schema:
+            type: string
+          description: Группа тестового режима
+        - name: sell_currency_type
+          in: query
+          schema:
+            type: string
+            enum: [fiat, crypto]
+          description: Тип продаваемой валюты
+        - name: sell_currency_id
+          in: query
+          schema:
+            type: integer
+          description: ID продаваемой валюты
+        - name: buy_currency_type
+          in: query
+          schema:
+            type: string
+            enum: [fiat, crypto]
+          description: Тип покупаемой валюты
+        - name: buy_currency_id
+          in: query
+          schema:
+            type: integer
+          description: ID покупаемой валюты
+        - name: for_individuals
+          in: query
+          schema:
+            type: string
+            enum: [true, false]
+          description: Фильтр по физлицам
+        - name: for_legal_entities
+          in: query
+          schema:
+            type: string
+            enum: [true, false]
+          description: Фильтр по юрлицам
+        - name: country_id
+          in: query
+          schema:
+            type: integer
+          description: Фильтр по стране
+        - name: bank_id
+          in: query
+          schema:
+            type: integer
+          description: Фильтр по банку
+        - name: wallet_address
+          in: query
+          schema:
+            type: string
+          description: Поиск по адресу кошелька
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 20
+          description: Количество записей на странице
+      responses:
+        '200':
+          description: Список лотов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/PaginatedExchangeLots'
+        '401':
+          description: Не авторизован
+
+    post:
+      tags:
+        - Exchange Lots
+      summary: Создать лот обмена
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - crypto_currency_id
+                - wallet_address
+                - sell_currency_type
+                - sell_currency_id
+                - sell_amount
+                - buy_currency_type
+                - buy_currency_id
+                - buy_amount
+              properties:
+                crypto_currency_id:
+                  type: integer
+                  description: ID криптовалюты залогового токена
+                wallet_address:
+                  type: string
+                  maxLength: 50
+                  description: Адрес кошелька залогового токена
+                sell_currency_type:
+                  type: string
+                  enum: [fiat, crypto]
+                  description: Тип продаваемой валюты
+                sell_currency_id:
+                  type: integer
+                  description: ID продаваемой валюты
+                sell_amount:
+                  type: number
+                  minimum: 0
+                  description: Количество продаваемой валюты
+                buy_currency_type:
+                  type: string
+                  enum: [fiat, crypto]
+                  description: Тип покупаемой валюты
+                buy_currency_id:
+                  type: integer
+                  description: ID покупаемой валюты
+                buy_amount:
+                  type: number
+                  minimum: 0
+                  description: Количество покупаемой валюты
+                country_id:
+                  type: integer
+                  description: ID страны для фиатных операций
+                bank_id:
+                  type: integer
+                  description: ID банка для фиатных операций
+                bank_account:
+                  type: string
+                  maxLength: 100
+                  description: Банковский счет
+                payment_purpose:
+                  type: string
+                  maxLength: 255
+                  description: Назначение платежа
+                contract_url:
+                  type: string
+                  format: uri
+                  maxLength: 255
+                  description: URL договора
+                is_for_individuals:
+                  type: boolean
+                  default: true
+                  description: Доступно для физлиц
+                is_for_legal_entities:
+                  type: boolean
+                  default: false
+                  description: Доступно для юрлиц
+                is_test:
+                  type: boolean
+                  default: false
+                  description: Тестовый режим
+                test_group:
+                  type: string
+                  maxLength: 50
+                  description: Группа тестового режима
+                expires_at:
+                  type: string
+                  format: date-time
+                  description: Дата истечения
+      responses:
+        '201':
+          description: Лот создан
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ExchangeLot'
+        '401':
+          description: Не авторизован
+        '422':
+          description: Ошибка валидации
+
+  /exchange-lots/{lot_id}:
+    get:
+      tags:
+        - Exchange Lots
+      summary: Получить лот обмена
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: lot_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Информация о лоте
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ExchangeLot'
+        '401':
+          description: Не авторизован
+        '404':
+          description: Лот не найден
+
+    put:
+      tags:
+        - Exchange Lots
+      summary: Обновить лот обмена
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: lot_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_active:
+                  type: boolean
+                  description: Активность лота
+                expires_at:
+                  type: string
+                  format: date-time
+                  description: Дата истечения
+                bank_account:
+                  type: string
+                  maxLength: 100
+                  description: Банковский счет
+                payment_purpose:
+                  type: string
+                  maxLength: 255
+                  description: Назначение платежа
+                contract_url:
+                  type: string
+                  format: uri
+                  maxLength: 255
+                  description: URL договора
+      responses:
+        '200':
+          description: Лот обновлен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ExchangeLot'
+        '401':
+          description: Не авторизован
+        '404':
+          description: Лот не найден
+        '422':
+          description: Ошибка валидации
+
+    delete:
+      tags:
+        - Exchange Lots
+      summary: Удалить лот обмена
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: lot_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Лот удален
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '401':
+          description: Не авторизован
+        '404':
+          description: Лот не найден
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Country:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          description: Название страны
+        code:
+          type: string
+          description: ISO 3166-1 alpha-3 код
+        phone_code:
+          type: string
+          description: Телефонный код
+        is_active:
+          type: boolean
+          description: Активность страны
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    FiatCurrency:
+      type: object
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+          description: ISO 4217 код валюты
+        name:
+          type: string
+          description: Название валюты
+        symbol:
+          type: string
+          description: Символ валюты
+        is_active:
+          type: boolean
+          description: Активность валюты
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CryptoCurrency:
+      type: object
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+          description: Тикер криптовалюты
+        name:
+          type: string
+          description: Название криптовалюты
+        is_stablecoin:
+          type: boolean
+          description: Флаг стейблкоина
+        is_active:
+          type: boolean
+          description: Активность криптовалюты
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Bank:
+      type: object
+      properties:
+        id:
+          type: integer
+        country_id:
+          type: integer
+          description: ID страны
+        name:
+          type: string
+          description: Название банка
+        swift_code:
+          type: string
+          description: SWIFT-код банка
+        supports_individuals:
+          type: boolean
+          description: Работает с физлицами
+        supports_legal_entities:
+          type: boolean
+          description: Работает с юрлицами
+        is_active:
+          type: boolean
+          description: Активность банка
+        country:
+          $ref: '#/components/schemas/Country'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ExchangeLot:
+      type: object
+      properties:
+        id:
+          type: integer
+        crypto_currency_id:
+          type: integer
+          description: ID криптовалюты токена
+        wallet_address:
+          type: string
+          description: Адрес кошелька токена
+        sell_currency_type:
+          type: string
+          enum: [fiat, crypto]
+          description: Тип продаваемой валюты
+        sell_currency_id:
+          type: integer
+          description: ID продаваемой валюты
+        sell_amount:
+          type: number
+          description: Количество продаваемой валюты
+        buy_currency_type:
+          type: string
+          enum: [fiat, crypto]
+          description: Тип покупаемой валюты
+        buy_currency_id:
+          type: integer
+          description: ID покупаемой валюты
+        buy_amount:
+          type: number
+          description: Количество покупаемой валюты
+        country_id:
+          type: integer
+          description: ID страны
+        bank_id:
+          type: integer
+          description: ID банка
+        bank_account:
+          type: string
+          description: Банковский счет
+        payment_purpose:
+          type: string
+          description: Назначение платежа
+        contract_url:
+          type: string
+          description: URL договора
+        is_for_individuals:
+          type: boolean
+          description: Доступно для физлиц
+        is_for_legal_entities:
+          type: boolean
+          description: Доступно для юрлиц
+        is_active:
+          type: boolean
+          description: Активность лота
+        is_test:
+          type: boolean
+          description: Тестовый режим
+        test_group:
+          type: string
+          description: Группа тестового режима
+        expires_at:
+          type: string
+          format: date-time
+          description: Дата истечения
+        crypto_currency:
+          $ref: '#/components/schemas/CryptoCurrency'
+        country:
+          $ref: '#/components/schemas/Country'
+        bank:
+          $ref: '#/components/schemas/Bank'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PaginatedExchangeLots:
+      type: object
+      properties:
+        current_page:
+          type: integer
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExchangeLot'
+        first_page_url:
+          type: string
+        from:
+          type: integer
+        last_page:
+          type: integer
+        last_page_url:
+          type: string
+        links:
+          type: array
+          items:
+            type: object
+        next_page_url:
+          type: string
+        path:
+          type: string
+        per_page:
+          type: integer
+        prev_page_url:
+          type: string
+        to:
+          type: integer
+        total:
+          type: integer
+
+tags:
+  - name: Authentication
+    description: Аутентификация через залоговые токены
+  - name: Reference Data
+    description: Справочные данные (страны, валюты, банки)
+  - name: Exchange Lots
+    description: Доска объявлений (лоты обмена)
+  - name: Buy Triggers
+    description: Триггеры покупки
+  - name: Transactions
+    description: Транзакции 
