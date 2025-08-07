@@ -36,6 +36,9 @@ yarn-error.log
 *.swo
 *~
 
+# Personal documentation files (not for git)
+docs/infomaniak_cloud.md
+
 # OS generated files
 .DS_Store
 .DS_Store?

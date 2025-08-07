@@ -8,6 +8,13 @@ use App\Models\Country;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
+/**
+ * @OA\Tag(
+ *     name="Banks",
+ *     description="API эндпоинты для работы с банками"
+ * )
+ */
+
 class BankController extends Controller
 {
     public function index(Request $request): JsonResponse

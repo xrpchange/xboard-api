@@ -6,6 +6,14 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @OA\Schema(
+ *     schema="CryptoCurrency",
+ *     title="CryptoCurrency",
+ *     description="Модель криптовалюты"
+ * )
+ */
+
 class CryptoCurrency extends Model
 {
     use HasFactory;
@@ -16,6 +24,16 @@ class CryptoCurrency extends Model
         'is_stablecoin',
         'is_active',
     ];
+
+    /**
+     * @OA\Property(property="id", type="integer", example=1)
+     * @OA\Property(property="code", type="string", example="BTC")
+     * @OA\Property(property="name", type="string", example="Bitcoin")
+     * @OA\Property(property="is_stablecoin", type="boolean", example=false)
+     * @OA\Property(property="is_active", type="boolean", example=true)
+     * @OA\Property(property="created_at", type="string", format="date-time")
+     * @OA\Property(property="updated_at", type="string", format="date-time")
+     */
 
     protected $casts = [
         'is_stablecoin' => 'boolean',

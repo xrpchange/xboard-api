@@ -8,8 +8,37 @@ use App\Models\CryptoCurrency;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
+/**
+ * @OA\Tag(
+ *     name="Currencies",
+ *     description="API эндпоинты для работы с валютами"
+ * )
+ */
+
 class CurrencyController extends Controller
 {
+    /**
+     * @OA\Get(
+     *     path="/currencies/fiat",
+     *     summary="Get fiat currencies list",
+     *     tags={"Currencies"},
+     *     @OA\Parameter(
+     *         name="search",
+     *         in="query",
+     *         description="Search by currency name or code",
+     *         required=false,
+     *         @OA\Schema(type="string")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Fiat currencies list",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean"),
+     *             @OA\Property(property="data", type="array", @OA\Items(ref="#/components/schemas/FiatCurrency"))
+     *         )
+     *     )
+     * )
+     */
     public function fiat(Request $request): JsonResponse
     {
         $currencies = FiatCurrency::active()

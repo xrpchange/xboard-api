@@ -7,6 +7,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @OA\Schema(
+ *     schema="ExchangeLot",
+ *     title="ExchangeLot",
+ *     description="Exchange lot model"
+ * )
+ */
+
 class ExchangeLot extends Model
 {
     use HasFactory;
@@ -32,6 +40,31 @@ class ExchangeLot extends Model
         'test_group',
         'expires_at',
     ];
+
+    /**
+     * @OA\Property(property="id", type="integer", example=1)
+     * @OA\Property(property="crypto_currency_id", type="integer", example=1)
+     * @OA\Property(property="wallet_address", type="string", example="rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh")
+     * @OA\Property(property="sell_currency_type", type="string", example="fiat")
+     * @OA\Property(property="sell_currency_id", type="integer", example=1)
+     * @OA\Property(property="sell_amount", type="number", format="float", example=1000.00)
+     * @OA\Property(property="buy_currency_type", type="string", example="crypto")
+     * @OA\Property(property="buy_currency_id", type="integer", example=1)
+     * @OA\Property(property="buy_amount", type="number", format="float", example=100.00)
+     * @OA\Property(property="country_id", type="integer", example=1)
+     * @OA\Property(property="bank_id", type="integer", example=1)
+     * @OA\Property(property="bank_account", type="string", example="1234567890")
+     * @OA\Property(property="payment_purpose", type="string", example="Payment for crypto")
+     * @OA\Property(property="contract_url", type="string", example="https://example.com/contract")
+     * @OA\Property(property="is_for_individuals", type="boolean", example=true)
+     * @OA\Property(property="is_for_legal_entities", type="boolean", example=true)
+     * @OA\Property(property="is_active", type="boolean", example=true)
+     * @OA\Property(property="is_test", type="boolean", example=false)
+     * @OA\Property(property="test_group", type="string", example="test_group_1")
+     * @OA\Property(property="expires_at", type="string", format="date-time")
+     * @OA\Property(property="created_at", type="string", format="date-time")
+     * @OA\Property(property="updated_at", type="string", format="date-time")
+     */
 
     protected $casts = [
         'sell_amount' => 'decimal:8',

@@ -8,6 +8,13 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 
+/**
+ * @OA\Tag(
+ *     name="Transactions",
+ *     description="API эндпоинты для работы с транзакциями"
+ * )
+ */
+
 class TransactionController extends Controller
 {
     /**

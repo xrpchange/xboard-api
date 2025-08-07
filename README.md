@@ -67,6 +67,11 @@ php artisan serve
 - **API**: http://localhost:8000/api/documentation
 - **Core API**: http://localhost:8000/docs/core_swagger.yaml
 
+### API Документация:
+- **Sandbox** (для тестирования): http://sandbox.api.xrpchange.site/documentation
+- **Production**: http://api.xrpchange.site/documentation
+- **Local**: http://localhost:8000/api/documentation
+
 ### Основные эндпоинты
 
 #### Аутентификация

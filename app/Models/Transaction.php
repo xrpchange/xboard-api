@@ -6,6 +6,14 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @OA\Schema(
+ *     schema="Transaction",
+ *     title="Transaction",
+ *     description="Transaction model"
+ * )
+ */
+
 class Transaction extends Model
 {
     use HasFactory;
@@ -22,6 +30,22 @@ class Transaction extends Model
         'is_test',
         'test_group',
     ];
+
+    /**
+     * @OA\Property(property="id", type="integer", example=1)
+     * @OA\Property(property="tx_hash", type="string", example="ABC123DEF456")
+     * @OA\Property(property="tx_type", type="string", example="deposit")
+     * @OA\Property(property="from_address", type="string", example="rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh")
+     * @OA\Property(property="to_address", type="string", example="rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh")
+     * @OA\Property(property="amount", type="number", format="float", example=100.00)
+     * @OA\Property(property="token", type="string", example="escrow_token_123")
+     * @OA\Property(property="exchange_lot_id", type="integer", example=1)
+     * @OA\Property(property="status", type="string", example="completed")
+     * @OA\Property(property="is_test", type="boolean", example=false)
+     * @OA\Property(property="test_group", type="string", example="test_group_1")
+     * @OA\Property(property="created_at", type="string", format="date-time")
+     * @OA\Property(property="updated_at", type="string", format="date-time")
+     */
 
     protected $casts = [
         'amount' => 'decimal:8',

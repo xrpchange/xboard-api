@@ -8,10 +8,63 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
+/**
+ * @OA\Info(
+ *     title="XBoard API",
+ *     version="1.0.0",
+ *     description="API for P2P cryptocurrency exchange with escrow guarantee"
+ * )
+ * @OA\Server(
+ *     url="http://sandbox.api.xrpchange.site/api/v1",
+ *     description="Sandbox server (for testing)"
+ * )
+ * @OA\Server(
+ *     url="http://api.xrpchange.site/api/v1",
+ *     description="Production server"
+ * )
+ * @OA\Server(
+ *     url="http://localhost:8000/api/v1",
+ *     description="Local server"
+ * )
+ * @OA\SecurityScheme(
+ *     securityScheme="bearerAuth",
+ *     type="http",
+ *     scheme="bearer"
+ * )
+ */
+
 class AuthController extends Controller
 {
     /**
-     * Получить Bearer токен по залоговому токену
+     * Get Bearer token by escrow token
+     * 
+     * @OA\Post(
+     *     path="/auth/bearer-token",
+     *     summary="Get Bearer token",
+     *     tags={"Authentication"},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"escrow_token"},
+     *             @OA\Property(property="escrow_token", type="string", maxLength=500),
+     *             @OA\Property(property="test_group", type="string", maxLength=50)
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Bearer token received",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="bearer_token", type="string"),
+     *                 @OA\Property(property="expires_at", type="string", format="date-time"),
+     *                 @OA\Property(property="test_group", type="string")
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Invalid escrow token"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
      */
     public function getBearerToken(Request $request): JsonResponse
     {

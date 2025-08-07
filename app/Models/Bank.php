@@ -6,6 +6,14 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @OA\Schema(
+ *     schema="Bank",
+ *     title="Bank",
+ *     description="Модель банка"
+ * )
+ */
+
 class Bank extends Model
 {
     use HasFactory;
@@ -18,6 +26,18 @@ class Bank extends Model
         'supports_legal_entities',
         'is_active',
     ];
+
+    /**
+     * @OA\Property(property="id", type="integer", example=1)
+     * @OA\Property(property="country_id", type="integer", example=1)
+     * @OA\Property(property="name", type="string", example="Sberbank")
+     * @OA\Property(property="swift_code", type="string", example="SABRRUMM")
+     * @OA\Property(property="supports_individuals", type="boolean", example=true)
+     * @OA\Property(property="supports_legal_entities", type="boolean", example=true)
+     * @OA\Property(property="is_active", type="boolean", example=true)
+     * @OA\Property(property="created_at", type="string", format="date-time")
+     * @OA\Property(property="updated_at", type="string", format="date-time")
+     */
 
     protected $casts = [
         'supports_individuals' => 'boolean',

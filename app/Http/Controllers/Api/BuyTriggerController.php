@@ -8,6 +8,13 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 
+/**
+ * @OA\Tag(
+ *     name="Buy Triggers",
+ *     description="API эндпоинты для работы с триггерами покупки"
+ * )
+ */
+
 class BuyTriggerController extends Controller
 {
     /**

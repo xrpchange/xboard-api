@@ -8,6 +8,13 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 
+/**
+ * @OA\Tag(
+ *     name="Exchange Lots",
+ *     description="API эндпоинты для работы с лотами обмена"
+ * )
+ */
+
 class ExchangeLotController extends Controller
 {
     /**

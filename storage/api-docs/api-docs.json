@@ -1,0 +1,591 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "XBoard API",
+        "description": "API for P2P cryptocurrency exchange with escrow guarantee",
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "http://sandbox.api.xrpchange.site/api/v1",
+            "description": "Sandbox server (for testing)"
+        },
+        {
+            "url": "http://api.xrpchange.site/api/v1",
+            "description": "Production server"
+        },
+        {
+            "url": "http://localhost:8000/api/v1",
+            "description": "Local server"
+        }
+    ],
+    "paths": {
+        "/auth/bearer-token": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Get Bearer token",
+                "description": "Get Bearer token by escrow token",
+                "operationId": "f3d61420ca095c8a98af8aebfb33c5bc",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "escrow_token"
+                                ],
+                                "properties": {
+                                    "escrow_token": {
+                                        "type": "string",
+                                        "maxLength": 500
+                                    },
+                                    "test_group": {
+                                        "type": "string",
+                                        "maxLength": 50
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Bearer token received",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "bearer_token": {
+                                                    "type": "string"
+                                                },
+                                                "expires_at": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "test_group": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid escrow token"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                }
+            }
+        },
+        "/countries": {
+            "get": {
+                "tags": [
+                    "Countries"
+                ],
+                "summary": "Get countries list",
+                "operationId": "87b1e43e1fee480e4db58b462bf951c0",
+                "parameters": [
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Search by country name or code",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Countries list",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Country"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/currencies/fiat": {
+            "get": {
+                "tags": [
+                    "Currencies"
+                ],
+                "summary": "Get fiat currencies list",
+                "operationId": "030dd308e3775343bf8dc4bbc7f970c3",
+                "parameters": [
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Search by currency name or code",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Fiat currencies list",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/FiatCurrency"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Bank": {
+                "title": "Bank",
+                "description": "Модель банка",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "country_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Sberbank"
+                    },
+                    "swift_code": {
+                        "type": "string",
+                        "example": "SABRRUMM"
+                    },
+                    "supports_individuals": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "supports_legal_entities": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "BuyTrigger": {
+                "title": "BuyTrigger",
+                "description": "Buy trigger model",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "crypto_currency_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "wallet_address": {
+                        "type": "string",
+                        "example": "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh"
+                    },
+                    "buy_currency_type": {
+                        "type": "string",
+                        "example": "crypto"
+                    },
+                    "buy_currency_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "buy_amount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 100
+                    },
+                    "sell_currency_type": {
+                        "type": "string",
+                        "example": "fiat"
+                    },
+                    "sell_currency_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "max_sell_amount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 1000
+                    },
+                    "country_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "bank_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "is_for_individuals": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "is_for_legal_entities": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "is_test": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "test_group": {
+                        "type": "string",
+                        "example": "test_group_1"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "Country": {
+                "title": "Country",
+                "description": "Модель страны",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Россия"
+                    },
+                    "code": {
+                        "type": "string",
+                        "example": "RUS"
+                    },
+                    "phone_code": {
+                        "type": "string",
+                        "example": "+7"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "CryptoCurrency": {
+                "title": "CryptoCurrency",
+                "description": "Модель криптовалюты",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "code": {
+                        "type": "string",
+                        "example": "BTC"
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Bitcoin"
+                    },
+                    "is_stablecoin": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "ExchangeLot": {
+                "title": "ExchangeLot",
+                "description": "Exchange lot model",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "crypto_currency_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "wallet_address": {
+                        "type": "string",
+                        "example": "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh"
+                    },
+                    "sell_currency_type": {
+                        "type": "string",
+                        "example": "fiat"
+                    },
+                    "sell_currency_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "sell_amount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 1000
+                    },
+                    "buy_currency_type": {
+                        "type": "string",
+                        "example": "crypto"
+                    },
+                    "buy_currency_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "buy_amount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 100
+                    },
+                    "country_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "bank_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "bank_account": {
+                        "type": "string",
+                        "example": "1234567890"
+                    },
+                    "payment_purpose": {
+                        "type": "string",
+                        "example": "Payment for crypto"
+                    },
+                    "contract_url": {
+                        "type": "string",
+                        "example": "https://example.com/contract"
+                    },
+                    "is_for_individuals": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "is_for_legal_entities": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "is_test": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "test_group": {
+                        "type": "string",
+                        "example": "test_group_1"
+                    },
+                    "expires_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "FiatCurrency": {
+                "title": "FiatCurrency",
+                "description": "Модель фиатной валюты",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "code": {
+                        "type": "string",
+                        "example": "USD"
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "US Dollar"
+                    },
+                    "symbol": {
+                        "type": "string",
+                        "example": "$"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "Transaction": {
+                "title": "Transaction",
+                "description": "Transaction model",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "tx_hash": {
+                        "type": "string",
+                        "example": "ABC123DEF456"
+                    },
+                    "tx_type": {
+                        "type": "string",
+                        "example": "deposit"
+                    },
+                    "from_address": {
+                        "type": "string",
+                        "example": "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh"
+                    },
+                    "to_address": {
+                        "type": "string",
+                        "example": "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 100
+                    },
+                    "token": {
+                        "type": "string",
+                        "example": "escrow_token_123"
+                    },
+                    "exchange_lot_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "status": {
+                        "type": "string",
+                        "example": "completed"
+                    },
+                    "is_test": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "test_group": {
+                        "type": "string",
+                        "example": "test_group_1"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            }
+        },
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer"
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "Countries",
+            "description": "API endpoints for countries"
+        },
+        {
+            "name": "Currencies",
+            "description": "API эндпоинты для работы с валютами"
+        },
+        {
+            "name": "Authentication",
+            "description": "Authentication"
+        }
+    ]
+}
