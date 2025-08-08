@@ -28,6 +28,18 @@
                 "summary": "Get Bearer token",
                 "description": "Get Bearer token by escrow token",
                 "operationId": "f3d61420ca095c8a98af8aebfb33c5bc",
+                "parameters": [
+                    {
+                        "name": "escrow_token",
+                        "in": "query",
+                        "description": "Escrow token for authentication",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 500
+                        }
+                    }
+                ],
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -40,10 +52,6 @@
                                     "escrow_token": {
                                         "type": "string",
                                         "maxLength": 500
-                                    },
-                                    "test_group": {
-                                        "type": "string",
-                                        "maxLength": 50
                                     }
                                 },
                                 "type": "object"
@@ -69,9 +77,6 @@
                                                 "expires_at": {
                                                     "type": "string",
                                                     "format": "date-time"
-                                                },
-                                                "test_group": {
-                                                    "type": "string"
                                                 }
                                             },
                                             "type": "object"

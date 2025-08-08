@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\EscrowTokenService;
+use App\Services\BearerTokenService;
+use App\Exceptions\XBoardException;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
 
 /**
  * @OA\Info(
@@ -35,30 +38,30 @@ use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
+    public function __construct(
+        private EscrowTokenService $escrowTokenService,
+        private BearerTokenService $bearerTokenService
+    ) {}
+
     /**
-     * Get Bearer token by escrow token
-     * 
      * @OA\Post(
      *     path="/auth/bearer-token",
-     *     summary="Get Bearer token",
+     *     summary="Get bearer token",
      *     tags={"Authentication"},
      *     @OA\RequestBody(
      *         required=true,
      *         @OA\JsonContent(
-     *             required={"escrow_token"},
-     *             @OA\Property(property="escrow_token", type="string", maxLength=500),
-     *             @OA\Property(property="test_group", type="string", maxLength=50)
+     *             @OA\Property(property="escrow_token", type="string", example="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...")
      *         )
      *     ),
      *     @OA\Response(
      *         response=200,
      *         description="Bearer token received",
      *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean"),
+     *             @OA\Property(property="success", type="boolean", example=true),
      *             @OA\Property(property="data", type="object",
-     *                 @OA\Property(property="bearer_token", type="string"),
-     *                 @OA\Property(property="expires_at", type="string", format="date-time"),
-     *                 @OA\Property(property="test_group", type="string")
+     *                 @OA\Property(property="bearer_token", type="string", example="1|abc123..."),
+     *                 @OA\Property(property="user", ref="#/components/schemas/User")
      *             )
      *         )
      *     ),
@@ -68,66 +71,42 @@ class AuthController extends Controller
      */
     public function getBearerToken(Request $request): JsonResponse
     {
-        $validator = Validator::make($request->all(), [
-            'escrow_token' => 'required|string|max:500',
-            'test_group' => 'nullable|string|max:50',
+        $request->validate([
+            'escrow_token' => 'required|string'
         ]);
 
-        if ($validator->fails()) {
+        try {
+            // Validate escrow token
+            $user = $this->validateEscrowToken($request->escrow_token);
+            
+            // Generate bearer token
+            $token = $user->createToken('api-token')->plainTextToken;
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'bearer_token' => $token,
+                    'user' => $user
+                ]
+            ]);
+        } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        // Здесь будет интеграция с ядром для валидации залогового токена
-        // Пока создаем простую валидацию
-        $escrowToken = $request->escrow_token;
-        
-        // Проверяем формат токена (должен содержать ID криптовалюты и адрес кошелька)
-        if (!$this->validateEscrowToken($escrowToken)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Неверный формат залогового токена'
+                'message' => 'Invalid escrow token'
             ], 401);
         }
-
-        // Генерируем Bearer токен
-        $bearerToken = $this->generateBearerToken($escrowToken, $request->test_group);
-
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'bearer_token' => $bearerToken,
-                'expires_at' => now()->addYear(),
-                'test_group' => $request->test_group
-            ]
-        ]);
     }
 
     /**
-     * Валидация залогового токена
+     * Validate escrow token and return user
      */
-    private function validateEscrowToken(string $token): bool
+    private function validateEscrowToken(string $escrowToken): User
     {
-        // Простая проверка - токен должен содержать определенную структуру
-        // В реальности здесь будет интеграция с ядром
-        return !empty($token) && strlen($token) > 10;
+        // Validate escrow token logic here
+        // For now, return a mock user
+        return User::first() ?? new User();
     }
 
-    /**
-     * Генерация Bearer токена
-     */
-    private function generateBearerToken(string $escrowToken, ?string $testGroup): string
-    {
-        // Создаем хэш на основе залогового токена и тестовой группы
-        $data = $escrowToken . ($testGroup ?? '') . time();
-        return hash('sha256', $data);
-    }
-
-    /**
-     * Проверка Bearer токена
-     */
     public function validateBearerToken(Request $request): JsonResponse
     {
         $bearerToken = $request->bearerToken();
@@ -135,16 +114,18 @@ class AuthController extends Controller
         if (!$bearerToken) {
             return response()->json([
                 'success' => false,
-                'message' => 'Bearer токен не предоставлен'
+                'message' => 'Bearer token not provided',
+                'error_code' => 'MISSING_TOKEN'
             ], 401);
         }
 
-        // Здесь будет проверка токена
-        // Пока простая проверка
-        if (strlen($bearerToken) !== 64) {
+        $tokenRecord = $this->bearerTokenService->validateToken($bearerToken);
+
+        if (!$tokenRecord) {
             return response()->json([
                 'success' => false,
-                'message' => 'Неверный формат Bearer токена'
+                'message' => 'Invalid or expired Bearer token',
+                'error_code' => 'INVALID_TOKEN'
             ], 401);
         }
 
@@ -152,7 +133,7 @@ class AuthController extends Controller
             'success' => true,
             'data' => [
                 'valid' => true,
-                'test_group' => $request->header('X-Test-Group')
+                'device_id' => $tokenRecord->device_id
             ]
         ]);
     }
