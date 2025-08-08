@@ -2,12 +2,17 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\CollateralTokenService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class ValidateBearerToken
 {
+    public function __construct(
+        private CollateralTokenService $collateralTokenService
+    ) {}
+
     /**
      * Handle an incoming request.
      */
@@ -22,22 +27,21 @@ class ValidateBearerToken
             ], 401);
         }
 
-        // Проверяем формат токена
-        if (strlen($bearerToken) !== 64) {
+        // Валидировать Bearer токен через сервис
+        $userToken = $this->collateralTokenService->validateBearerToken($bearerToken);
+        
+        if (!$userToken) {
             return response()->json([
                 'success' => false,
-                'message' => 'Неверный формат Bearer токена'
+                'message' => 'Invalid bearer token'
             ], 401);
         }
 
-        // Здесь будет интеграция с ядром для проверки токена
-        // Пока простая проверка
-        if (!$this->isValidToken($bearerToken)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Недействительный Bearer токен'
-            ], 401);
-        }
+        // Добавляем информацию о токене в request
+        $request->merge([
+            'user_token' => $userToken,
+            'wallet_address' => $userToken->device_id
+        ]);
 
         // Добавляем информацию о тестовой группе в request
         $request->merge(['test_group' => $request->header('X-Test-Group')]);
@@ -45,13 +49,5 @@ class ValidateBearerToken
         return $next($request);
     }
 
-    /**
-     * Проверка валидности токена
-     */
-    private function isValidToken(string $token): bool
-    {
-        // В реальности здесь будет проверка через ядро
-        // Пока простая проверка
-        return !empty($token) && ctype_xdigit($token);
-    }
+
 } 

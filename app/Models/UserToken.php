@@ -1,0 +1,47 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class UserToken extends Model
+{
+    protected $fillable = [
+        'token',
+        'device_id',
+        'collateral_token',
+        'ip_address',
+        'last_used_at',
+        'expires_at'
+    ];
+
+    protected $casts = [
+        'last_used_at' => 'datetime',
+        'expires_at' => 'datetime'
+    ];
+
+    /**
+     * Получить связанный лот обмена
+     */
+    public function exchangeLot(): BelongsTo
+    {
+        return $this->belongsTo(ExchangeLot::class, 'device_id', 'wallet_address');
+    }
+
+    /**
+     * Проверить, не истек ли токен
+     */
+    public function isExpired(): bool
+    {
+        return $this->expires_at && $this->expires_at->isPast();
+    }
+
+    /**
+     * Обновить время последнего использования
+     */
+    public function updateLastUsed(): void
+    {
+        $this->update(['last_used_at' => now()]);
+    }
+}

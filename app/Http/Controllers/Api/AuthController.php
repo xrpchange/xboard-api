@@ -3,13 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Services\EscrowTokenService;
-use App\Services\BearerTokenService;
-use App\Exceptions\XBoardException;
-use App\Models\User;
+use App\Services\CollateralTokenService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Validator;
 
 /**
  * @OA\Info(
@@ -39,8 +35,7 @@ use Illuminate\Support\Facades\Validator;
 class AuthController extends Controller
 {
     public function __construct(
-        private EscrowTokenService $escrowTokenService,
-        private BearerTokenService $bearerTokenService
+        private CollateralTokenService $collateralTokenService
     ) {}
 
     /**
@@ -51,6 +46,7 @@ class AuthController extends Controller
      *     @OA\RequestBody(
      *         required=true,
      *         @OA\JsonContent(
+     *             required={"escrow_token"},
      *             @OA\Property(property="escrow_token", type="string", example="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...")
      *         )
      *     ),
@@ -61,7 +57,8 @@ class AuthController extends Controller
      *             @OA\Property(property="success", type="boolean", example=true),
      *             @OA\Property(property="data", type="object",
      *                 @OA\Property(property="bearer_token", type="string", example="1|abc123..."),
-     *                 @OA\Property(property="user", ref="#/components/schemas/User")
+     *                 @OA\Property(property="wallet_address", type="string", example="r123..."),
+     *                 @OA\Property(property="crypto_currency", type="string", example="XRP")
      *             )
      *         )
      *     ),
@@ -76,17 +73,18 @@ class AuthController extends Controller
         ]);
 
         try {
-            // Validate escrow token
-            $user = $this->validateEscrowToken($request->escrow_token);
+            // Создать Bearer токен (включает проверку баланса через ядро)
+            $bearerToken = $this->collateralTokenService->createBearerToken($request->escrow_token, $request->ip());
             
-            // Generate bearer token
-            $token = $user->createToken('api-token')->plainTextToken;
+            // Расшифровать токен для получения данных
+            $tokenData = $this->collateralTokenService->decryptToken($request->escrow_token);
             
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'bearer_token' => $token,
-                    'user' => $user
+                    'bearer_token' => $bearerToken,
+                    'wallet_address' => $tokenData['wallet_address'],
+                    'crypto_currency' => $tokenData['currency']
                 ]
             ]);
         } catch (\Exception $e) {
@@ -98,15 +96,26 @@ class AuthController extends Controller
     }
 
     /**
-     * Validate escrow token and return user
+     * @OA\Post(
+     *     path="/auth/validate-token",
+     *     summary="Validate bearer token",
+     *     tags={"Authentication"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Response(
+     *         response=200,
+     *         description="Token is valid",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="valid", type="boolean", example=true),
+     *                 @OA\Property(property="wallet_address", type="string", example="r123..."),
+     *                 @OA\Property(property="crypto_currency", type="string", example="XRP")
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Invalid bearer token")
+     * )
      */
-    private function validateEscrowToken(string $escrowToken): User
-    {
-        // Validate escrow token logic here
-        // For now, return a mock user
-        return User::first() ?? new User();
-    }
-
     public function validateBearerToken(Request $request): JsonResponse
     {
         $bearerToken = $request->bearerToken();
@@ -114,26 +123,29 @@ class AuthController extends Controller
         if (!$bearerToken) {
             return response()->json([
                 'success' => false,
-                'message' => 'Bearer token not provided',
-                'error_code' => 'MISSING_TOKEN'
+                'message' => 'Bearer token not provided'
             ], 401);
         }
 
-        $tokenRecord = $this->bearerTokenService->validateToken($bearerToken);
-
-        if (!$tokenRecord) {
+        // Валидировать Bearer токен
+        $userToken = $this->collateralTokenService->validateBearerToken($bearerToken);
+        
+        if (!$userToken) {
             return response()->json([
                 'success' => false,
-                'message' => 'Invalid or expired Bearer token',
-                'error_code' => 'INVALID_TOKEN'
+                'message' => 'Invalid bearer token'
             ], 401);
         }
+
+        // Расшифровать залоговый токен для получения данных
+        $tokenData = $this->collateralTokenService->decryptToken($userToken->collateral_token);
 
         return response()->json([
             'success' => true,
             'data' => [
                 'valid' => true,
-                'device_id' => $tokenRecord->device_id
+                'wallet_address' => $tokenData['wallet_address'],
+                'crypto_currency' => $tokenData['currency']
             ]
         ]);
     }
