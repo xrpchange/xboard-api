@@ -210,3 +210,89 @@ xboard/
 3. Зафиксируйте изменения (`git commit -m 'Add amazing feature'`)
 4. Отправьте в ветку (`git push origin feature/amazing-feature`)
 5. Откройте Pull Request
+
+## Доступ к ядру (CoreClient)
+
+Универсальный клиент `CoreClient` обеспечивает отказоустойчивый доступ к ядру (XRPChangeCore):
+
+- Случайный выбор узла из `config('services.core.servers')` любой структуры
+- Кэш индекса последнего удачного узла (TTL настраивается)
+- Повторные попытки и таймауты настраиваются
+- Health-check всех узлов окружения по настраиваемому пути
+- Универсальный метод `requestJson()` и специализированные обёртки (например, `checkTokenBalance()`)
+
+### Конфигурация ядра
+
+`config/services.php` → секция `core`:
+
+- `servers`: список узлов по окружениям; конечные узлы содержат `url` и (опционально) `key`
+- `default_environment`: окружение по умолчанию (`development|sandbox|production`)
+- `timeout`: таймаут HTTP-запросов (секунды)
+- `retry_attempts`: число попыток на каждом узле
+- `health_path`: путь для проверки доступности узла (по умолчанию `/echo.php`)
+- `cache_ttl`: TTL кэша индекса (секунды)
+- `cache_store`: стор кэша (например, `redis`). Если стор не найден — используется драйвер по умолчанию
+
+ENV-пример:
+
+```env
+CORE_DEFAULT_ENV=development
+CORE_TIMEOUT=10
+CORE_RETRY_ATTEMPTS=3
+CORE_HEALTH_PATH=/echo.php
+CORE_CACHE_TTL=86400
+# Опционально, чтобы принудительно указать стор кэша
+CORE_CACHE_STORE=redis
+```
+
+### Health-check в ядре (XRPChangeCore)
+
+В `XRPChangeCore/public/echo.php` должен быть публичный эхо-эндпоинт (по умолчанию `/echo.php`):
+
+```php
+<?php
+declare(strict_types=1);
+header('Content-Type: application/json; charset=utf-8');
+http_response_code(200);
+echo json_encode([
+  'ok' => true,
+  'service' => 'XRPChangeCore',
+  'time' => gmdate('c'),
+  'remote_addr' => $_SERVER['REMOTE_ADDR'] ?? null,
+]);
+```
+
+Путь можно переопределить через `CORE_HEALTH_PATH`.
+
+### Публичный эндпоинт статуса узлов
+
+- `GET /api/v1/core/health` — проверка узлов текущего окружения
+- `GET /api/v1/core/health?env=sandbox` — проверка узлов окружения `sandbox`
+
+Пример:
+
+```bash
+curl -s "http://localhost:8000/api/v1/core/health?env=sandbox"
+```
+
+### Кэширование (Redis опционально)
+
+- Если `CORE_CACHE_STORE` указывает на несуществующий стор, клиент откатывается на драйвер кэша по умолчанию (обычно `file`)
+- Для Redis:
+  - Установите и запустите Redis
+  - В `.env`: `CACHE_DRIVER=redis` или `CORE_CACHE_STORE=redis`, плюс `REDIS_HOST`, `REDIS_PORT`, `REDIS_CLIENT`
+  - Проверьте `config/cache.php` → `stores.redis`
+
+### Примеры использования
+
+```php
+use App\Services\CoreClient;
+
+public function example(CoreClient $coreClient): array
+{
+    $data = $coreClient->requestJson('POST', '/api/anything', [ 'foo' => 'bar' ]);
+    $balance = $coreClient->checkTokenBalance($collateralToken);
+    $statuses = $coreClient->healthCheck('sandbox');
+    return compact('data', 'balance', 'statuses');
+}
+```

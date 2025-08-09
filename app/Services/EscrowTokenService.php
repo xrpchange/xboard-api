@@ -4,29 +4,27 @@ namespace App\Services;
 
 use App\Exceptions\InvalidTokenException;
 use App\Exceptions\UnsupportedCurrencyException;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
 
 class EscrowTokenService
 {
+    private CoreClient $coreClient;
+
+    public function __construct(CoreClient $coreClient)
+    {
+        $this->coreClient = $coreClient;
+    }
+
     /**
      * Validate escrow token through core
      */
     public function validateToken(string $token): array
     {
-        $coreUrl = config('app.env') === 'production' 
-            ? 'http://api.core.xrpchange.site/api/tokens/balance'
-            : 'http://sandbox.api.core.xrpchange.site/api/tokens/balance';
-            
-        $response = Http::post($coreUrl, [
-            'token' => $token
-        ]);
-        
-        if (!$response->successful()) {
+        try {
+            $data = $this->coreClient->checkTokenBalance($token);
+        } catch (\Throwable $e) {
             throw new InvalidTokenException('Token is invalid or unavailable');
         }
-        
-        $data = $response->json();
         
         // Decode token to get wallet_address
         $tokenDecoded = json_decode($token, true);
@@ -36,7 +34,7 @@ class EscrowTokenService
         
         return [
             'wallet_address' => $tokenDecoded['wallet_address'],
-            'balance' => $data['data'] ?? []
+            'balance' => $data['data'] ?? $data
         ];
     }
 

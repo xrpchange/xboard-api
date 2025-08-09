@@ -5,16 +5,15 @@ namespace App\Services;
 use App\Models\CryptoCurrency;
 use App\Models\ExchangeLot;
 use App\Models\UserToken;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class CollateralTokenService
 {
-    private array $coreConfig;
+    private CoreClient $coreClient;
 
-    public function __construct()
+    public function __construct(CoreClient $coreClient)
     {
-        $this->coreConfig = config('services.core', []);
+        $this->coreClient = $coreClient;
     }
 
     /**
@@ -39,74 +38,18 @@ class CollateralTokenService
     }
 
     /**
-     * Проверить баланс залогового токена через ядро с отказоустойчивостью
+     * Проверить баланс залогового токена через универсальный клиент ядра
      */
     public function checkTokenBalance(string $token, string $environment = null): array
     {
-        $environment = $environment ?? $this->determineEnvironment();
-        $servers = $this->coreConfig['servers'][$environment] ?? null;
-        
-        if (!$servers) {
-            throw new \Exception("Unknown core environment: {$environment}");
+        $env = $environment ?? $this->determineEnvironment();
+        $data = $this->coreClient->checkTokenBalance($token, $env);
+        if (!isset($data['total'])) {
+            Log::warning('Token balance response missing total', [
+                'environment' => $env,
+            ]);
         }
-
-        $timeout = $this->coreConfig['timeout'] ?? 10;
-        $retryAttempts = $this->coreConfig['retry_attempts'] ?? 3;
-        $lastException = null;
-
-        // Для development используем только core, для остальных - только core1, core2, core3
-        if ($environment === 'development') {
-            $serverPriority = ['core'];
-        } else {
-            $serverPriority = ['core1', 'core2', 'core3'];
-        }
-        
-        $availableServers = array_intersect($serverPriority, array_keys($servers));
-        
-        foreach ($availableServers as $serverName) {
-            $serverConfig = $servers[$serverName];
-            
-            for ($attempt = 1; $attempt <= $retryAttempts; $attempt++) {
-                try {
-                    $response = Http::timeout($timeout)->post($serverConfig['url'] . '/api/tokens/balance', [
-                        'token' => $token
-                    ]);
-
-                    if ($response->successful()) {
-                        $data = $response->json();
-                        if (isset($data['total'])) {
-                            Log::info('Token balance check successful', [
-                                'server' => $serverName,
-                                'environment' => $environment,
-                                'attempt' => $attempt
-                            ]);
-                            return $data;
-                        }
-                    }
-                } catch (\Exception $e) {
-                    $lastException = $e;
-                    Log::warning('Token balance check attempt failed', [
-                        'server' => $serverName,
-                        'environment' => $environment,
-                        'attempt' => $attempt,
-                        'error' => $e->getMessage()
-                    ]);
-                    
-                    // Если это не последняя попытка, ждем перед повтором
-                    if ($attempt < $retryAttempts) {
-                        sleep(1);
-                    }
-                }
-            }
-        }
-
-        // Все серверы недоступны
-        Log::error('All core servers failed', [
-            'environment' => $environment,
-            'servers' => $availableServers
-        ]);
-        
-        throw new \Exception('All core servers are unavailable', 0, $lastException);
+        return $data;
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\BankController;
 use App\Http\Controllers\Api\ExchangeLotController;
 use App\Http\Controllers\Api\BuyTriggerController;
 use App\Http\Controllers\Api\TransactionController;
+use App\Http\Controllers\Api\CoreStatusController;
 
 /*
 |--------------------------------------------------------------------------
@@ -33,6 +34,9 @@ Route::prefix('v1/auth')->group(function () {
 
 // Справочники (без аутентификации)
 Route::prefix('v1')->group(function () {
+    // Core health
+    Route::get('/core/health', [CoreStatusController::class, 'health']);
+
     // Страны
     Route::prefix('countries')->group(function () {
         Route::get('/', [CountryController::class, 'index']);

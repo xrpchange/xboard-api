@@ -83,6 +83,12 @@ return [
         'default_environment' => env('CORE_DEFAULT_ENV', 'development'),
         'timeout' => env('CORE_TIMEOUT', 10),
         'retry_attempts' => env('CORE_RETRY_ATTEMPTS', 3),
+        // Путь для health-check ядра. По умолчанию '/echo.php'.
+        'health_path' => env('CORE_HEALTH_PATH', '/echo.php'),
+        // TTL (в секундах) для кэша последнего удачного сервера
+        'cache_ttl' => env('CORE_CACHE_TTL', 86400),
+        // Хранилище кэша (по умолчанию redis). Если не задано, используется дефолт Laravel
+        'cache_store' => env('CORE_CACHE_STORE', 'redis'),
     ],
 
 ];
