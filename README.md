@@ -84,6 +84,16 @@ php artisan serve
 - `GET /api/v1/currencies/crypto` - Криптовалюты
 - `GET /api/v1/banks` - Список банков
 
+#### Системные (публичные)
+- `GET /api/v1/core/health` — проверка доступности узлов ядра в текущем окружении
+- `GET /api/v1/core/health?env=sandbox` — проверка доступности узлов ядра в окружении `sandbox`
+
+Пример:
+
+```bash
+curl -s "http://localhost:8000/api/v1/core/health?env=sandbox"
+```
+
 #### Доска объявлений (защищенные)
 - `GET /api/v1/exchange-lots` - Список лотов
 - `POST /api/v1/exchange-lots` - Создание лота
@@ -119,6 +129,9 @@ php artisan serve
 - **Отдельный сервис**: XRPChangeCore
 - **Блокчейн**: XRP Ledger
 - **Безопасность**: Физически отдельное оборудование
+
+#### Проверка доступности ядра (в самом ядре)
+В `XRPChangeCore/public/echo.php` должен быть эхо-эндпоинт (по умолчанию `/echo.php`), на который ходит проверка здоровья из XBoard. Путь можно переопределить через переменную окружения `CORE_HEALTH_PATH`.
 
 ## Структура базы данных
 
