@@ -11,14 +11,22 @@ use Illuminate\Support\Facades\Validator;
 /**
  * @OA\Tag(
  *     name="Transactions",
- *     description="API эндпоинты для работы с транзакциями"
+ *     description="Endpoints for managing transactions"
  * )
  */
 
 class TransactionController extends Controller
 {
     /**
-     * Получить список транзакций
+     * @OA\Get(
+     *     path="/transactions",
+     *     summary="List transactions",
+     *     tags={"Transactions"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(name="per_page", in="query", @OA\Schema(type="integer")),
+     *     @OA\Response(response=200, description="Successful response"),
+     *     @OA\Response(response=401, description="Unauthorized")
+     * )
      */
     public function index(Request $request): JsonResponse
     {
@@ -70,7 +78,16 @@ class TransactionController extends Controller
     }
 
     /**
-     * Получить конкретную транзакцию
+     * @OA\Get(
+     *     path="/transactions/{id}",
+     *     summary="Get transaction by ID",
+     *     tags={"Transactions"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *     @OA\Response(response=200, description="Successful response"),
+     *     @OA\Response(response=401, description="Unauthorized"),
+     *     @OA\Response(response=404, description="Not found")
+     * )
      */
     public function show(Transaction $transaction): JsonResponse
     {
@@ -81,7 +98,26 @@ class TransactionController extends Controller
     }
 
     /**
-     * Создать новую транзакцию
+     * @OA\Post(
+     *     path="/transactions",
+     *     summary="Create transaction",
+     *     tags={"Transactions"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"tx_hash","tx_type","from_address","to_address","amount"},
+     *             @OA\Property(property="tx_hash", type="string"),
+     *             @OA\Property(property="tx_type", type="string", enum={"deposit","withdrawal","fee","refund","compensation","sale"}),
+     *             @OA\Property(property="from_address", type="string"),
+     *             @OA\Property(property="to_address", type="string"),
+     *             @OA\Property(property="amount", type="number", format="float"),
+     *         )
+     *     ),
+     *     @OA\Response(response=201, description="Created"),
+     *     @OA\Response(response=401, description="Unauthorized"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
      */
     public function store(Request $request): JsonResponse
     {
@@ -114,7 +150,22 @@ class TransactionController extends Controller
     }
 
     /**
-     * Обновить транзакцию
+     * @OA\Put(
+     *     path="/transactions/{id}",
+     *     summary="Update transaction",
+     *     tags={"Transactions"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", enum={"pending","completed","failed"}),
+     *         )
+     *     ),
+     *     @OA\Response(response=200, description="Updated"),
+     *     @OA\Response(response=401, description="Unauthorized"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
      */
     public function update(Request $request, Transaction $transaction): JsonResponse
     {
@@ -138,7 +189,14 @@ class TransactionController extends Controller
     }
 
     /**
-     * Получить статистику транзакций
+     * @OA\Get(
+     *     path="/transactions/stats",
+     *     summary="Get transactions statistics",
+     *     tags={"Transactions"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Response(response=200, description="Successful response"),
+     *     @OA\Response(response=401, description="Unauthorized")
+     * )
      */
     public function stats(Request $request): JsonResponse
     {

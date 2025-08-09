@@ -11,14 +11,25 @@ use Illuminate\Support\Facades\Validator;
 /**
  * @OA\Tag(
  *     name="Exchange Lots",
- *     description="API эндпоинты для работы с лотами обмена"
+ *     description="Endpoints for managing exchange lots"
  * )
  */
 
 class ExchangeLotController extends Controller
 {
     /**
-     * Получить список лотов обмена
+     * @OA\Get(
+     *     path="/exchange-lots",
+     *     summary="List exchange lots",
+     *     tags={"Exchange Lots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(name="per_page", in="query", @OA\Schema(type="integer")),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Successful response"
+     *     ),
+     *     @OA\Response(response=401, description="Unauthorized")
+     * )
      */
     public function index(Request $request): JsonResponse
     {
@@ -87,7 +98,16 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * Получить конкретный лот
+     * @OA\Get(
+     *     path="/exchange-lots/{id}",
+     *     summary="Get exchange lot by ID",
+     *     tags={"Exchange Lots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *     @OA\Response(response=200, description="Successful response"),
+     *     @OA\Response(response=401, description="Unauthorized"),
+     *     @OA\Response(response=404, description="Not found")
+     * )
      */
     public function show(ExchangeLot $lot): JsonResponse
     {
@@ -98,7 +118,29 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * Создать новый лот
+     * @OA\Post(
+     *     path="/exchange-lots",
+     *     summary="Create exchange lot",
+     *     tags={"Exchange Lots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"crypto_currency_id","wallet_address","sell_currency_type","sell_currency_id","sell_amount","buy_currency_type","buy_currency_id","buy_amount"},
+     *             @OA\Property(property="crypto_currency_id", type="integer"),
+     *             @OA\Property(property="wallet_address", type="string"),
+     *             @OA\Property(property="sell_currency_type", type="string", enum={"fiat","crypto"}),
+     *             @OA\Property(property="sell_currency_id", type="integer"),
+     *             @OA\Property(property="sell_amount", type="number", format="float"),
+     *             @OA\Property(property="buy_currency_type", type="string", enum={"fiat","crypto"}),
+     *             @OA\Property(property="buy_currency_id", type="integer"),
+     *             @OA\Property(property="buy_amount", type="number", format="float"),
+     *         )
+     *     ),
+     *     @OA\Response(response=201, description="Created"),
+     *     @OA\Response(response=401, description="Unauthorized"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
      */
     public function store(Request $request): JsonResponse
     {
@@ -139,7 +181,26 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * Обновить лот
+     * @OA\Put(
+     *     path="/exchange-lots/{id}",
+     *     summary="Update exchange lot",
+     *     tags={"Exchange Lots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             @OA\Property(property="is_active", type="boolean"),
+     *             @OA\Property(property="expires_at", type="string", format="date-time"),
+     *             @OA\Property(property="bank_account", type="string"),
+     *             @OA\Property(property="payment_purpose", type="string"),
+     *             @OA\Property(property="contract_url", type="string"),
+     *         )
+     *     ),
+     *     @OA\Response(response=200, description="Updated"),
+     *     @OA\Response(response=401, description="Unauthorized"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
      */
     public function update(Request $request, ExchangeLot $lot): JsonResponse
     {
@@ -167,7 +228,16 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * Удалить лот
+     * @OA\Delete(
+     *     path="/exchange-lots/{id}",
+     *     summary="Delete exchange lot",
+     *     tags={"Exchange Lots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *     @OA\Response(response=200, description="Deleted"),
+     *     @OA\Response(response=401, description="Unauthorized"),
+     *     @OA\Response(response=404, description="Not found")
+     * )
      */
     public function destroy(ExchangeLot $lot): JsonResponse
     {

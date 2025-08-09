@@ -11,14 +11,22 @@ use Illuminate\Support\Facades\Validator;
 /**
  * @OA\Tag(
  *     name="Buy Triggers",
- *     description="API эндпоинты для работы с триггерами покупки"
+ *     description="Endpoints for managing buy triggers"
  * )
  */
 
 class BuyTriggerController extends Controller
 {
     /**
-     * Получить список триггеров покупки
+     * @OA\Get(
+     *     path="/buy-triggers",
+     *     summary="List buy triggers",
+     *     tags={"Buy Triggers"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(name="per_page", in="query", @OA\Schema(type="integer")),
+     *     @OA\Response(response=200, description="Successful response"),
+     *     @OA\Response(response=401, description="Unauthorized")
+     * )
      */
     public function index(Request $request): JsonResponse
     {
@@ -87,7 +95,16 @@ class BuyTriggerController extends Controller
     }
 
     /**
-     * Получить конкретный триггер
+     * @OA\Get(
+     *     path="/buy-triggers/{id}",
+     *     summary="Get buy trigger by ID",
+     *     tags={"Buy Triggers"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *     @OA\Response(response=200, description="Successful response"),
+     *     @OA\Response(response=401, description="Unauthorized"),
+     *     @OA\Response(response=404, description="Not found")
+     * )
      */
     public function show(BuyTrigger $trigger): JsonResponse
     {
@@ -98,7 +115,26 @@ class BuyTriggerController extends Controller
     }
 
     /**
-     * Создать новый триггер
+     * @OA\Post(
+     *     path="/buy-triggers",
+     *     summary="Create buy trigger",
+     *     tags={"Buy Triggers"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"crypto_currency_id","wallet_address","buy_currency_type","buy_currency_id","buy_amount"},
+     *             @OA\Property(property="crypto_currency_id", type="integer"),
+     *             @OA\Property(property="wallet_address", type="string"),
+     *             @OA\Property(property="buy_currency_type", type="string", enum={"fiat","crypto"}),
+     *             @OA\Property(property="buy_currency_id", type="integer"),
+     *             @OA\Property(property="buy_amount", type="number", format="float"),
+     *         )
+     *     ),
+     *     @OA\Response(response=201, description="Created"),
+     *     @OA\Response(response=401, description="Unauthorized"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
      */
     public function store(Request $request): JsonResponse
     {
@@ -135,7 +171,23 @@ class BuyTriggerController extends Controller
     }
 
     /**
-     * Обновить триггер
+     * @OA\Put(
+     *     path="/buy-triggers/{id}",
+     *     summary="Update buy trigger",
+     *     tags={"Buy Triggers"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             @OA\Property(property="is_active", type="boolean"),
+     *             @OA\Property(property="max_sell_amount", type="number", format="float"),
+     *         )
+     *     ),
+     *     @OA\Response(response=200, description="Updated"),
+     *     @OA\Response(response=401, description="Unauthorized"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
      */
     public function update(Request $request, BuyTrigger $trigger): JsonResponse
     {
@@ -160,7 +212,16 @@ class BuyTriggerController extends Controller
     }
 
     /**
-     * Удалить триггер
+     * @OA\Delete(
+     *     path="/buy-triggers/{id}",
+     *     summary="Delete buy trigger",
+     *     tags={"Buy Triggers"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *     @OA\Response(response=200, description="Deleted"),
+     *     @OA\Response(response=401, description="Unauthorized"),
+     *     @OA\Response(response=404, description="Not found")
+     * )
      */
     public function destroy(BuyTrigger $trigger): JsonResponse
     {
