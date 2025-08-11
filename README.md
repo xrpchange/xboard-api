@@ -243,8 +243,6 @@ xboard/
 - `timeout`: таймаут HTTP-запросов (секунды)
 - `retry_attempts`: число попыток на каждом узле
 - `health_path`: путь для проверки доступности узла (по умолчанию `/echo.php`)
-- `cache_ttl`: TTL кэша индекса (секунды)
-- `cache_store`: стор кэша (например, `redis`). Если стор не найден — используется драйвер по умолчанию
 
 ENV-пример:
 
@@ -253,9 +251,6 @@ CORE_DEFAULT_ENV=development
 CORE_TIMEOUT=10
 CORE_RETRY_ATTEMPTS=3
 CORE_HEALTH_PATH=/echo.php
-CORE_CACHE_TTL=86400
-# Опционально, чтобы принудительно указать стор кэша
-CORE_CACHE_STORE=redis
 ```
 
 ### Health-check в ядре (XRPChangeCore)
@@ -288,13 +283,9 @@ echo json_encode([
 curl -s "http://localhost:8000/api/v1/core/health?env=sandbox"
 ```
 
-### Кэширование (Redis опционально)
+### Кэширование
 
-- Если `CORE_CACHE_STORE` указывает на несуществующий стор, клиент откатывается на драйвер кэша по умолчанию (обычно `file`)
-- Для Redis:
-  - Установите и запустите Redis
-  - В `.env`: `CACHE_DRIVER=redis` или `CORE_CACHE_STORE=redis`, плюс `REDIS_HOST`, `REDIS_PORT`, `REDIS_CLIENT`
-  - Проверьте `config/cache.php` → `stores.redis`
+CoreClient использует файловый кэш Laravel для хранения индекса последнего удачного узла. TTL кэша установлен на 24 часа.
 
 ### Примеры использования
 

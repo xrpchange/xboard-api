@@ -109,24 +109,15 @@ class CoreClient
 
     private function rememberSuccessfulIndex(string $environment, int $index): void
     {
-        $ttl = (int) ($this->coreConfig['cache_ttl'] ?? 86400);
+        // Кэшируем на 24 часа (86400 секунд)
+        $ttl = 86400;
         $this->cache()->put($this->makeCacheKey($environment), $index, $ttl);
     }
 
     private function cache(): CacheRepository
     {
-        $store = $this->coreConfig['cache_store'] ?? null;
-        $defaultStore = config('cache.default');
-
-        if (is_string($store) && $store !== '') {
-            // Если стор указан, но не существует в конфиге, тихо откатываемся на дефолт
-            $stores = config('cache.stores', []);
-            if (array_key_exists($store, $stores)) {
-                return Cache::store($store);
-            }
-        }
-
-        return Cache::store($defaultStore);
+        // Всегда используем дефолтный стор кэша (обычно file)
+        return Cache::store(config('cache.default'));
     }
 
     /**
