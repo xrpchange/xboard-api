@@ -15,6 +15,23 @@ class CoreClient
     public function __construct()
     {
         $this->coreConfig = config('services.core', []);
+        $this->ensureCacheDirectoriesExist();
+    }
+
+    private function ensureCacheDirectoriesExist(): void
+    {
+        $directories = [
+            storage_path('framework/cache/data'),
+            storage_path('framework/sessions'),
+            storage_path('framework/views'),
+            storage_path('logs'),
+        ];
+
+        foreach ($directories as $directory) {
+            if (!file_exists($directory)) {
+                mkdir($directory, 0755, true);
+            }
+        }
     }
 
     /**
@@ -116,8 +133,19 @@ class CoreClient
 
     private function cache(): CacheRepository
     {
-        // Всегда используем дефолтный стор кэша (обычно file)
-        return Cache::store(config('cache.default'));
+        try {
+            // Всегда используем дефолтный стор кэша (обычно file)
+            return Cache::store(config('cache.default'));
+        } catch (\Throwable $e) {
+            // Если что-то пошло не так с кэшем, логируем и возвращаем null
+            Log::warning('Cache store failed, falling back to null', [
+                'error' => $e->getMessage(),
+                'default_store' => config('cache.default')
+            ]);
+            
+            // Возвращаем null store (кэш не будет работать, но приложение не упадёт)
+            return Cache::store('null');
+        }
     }
 
     /**
