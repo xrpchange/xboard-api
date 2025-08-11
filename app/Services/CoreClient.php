@@ -11,27 +11,11 @@ use Illuminate\Support\Facades\Log;
 class CoreClient
 {
     private array $coreConfig;
+    private array $memoryCache = []; // Простой кэш в памяти
 
     public function __construct()
     {
         $this->coreConfig = config('services.core', []);
-        $this->ensureCacheDirectoriesExist();
-    }
-
-    private function ensureCacheDirectoriesExist(): void
-    {
-        $directories = [
-            storage_path('framework/cache/data'),
-            storage_path('framework/sessions'),
-            storage_path('framework/views'),
-            storage_path('logs'),
-        ];
-
-        foreach ($directories as $directory) {
-            if (!file_exists($directory)) {
-                mkdir($directory, 0755, true);
-            }
-        }
     }
 
     /**
@@ -106,7 +90,7 @@ class CoreClient
         }
 
         $cacheKey = $this->makeCacheKey($environment);
-        $cachedIndex = $this->cache()->get($cacheKey);
+        $cachedIndex = $this->memoryCache[$cacheKey] ?? null;
 
         // Перемешиваем все индексы
         shuffle($indices);
@@ -126,26 +110,8 @@ class CoreClient
 
     private function rememberSuccessfulIndex(string $environment, int $index): void
     {
-        // Кэшируем на 24 часа (86400 секунд)
-        $ttl = 86400;
-        $this->cache()->put($this->makeCacheKey($environment), $index, $ttl);
-    }
-
-    private function cache(): CacheRepository
-    {
-        try {
-            // Всегда используем дефолтный стор кэша (обычно file)
-            return Cache::store(config('cache.default'));
-        } catch (\Throwable $e) {
-            // Если что-то пошло не так с кэшем, логируем и возвращаем null
-            Log::warning('Cache store failed, falling back to null', [
-                'error' => $e->getMessage(),
-                'default_store' => config('cache.default')
-            ]);
-            
-            // Возвращаем null store (кэш не будет работать, но приложение не упадёт)
-            return Cache::store('null');
-        }
+        $cacheKey = $this->makeCacheKey($environment);
+        $this->memoryCache[$cacheKey] = $index;
     }
 
     /**
