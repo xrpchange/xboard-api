@@ -37,6 +37,7 @@
                                 ],
                                 "properties": {
                                     "escrow_token": {
+                                        "description": "Escrow token for authentication",
                                         "type": "string",
                                         "example": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
                                     }

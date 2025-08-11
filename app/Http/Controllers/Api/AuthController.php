@@ -22,7 +22,12 @@ class AuthController extends Controller
      *         required=true,
      *         @OA\JsonContent(
      *             required={"escrow_token"},
-     *             @OA\Property(property="escrow_token", type="string", example="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...")
+     *             @OA\Property(
+     *                 property="escrow_token", 
+     *                 type="string", 
+     *                 example="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+     *                 description="Escrow token for authentication"
+     *             )
      *         )
      *     ),
      *     @OA\Response(
