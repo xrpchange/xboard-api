@@ -25,21 +25,8 @@
                 "tags": [
                     "Authentication"
                 ],
-                "summary": "Get Bearer token",
-                "description": "Get Bearer token by escrow token",
+                "summary": "Get bearer token",
                 "operationId": "f3d61420ca095c8a98af8aebfb33c5bc",
-                "parameters": [
-                    {
-                        "name": "escrow_token",
-                        "in": "query",
-                        "description": "Escrow token for authentication",
-                        "required": true,
-                        "schema": {
-                            "type": "string",
-                            "maxLength": 500
-                        }
-                    }
-                ],
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -51,7 +38,7 @@
                                 "properties": {
                                     "escrow_token": {
                                         "type": "string",
-                                        "maxLength": 500
+                                        "example": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
                                     }
                                 },
                                 "type": "object"
@@ -67,16 +54,22 @@
                                 "schema": {
                                     "properties": {
                                         "success": {
-                                            "type": "boolean"
+                                            "type": "boolean",
+                                            "example": true
                                         },
                                         "data": {
                                             "properties": {
                                                 "bearer_token": {
-                                                    "type": "string"
-                                                },
-                                                "expires_at": {
                                                     "type": "string",
-                                                    "format": "date-time"
+                                                    "example": "1|abc123..."
+                                                },
+                                                "wallet_address": {
+                                                    "type": "string",
+                                                    "example": "r123..."
+                                                },
+                                                "crypto_currency": {
+                                                    "type": "string",
+                                                    "example": "XRP"
                                                 }
                                             },
                                             "type": "object"
@@ -92,6 +85,330 @@
                     },
                     "422": {
                         "description": "Validation error"
+                    }
+                }
+            }
+        },
+        "/auth/validate-token": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Validate bearer token",
+                "operationId": "bc4597bd074a05b204271a5990f6b3f9",
+                "responses": {
+                    "200": {
+                        "description": "Token is valid",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "valid": {
+                                                    "type": "boolean",
+                                                    "example": true
+                                                },
+                                                "wallet_address": {
+                                                    "type": "string",
+                                                    "example": "r123..."
+                                                },
+                                                "crypto_currency": {
+                                                    "type": "string",
+                                                    "example": "XRP"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid bearer token"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/buy-triggers": {
+            "get": {
+                "tags": [
+                    "Buy Triggers"
+                ],
+                "summary": "List buy triggers",
+                "operationId": "6df5548f0e675224c584e45fe9c90e5f",
+                "parameters": [
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful response"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Buy Triggers"
+                ],
+                "summary": "Create buy trigger",
+                "operationId": "32d1a423aca3ec775b2edd8f59b3830b",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "crypto_currency_id",
+                                    "wallet_address",
+                                    "buy_currency_type",
+                                    "buy_currency_id",
+                                    "buy_amount"
+                                ],
+                                "properties": {
+                                    "crypto_currency_id": {
+                                        "type": "integer"
+                                    },
+                                    "wallet_address": {
+                                        "type": "string"
+                                    },
+                                    "buy_currency_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "fiat",
+                                            "crypto"
+                                        ]
+                                    },
+                                    "buy_currency_id": {
+                                        "type": "integer"
+                                    },
+                                    "buy_amount": {
+                                        "type": "number",
+                                        "format": "float"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/buy-triggers/{id}": {
+            "get": {
+                "tags": [
+                    "Buy Triggers"
+                ],
+                "summary": "Get buy trigger by ID",
+                "operationId": "d29b62e81e3b521cc76799d4f0916a2d",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful response"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Buy Triggers"
+                ],
+                "summary": "Update buy trigger",
+                "operationId": "60324e9d020be62911384ffd5335dc9f",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "is_active": {
+                                        "type": "boolean"
+                                    },
+                                    "max_sell_amount": {
+                                        "type": "number",
+                                        "format": "float"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Buy Triggers"
+                ],
+                "summary": "Delete buy trigger",
+                "operationId": "d8d1e802281411cecefea62d484e9c06",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deleted"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/core/health": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Core nodes health status",
+                "operationId": "21621c775b41cad9b8644a5858aba70e",
+                "parameters": [
+                    {
+                        "name": "env",
+                        "in": "query",
+                        "description": "Override environment (development|sandbox|production)",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of nodes with health status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "properties": {
+                                                    "name": {
+                                                        "type": "string"
+                                                    },
+                                                    "url": {
+                                                        "type": "string"
+                                                    },
+                                                    "status": {
+                                                        "type": "integer",
+                                                        "nullable": true
+                                                    },
+                                                    "ok": {
+                                                        "type": "boolean"
+                                                    }
+                                                },
+                                                "type": "object"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -180,6 +497,452 @@
                         }
                     }
                 }
+            }
+        },
+        "/exchange-lots": {
+            "get": {
+                "tags": [
+                    "Exchange Lots"
+                ],
+                "summary": "List exchange lots",
+                "operationId": "e65ba2e5abf7300182e37ba63be951ea",
+                "parameters": [
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful response"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Exchange Lots"
+                ],
+                "summary": "Create exchange lot",
+                "operationId": "0675868f92a3f73bf3cd68178f1e5725",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "crypto_currency_id",
+                                    "wallet_address",
+                                    "sell_currency_type",
+                                    "sell_currency_id",
+                                    "sell_amount",
+                                    "buy_currency_type",
+                                    "buy_currency_id",
+                                    "buy_amount"
+                                ],
+                                "properties": {
+                                    "crypto_currency_id": {
+                                        "type": "integer"
+                                    },
+                                    "wallet_address": {
+                                        "type": "string"
+                                    },
+                                    "sell_currency_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "fiat",
+                                            "crypto"
+                                        ]
+                                    },
+                                    "sell_currency_id": {
+                                        "type": "integer"
+                                    },
+                                    "sell_amount": {
+                                        "type": "number",
+                                        "format": "float"
+                                    },
+                                    "buy_currency_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "fiat",
+                                            "crypto"
+                                        ]
+                                    },
+                                    "buy_currency_id": {
+                                        "type": "integer"
+                                    },
+                                    "buy_amount": {
+                                        "type": "number",
+                                        "format": "float"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/exchange-lots/{id}": {
+            "get": {
+                "tags": [
+                    "Exchange Lots"
+                ],
+                "summary": "Get exchange lot by ID",
+                "operationId": "cacdfd65e46ccbb0ad3b6ad1b516077b",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful response"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Exchange Lots"
+                ],
+                "summary": "Update exchange lot",
+                "operationId": "6cfcbf42360e069e030111fb599dadb3",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "is_active": {
+                                        "type": "boolean"
+                                    },
+                                    "expires_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "bank_account": {
+                                        "type": "string"
+                                    },
+                                    "payment_purpose": {
+                                        "type": "string"
+                                    },
+                                    "contract_url": {
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Exchange Lots"
+                ],
+                "summary": "Delete exchange lot",
+                "operationId": "69ce00a3480eeafadd230939bf71347d",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deleted"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/transactions": {
+            "get": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "List transactions",
+                "operationId": "985f8d6a4ee65fbeaf1513cb4f53a3e8",
+                "parameters": [
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful response"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Create transaction",
+                "operationId": "ab25dfb146a297963c806c61ebc53c40",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "tx_hash",
+                                    "tx_type",
+                                    "from_address",
+                                    "to_address",
+                                    "amount"
+                                ],
+                                "properties": {
+                                    "tx_hash": {
+                                        "type": "string"
+                                    },
+                                    "tx_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "deposit",
+                                            "withdrawal",
+                                            "fee",
+                                            "refund",
+                                            "compensation",
+                                            "sale"
+                                        ]
+                                    },
+                                    "from_address": {
+                                        "type": "string"
+                                    },
+                                    "to_address": {
+                                        "type": "string"
+                                    },
+                                    "amount": {
+                                        "type": "number",
+                                        "format": "float"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/transactions/{id}": {
+            "get": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Get transaction by ID",
+                "operationId": "0cef9d26f188e69308596914577e6835",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful response"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Update transaction",
+                "operationId": "b9f13a843074d3572be955eca31a8791",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "pending",
+                                            "completed",
+                                            "failed"
+                                        ]
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/transactions/stats": {
+            "get": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Get transactions statistics",
+                "operationId": "9314a000e7044c498b8afdaad9f83664",
+                "responses": {
+                    "200": {
+                        "description": "Successful response"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
             }
         }
     },
@@ -581,6 +1344,10 @@
     },
     "tags": [
         {
+            "name": "Buy Triggers",
+            "description": "Endpoints for managing buy triggers"
+        },
+        {
             "name": "Countries",
             "description": "API endpoints for countries"
         },
@@ -589,8 +1356,20 @@
             "description": "API эндпоинты для работы с валютами"
         },
         {
+            "name": "Exchange Lots",
+            "description": "Endpoints for managing exchange lots"
+        },
+        {
+            "name": "Transactions",
+            "description": "Endpoints for managing transactions"
+        },
+        {
             "name": "Authentication",
             "description": "Authentication"
+        },
+        {
+            "name": "System",
+            "description": "System"
         }
     ]
 }
