@@ -111,10 +111,10 @@ php artisan serve
 - **API**: REST API с Bearer-токенами
 - **Документация**: Swagger/OpenAPI 3.0
 
-### Frontend (планируется)
-- **Android**: Kotlin
-- **iOS**: Swift
-- **Веб**: Vue.js/React
+### Frontend
+- **Android**: Kotlin - [Документация клиента](docs/CLIENT_README.md)
+- **iOS**: Swift (планируется)
+- **Веб**: Vue.js/React (планируется)
 
 ### Ядро системы
 - **Отдельный сервис**: XRPChangeCore
@@ -204,6 +204,7 @@ xboard/
 ## Поддержка
 
 - **План работы**: [docs/WORK_PLAN.md](docs/WORK_PLAN.md)
+- **Клиент Android**: [docs/CLIENT_README.md](docs/CLIENT_README.md)
 - **Документация**: [docs/](docs/)
 - **API**: [docs/api_swagger.yaml](docs/api_swagger.yaml)
 - **Задачи**: [docs/task.md](docs/task.md)
