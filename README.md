@@ -84,15 +84,6 @@ php artisan serve
 - `GET /api/v1/currencies/crypto` - Криптовалюты
 - `GET /api/v1/banks` - Список банков
 
-#### Системные (публичные)
-- `GET /api/v1/core/health` — проверка доступности узлов ядра в текущем окружении
-- `GET /api/v1/core/health?env=sandbox` — проверка доступности узлов ядра в окружении `sandbox`
-
-Пример:
-
-```bash
-curl -s "http://localhost:8000/api/v1/core/health?env=sandbox"
-```
 
 #### Доска объявлений (защищенные)
 - `GET /api/v1/exchange-lots` - Список лотов
@@ -212,6 +203,7 @@ xboard/
 
 ## Поддержка
 
+- **План работы**: [docs/WORK_PLAN.md](docs/WORK_PLAN.md)
 - **Документация**: [docs/](docs/)
 - **API**: [docs/api_swagger.yaml](docs/api_swagger.yaml)
 - **Задачи**: [docs/task.md](docs/task.md)
@@ -224,79 +216,49 @@ xboard/
 4. Отправьте в ветку (`git push origin feature/amazing-feature`)
 5. Откройте Pull Request
 
-## Доступ к ядру (CoreClient)
+## Доступ к ядру
 
-Универсальный клиент `CoreClient` обеспечивает отказоустойчивый доступ к ядру (XRPChangeCore):
-
-- Случайный выбор узла из `config('services.core.servers')` любой структуры
-- Кэш индекса последнего удачного узла (TTL настраивается)
-- Повторные попытки и таймауты настраиваются
-- Health-check всех узлов окружения по настраиваемому пути
-- Универсальный метод `requestJson()` и специализированные обёртки (например, `checkTokenBalance()`)
+Простое обращение к ядру (XRPChangeCore) через HTTP клиент Laravel:
 
 ### Конфигурация ядра
 
 `config/services.php` → секция `core`:
 
-- `servers`: список узлов по окружениям; конечные узлы содержат `url` и (опционально) `key`
-- `default_environment`: окружение по умолчанию (`development|sandbox|production`)
+- `url`: URL ядра
+- `key`: ключ авторизации (опционально)
 - `timeout`: таймаут HTTP-запросов (секунды)
-- `retry_attempts`: число попыток на каждом узле
-- `health_path`: путь для проверки доступности узла (по умолчанию `/echo.php`)
 
 ENV-пример:
 
 ```env
-CORE_DEFAULT_ENV=development
+CORE_URL=http://api.core.xrpchange.site
+CORE_KEY=your_api_key
 CORE_TIMEOUT=10
-CORE_RETRY_ATTEMPTS=3
-CORE_HEALTH_PATH=/echo.php
 ```
-
-### Health-check в ядре (XRPChangeCore)
-
-В `XRPChangeCore/public/echo.php` должен быть публичный эхо-эндпоинт (по умолчанию `/echo.php`):
-
-```php
-<?php
-declare(strict_types=1);
-header('Content-Type: application/json; charset=utf-8');
-http_response_code(200);
-echo json_encode([
-  'ok' => true,
-  'service' => 'XRPChangeCore',
-  'time' => gmdate('c'),
-  'remote_addr' => $_SERVER['REMOTE_ADDR'] ?? null,
-]);
-```
-
-Путь можно переопределить через `CORE_HEALTH_PATH`.
-
-### Публичный эндпоинт статуса узлов
-
-- `GET /api/v1/core/health` — проверка узлов текущего окружения
-- `GET /api/v1/core/health?env=sandbox` — проверка узлов окружения `sandbox`
-
-Пример:
-
-```bash
-curl -s "http://localhost:8000/api/v1/core/health?env=sandbox"
-```
-
-### Кэширование
-
-CoreClient использует файловый кэш Laravel для хранения индекса последнего удачного узла. TTL кэша установлен на 24 часа.
 
 ### Примеры использования
 
 ```php
-use App\Services\CoreClient;
+use Illuminate\Support\Facades\Http;
 
-public function example(CoreClient $coreClient): array
+public function checkTokenBalance(string $token): array
 {
-    $data = $coreClient->requestJson('POST', '/api/anything', [ 'foo' => 'bar' ]);
-    $balance = $coreClient->checkTokenBalance($collateralToken);
-    $statuses = $coreClient->healthCheck('sandbox');
-    return compact('data', 'balance', 'statuses');
+    $coreUrl = config('services.core.url');
+    $coreKey = config('services.core.key');
+    $timeout = config('services.core.timeout', 10);
+
+    $request = Http::timeout($timeout);
+    
+    if (!empty($coreKey)) {
+        $request = $request->withHeaders([
+            'X-Core-Key' => $coreKey,
+        ]);
+    }
+
+    $response = $request->post($coreUrl . '/api/tokens/balance', [
+        'token' => $token,
+    ]);
+
+    return $response->json();
 }
 ```

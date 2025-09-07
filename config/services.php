@@ -36,55 +36,9 @@ return [
     ],
 
     'core' => [
-        'servers' => [
-            'development' => [
-                'sandbox' => [
-                    'core' => [
-                        'url' => env('CORE_DEVELOPMENT_SANDBOX_URL', 'http://sandbox.api.core.xrpchange.site'),
-                        'key' => env('CORE_DEVELOPMENT_SANDBOX_KEY', ''),
-                    ],
-                ],
-                'production' => [
-                    'core' => [
-                        'url' => env('CORE_DEVELOPMENT_PRODUCTION_URL', 'http://api.core.xrpchange.site'),
-                        'key' => env('CORE_DEVELOPMENT_PRODUCTION_KEY', ''),
-                    ],
-                ],
-            ],
-            'sandbox' => [
-                'core1' => [
-                    'url' => env('CORE_SANDBOX_CORE1_URL', 'http://sandbox.core1.xrpchange.site'),
-                    'key' => env('CORE_SANDBOX_CORE1_KEY', ''),
-                ],
-                'core2' => [
-                    'url' => env('CORE_SANDBOX_CORE2_URL', 'http://sandbox.core2.xrpchange.site'),
-                    'key' => env('CORE_SANDBOX_CORE2_KEY', ''),
-                ],
-                'core3' => [
-                    'url' => env('CORE_SANDBOX_CORE3_URL', 'http://sandbox.core3.xrpchange.site'),
-                    'key' => env('CORE_SANDBOX_CORE3_KEY', ''),
-                ],
-            ],
-            'production' => [
-                'core1' => [
-                    'url' => env('CORE_PRODUCTION_CORE1_URL', 'http://prod.core1.xrpchange.site'),
-                    'key' => env('CORE_PRODUCTION_CORE1_KEY', ''),
-                ],
-                'core2' => [
-                    'url' => env('CORE_PRODUCTION_CORE2_URL', 'http://prod.core2.xrpchange.site'),
-                    'key' => env('CORE_PRODUCTION_CORE2_KEY', ''),
-                ],
-                'core3' => [
-                    'url' => env('CORE_PRODUCTION_CORE3_URL', 'http://prod.core3.xrpchange.site'),
-                    'key' => env('CORE_PRODUCTION_CORE3_KEY', ''),
-                ],
-            ],
-        ],
-        'default_environment' => env('CORE_DEFAULT_ENV', 'development'),
+        'url' => env('CORE_URL', 'http://api.core.xrpchange.site'),
+        'key' => env('CORE_KEY', ''),
         'timeout' => env('CORE_TIMEOUT', 10),
-        'retry_attempts' => env('CORE_RETRY_ATTEMPTS', 3),
-        // Путь для health-check ядра. По умолчанию '/echo.php'.
-        'health_path' => env('CORE_HEALTH_PATH', '/echo.php'),
     ],
 
 ];

@@ -5,23 +5,39 @@ namespace App\Services;
 use App\Exceptions\InvalidTokenException;
 use App\Exceptions\UnsupportedCurrencyException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 class EscrowTokenService
 {
-    private CoreClient $coreClient;
-
-    public function __construct(CoreClient $coreClient)
-    {
-        $this->coreClient = $coreClient;
-    }
+    public function __construct() {}
 
     /**
      * Validate escrow token through core
      */
     public function validateToken(string $token): array
     {
+        $coreUrl = config('services.core.url');
+        $coreKey = config('services.core.key');
+        $timeout = config('services.core.timeout', 10);
+
         try {
-            $data = $this->coreClient->checkTokenBalance($token);
+            $request = Http::timeout($timeout);
+            
+            if (!empty($coreKey)) {
+                $request = $request->withHeaders([
+                    'X-Core-Key' => $coreKey,
+                ]);
+            }
+
+            $response = $request->post($coreUrl . '/api/tokens/balance', [
+                'token' => $token,
+            ]);
+
+            if (!$response->successful()) {
+                throw new InvalidTokenException('Token is invalid or unavailable');
+            }
+
+            $data = $response->json();
         } catch (\Throwable $e) {
             throw new InvalidTokenException('Token is invalid or unavailable');
         }

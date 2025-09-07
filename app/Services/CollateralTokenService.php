@@ -6,50 +6,51 @@ use App\Models\CryptoCurrency;
 use App\Models\ExchangeLot;
 use App\Models\UserToken;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
 
 class CollateralTokenService
 {
-    private CoreClient $coreClient;
-
-    public function __construct(CoreClient $coreClient)
-    {
-        $this->coreClient = $coreClient;
-    }
+    public function __construct() {}
 
     /**
-     * Определить окружение по домену запроса
+     * Проверить баланс залогового токена через простое обращение к ядру
      */
-    private function determineEnvironment(): string
+    public function checkTokenBalance(string $token): array
     {
-        $host = request()->getHost();
-        
-        // Если домен xrpchange.site
-        if (str_contains($host, 'xrpchange.site')) {
-            // Если содержит sandbox - песочница для клиентов
-            if (str_contains($host, 'sandbox')) {
-                return 'sandbox';
+        $coreUrl = config('services.core.url');
+        $coreKey = config('services.core.key');
+        $timeout = config('services.core.timeout', 10);
+
+        try {
+            $request = Http::timeout($timeout);
+            
+            if (!empty($coreKey)) {
+                $request = $request->withHeaders([
+                    'X-Core-Key' => $coreKey,
+                ]);
             }
-            // Иначе - тестовая среда для разработчика
-            return 'development';
-        }
-        
-        // Если домен не xrpchange.site - продакшен
-        return 'production';
-    }
 
-    /**
-     * Проверить баланс залогового токена через универсальный клиент ядра
-     */
-    public function checkTokenBalance(string $token, string $environment = null): array
-    {
-        $env = $environment ?? $this->determineEnvironment();
-        $data = $this->coreClient->checkTokenBalance($token, $env);
-        if (!isset($data['total'])) {
-            Log::warning('Token balance response missing total', [
-                'environment' => $env,
+            $response = $request->post($coreUrl . '/api/tokens/balance', [
+                'token' => $token,
             ]);
+
+            if (!$response->successful()) {
+                throw new \Exception('Core request failed with status: ' . $response->status());
+            }
+
+            $data = $response->json();
+            
+            if (!isset($data['total'])) {
+                Log::warning('Token balance response missing total');
+            }
+            
+            return $data;
+        } catch (\Exception $e) {
+            Log::error('Token balance check failed', [
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
         }
-        return $data;
     }
 
     /**
@@ -118,7 +119,7 @@ class CollateralTokenService
         // Расшифровать залоговый токен
         $tokenData = $this->decryptToken($collateralToken);
         
-        // Проверить баланс через ядро (окружение определяется конфигурацией приложения)
+        // Проверить баланс через ядро
         $balanceData = $this->checkTokenBalance($collateralToken);
         
         // Получить или создать лот обмена
