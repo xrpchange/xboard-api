@@ -87,6 +87,27 @@ sudo rm /etc/nginx/sites-enabled/default
 sudo nginx -t
 ```
 
+### ⚠️ Важно: Настройка upstream
+
+Если вы хотите использовать upstream для балансировки нагрузки, добавьте в `/etc/nginx/nginx.conf` в блок `http`:
+
+```nginx
+http {
+    # ... existing configuration ...
+    
+    upstream xboard_backend {
+        server 192.168.1.31:80;
+        keepalive 32;
+        keepalive_requests 100;
+        keepalive_timeout 60s;
+    }
+    
+    # ... rest of configuration ...
+}
+```
+
+Затем в конфигурации XBoard замените `http://192.168.1.31:80` на `http://xboard_backend`.
+
 ### 📂 Создание директории для Certbot
 
 ```bash
