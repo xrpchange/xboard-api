@@ -17,11 +17,27 @@ class CollateralTokenService
      */
     public function checkTokenBalance(string $token): array
     {
-        $coreUrl = config('services.core.url');
-        $coreKey = config('services.core.key');
-        $timeout = config('services.core.timeout', 10);
+        // Определяем окружение и выбираем соответствующий URL ядра
+        $isProduction = config('app.env') === 'production';
+        $coreConfig = $isProduction ? 'services.core_production' : 'services.core';
+        
+        $coreUrl = config($coreConfig . '.url');
+        $coreKey = config($coreConfig . '.key');
+        $timeout = config($coreConfig . '.timeout', 10);
+
+        Log::info('Checking token balance', [
+            'core_url' => $coreUrl,
+            'environment' => $isProduction ? 'production' : 'sandbox'
+        ]);
 
         try {
+            // Сначала проверим доступность ядра через echo.php
+            $echoResponse = Http::timeout(5)->get($coreUrl . '/echo.php');
+            
+            if (!$echoResponse->successful()) {
+                throw new \Exception('Core echo check failed with status: ' . $echoResponse->status());
+            }
+
             $request = Http::timeout($timeout);
             
             if (!empty($coreKey)) {
@@ -30,8 +46,10 @@ class CollateralTokenService
                 ]);
             }
 
-            $response = $request->post($coreUrl . '/api/tokens/balance', [
-                'token' => $token,
+            // Новый API эндпоинт с crypto_type
+            $response = $request->post($coreUrl . '/api/escrow-tokens/balance', [
+                'crypto_type' => 'xrp',
+                'escrow_token' => $token,
             ]);
 
             if (!$response->successful()) {
@@ -47,7 +65,8 @@ class CollateralTokenService
             return $data;
         } catch (\Exception $e) {
             Log::error('Token balance check failed', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'core_url' => $coreUrl
             ]);
             throw $e;
         }
