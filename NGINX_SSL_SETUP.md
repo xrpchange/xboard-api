@@ -6,21 +6,22 @@
 
 - [Быстрый старт](#-быстрый-старт)
 - [Установка компонентов](#1-установка-nginx-и-certbot)
-- [Настройка Nginx](#2-настройка-nginx)
+- [Настройка Nginx (временная)](#2-настройка-nginx-временная-конфигурация)
 - [Получение SSL сертификатов](#4-получение-ssl-сертификатов)
-- [Автоматическое обновление](#5-настройка-автоматического-обновления-сертификатов)
-- [Проверка работы](#6-проверка-работы)
-- [Мониторинг](#8-мониторинг-и-логи)
-- [Troubleshooting](#10-troubleshooting)
+- [Замена на SSL конфигурацию](#5-замена-на-ssl-конфигурацию)
+- [Автоматическое обновление](#6-настройка-автоматического-обновления-сертификатов)
+- [Проверка работы](#7-проверка-работы)
+- [Мониторинг](#9-мониторинг-и-логи)
+- [Troubleshooting](#11-troubleshooting)
 
 ## 🚀 Быстрый старт
 
 ```bash
-# 1. Скопировать конфигурацию на сервер
-scp nginx-xboard.conf user@server:/path/to/xboard/
+# 1. Скопировать конфигурации на сервер
+scp nginx-xboard-temp.conf nginx-xboard.conf user@server:/path/to/xboard/
 
-# 2. Настроить Nginx и получить SSL сертификаты
-sudo cp nginx-xboard.conf /etc/nginx/sites-available/xboard
+# 2. Настроить временную конфигурацию (без SSL)
+sudo cp nginx-xboard-temp.conf /etc/nginx/sites-available/xboard
 sudo ln -s /etc/nginx/sites-available/xboard /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 
@@ -33,7 +34,11 @@ sudo certbot certonly --webroot \
   --agree-tos \
   --non-interactive
 
-# 4. Проверить работу
+# 4. Заменить на SSL конфигурацию
+sudo cp nginx-xboard.conf /etc/nginx/sites-available/xboard
+sudo nginx -t && sudo systemctl reload nginx
+
+# 5. Проверить работу
 curl https://sandbox.api.xrpchange.site/api/v1/countries
 ```
 
@@ -69,13 +74,13 @@ certbot --version
 sudo systemctl status nginx
 ```
 
-## 2. Настройка Nginx
+## 2. Настройка Nginx (временная конфигурация)
 
-### 📁 Копирование конфигурации
+### 📁 Копирование временной конфигурации
 
 ```bash
-# Копируем конфигурацию XBoard
-sudo cp nginx-xboard.conf /etc/nginx/sites-available/xboard
+# Копируем временную конфигурацию XBoard (без SSL)
+sudo cp nginx-xboard-temp.conf /etc/nginx/sites-available/xboard
 
 # Создаем символическую ссылку
 sudo ln -s /etc/nginx/sites-available/xboard /etc/nginx/sites-enabled/
@@ -86,6 +91,8 @@ sudo rm /etc/nginx/sites-enabled/default
 # Проверяем конфигурацию
 sudo nginx -t
 ```
+
+> **⚠️ Важно:** Используем временную конфигурацию без SSL для получения сертификатов
 
 ### ⚠️ Важно: Настройка upstream
 
@@ -216,6 +223,23 @@ sudo ls -la /etc/letsencrypt/live/api.xrpchange.site/
 sudo certbot certificates
 ```
 
+## 5. Замена на SSL конфигурацию
+
+### 🔄 Установка SSL конфигурации
+
+```bash
+# Заменяем временную конфигурацию на SSL версию
+sudo cp nginx-xboard.conf /etc/nginx/sites-available/xboard
+
+# Проверяем SSL конфигурацию
+sudo nginx -t
+
+# Перезапускаем Nginx с SSL
+sudo systemctl reload nginx
+```
+
+> **✅ Теперь SSL сертификаты существуют, и Nginx может их загрузить!**
+
 ### 🔧 Особенности SSL конфигурации
 
 SSL конфигурация включает:
@@ -237,7 +261,7 @@ sudo netstat -tlnp | grep nginx
 # :443 (HTTPS)
 ```
 
-## 5. Настройка автоматического обновления сертификатов
+## 6. Настройка автоматического обновления сертификатов
 
 ### ⏰ Создание cron задачи
 
@@ -269,7 +293,7 @@ sudo certbot renew
 sudo certbot renew --force-renewal
 ```
 
-## 6. Проверка работы
+## 7. Проверка работы
 
 ### 🔄 Проверка HTTP редиректа
 
@@ -342,7 +366,7 @@ echo " (должно быть true)"
 echo "✅ Проверка завершена!"
 ```
 
-## 7. Настройка файрвола
+## 8. Настройка файрвола
 
 ### 🔥 Настройка UFW
 
@@ -366,7 +390,7 @@ sudo netstat -tulpn | grep nginx
 sudo iftop -i eth0
 ```
 
-## 8. Мониторинг и логи
+## 9. Мониторинг и логи
 
 ### 📝 Просмотр логов Nginx
 
@@ -414,7 +438,7 @@ ps aux | grep nginx
 sudo netstat -an | grep :443 | wc -l
 ```
 
-## 9. Обновление конфигурации XBoard
+## 10. Обновление конфигурации XBoard
 
 После настройки HTTPS нужно обновить настройки в XBoard:
 
@@ -441,7 +465,7 @@ APP_URL=https://sandbox.api.xrpchange.site
 ],
 ```
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 ### ❌ Проблемы с сертификатами
 
@@ -496,7 +520,7 @@ sudo netstat -an | grep :80
 | 404 Not Found | Проверить конфигурацию location |
 | Таймауты | Увеличить proxy_read_timeout |
 
-## 11. Безопасность
+## 12. Безопасность
 
 ### 🔒 Заголовки безопасности
 
@@ -521,7 +545,7 @@ sudo netstat -an | grep :80
 # limit_req zone=api burst=20 nodelay;
 ```
 
-## 12. Заключение
+## 13. Заключение
 
 ### ✅ Что настроено
 
