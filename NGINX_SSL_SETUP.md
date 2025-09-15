@@ -242,13 +242,112 @@ sudo systemctl reload nginx
 
 ### 🔧 Особенности SSL конфигурации
 
-SSL конфигурация включает:
-- ✅ **Автоматический редирект** HTTP → HTTPS
-- ✅ **Поддержка HTTP/2** (использует `http2 on;` вместо deprecated `listen ... http2`)
-- ✅ **CORS заголовки** для API
-- ✅ **Заголовки безопасности** (HSTS, X-Frame-Options, etc.)
-- ✅ **Проксирование** на XBoard (192.168.1.31:80)
-- ✅ **Keepalive** для оптимизации соединений
+**Полная конфигурация Nginx для XBoard API включает:**
+
+#### 🌐 Домены и SSL
+- **sandbox.api.xrpchange.site** - sandbox окружение
+- **api.xrpchange.site** - production окружение  
+- **Общий SSL сертификат** для обоих доменов (создан с флагом `--expand`)
+- **Автоматический редирект** HTTP → HTTPS
+- **HTTP/2 поддержка** (современный `http2 on;` синтаксис)
+
+#### 🔒 Безопасность
+- **TLS 1.2 и 1.3** протоколы
+- **Современные шифры** (ECDHE, AES-GCM, ChaCha20-Poly1305)
+- **HSTS заголовки** (принудительный HTTPS на 1 год)
+- **X-Frame-Options: DENY** (защита от clickjacking)
+- **X-Content-Type-Options: nosniff** (защита от MIME sniffing)
+- **X-XSS-Protection** (защита от XSS атак)
+- **Referrer-Policy** (контроль referrer информации)
+
+#### 🚀 Производительность
+- **Keepalive соединения** (32 соединения, 100 запросов, 60s таймаут)
+- **HTTP/1.1 проксирование** с оптимизацией
+- **Отключение буферизации** для real-time ответов
+- **Таймауты 60 секунд** для всех операций
+
+#### 🌍 CORS и API
+- **CORS заголовки** для cross-origin запросов
+- **Preflight обработка** (OPTIONS запросы)
+- **Кэширование preflight** на 24 часа
+- **Поддержка всех HTTP методов** (GET, POST, PUT, DELETE, OPTIONS)
+- **Authorization заголовки** для Bearer токенов
+
+#### 📡 Проксирование
+- **Прямое проксирование** на 192.168.1.31:80
+- **Правильные заголовки** (Host, X-Real-IP, X-Forwarded-*)
+- **Сохранение схемы** (HTTP/HTTPS)
+- **Обработка ошибок** с перехватом
+
+#### 📁 Структура файлов
+```
+/etc/letsencrypt/live/api.xrpchange.site/
+├── fullchain.pem    # Полная цепочка сертификатов
+├── privkey.pem      # Приватный ключ
+├── cert.pem         # Сертификат сервера
+└── chain.pem        # Промежуточные сертификаты
+```
+
+### 📋 Детальное описание конфигурации
+
+#### 🔧 Основные блоки конфигурации
+
+**1. HTTP редирект сервер (порт 80)**
+- Обрабатывает все HTTP запросы
+- Редиректит на HTTPS с сохранением домена
+- Обслуживает ACME challenge для обновления сертификатов
+- Поддерживает оба домена: sandbox и production
+
+**2. HTTPS sandbox сервер (порт 443)**
+- Обрабатывает HTTPS запросы для `sandbox.api.xrpchange.site`
+- Использует общий SSL сертификат
+- Проксирует запросы на XBoard (192.168.1.31:80)
+- Специальная обработка API запросов с CORS
+
+**3. HTTPS production сервер (порт 443)**
+- Обрабатывает HTTPS запросы для `api.xrpchange.site`
+- Идентичная конфигурация с sandbox для консистентности
+- Использует тот же SSL сертификат
+- Проксирует на тот же XBoard сервер
+
+#### 🛡️ Настройки безопасности
+
+**SSL/TLS конфигурация:**
+```nginx
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:...;
+ssl_prefer_server_ciphers off;
+ssl_session_cache shared:SSL:10m;
+ssl_session_timeout 10m;
+ssl_session_tickets off;
+```
+
+**Заголовки безопасности:**
+- `Strict-Transport-Security` - принудительный HTTPS
+- `X-Frame-Options: DENY` - защита от iframe
+- `X-Content-Type-Options: nosniff` - защита от MIME атак
+- `X-XSS-Protection` - защита от XSS
+- `Referrer-Policy` - контроль referrer
+
+#### 🌐 CORS настройки
+
+**Для API эндпоинтов (`/api/*`):**
+- Разрешенные методы: GET, POST, PUT, DELETE, OPTIONS
+- Разрешенные заголовки: Authorization, Content-Type, X-Requested-With
+- Поддержка preflight запросов (OPTIONS)
+- Кэширование preflight на 24 часа
+
+#### ⚡ Оптимизация производительности
+
+**Keepalive настройки:**
+- 32 постоянных соединения
+- 100 запросов на соединение
+- 60 секунд таймаут
+
+**Проксирование:**
+- HTTP/1.1 с оптимизацией
+- Отключение буферизации для real-time
+- Таймауты 60 секунд для всех операций
 
 ### 🔄 Проверка работы
 
