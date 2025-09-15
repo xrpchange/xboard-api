@@ -36,13 +36,13 @@ return [
     ],
 
     'core' => [
-        'url' => env('CORE_URL', 'http://sandbox.api.core.xrpchange.site'),
+        'url' => env('CORE_URL', 'https://sandbox.api.core.xrpchange.site'),
         'key' => env('CORE_KEY', ''),
         'timeout' => env('CORE_TIMEOUT', 10),
     ],
     
     'core_production' => [
-        'url' => env('CORE_PRODUCTION_URL', 'http://api.core.xrpchange.site'),
+        'url' => env('CORE_PRODUCTION_URL', 'https://api.core.xrpchange.site'),
         'key' => env('CORE_PRODUCTION_KEY', ''),
         'timeout' => env('CORE_PRODUCTION_TIMEOUT', 10),
     ],
