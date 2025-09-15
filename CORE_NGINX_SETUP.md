@@ -22,7 +22,7 @@ scp nginx-core-temp.conf nginx-core.conf user@server:/path/to/core/
 
 # 2. Настроить временную конфигурацию (без SSL)
 sudo cp nginx-core-temp.conf /etc/nginx/sites-available/core
-sudo ln -s /etc/nginx/sites-available/core /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/core /etc/nginx/sites-enabled/corecore
 sudo nginx -t && sudo systemctl reload nginx
 
 # 3. Получить SSL сертификаты
@@ -83,7 +83,7 @@ sudo systemctl status nginx
 sudo cp nginx-core-temp.conf /etc/nginx/sites-available/core
 
 # Создаем символическую ссылку
-sudo ln -s /etc/nginx/sites-available/core /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/core /etc/nginx/sites-enabled/core
 
 # Удаляем дефолтную конфигурацию
 sudo rm /etc/nginx/sites-enabled/default

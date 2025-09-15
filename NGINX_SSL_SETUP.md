@@ -22,7 +22,7 @@ scp nginx-xboard-temp.conf nginx-xboard.conf user@server:/path/to/xboard/
 
 # 2. Настроить временную конфигурацию (без SSL)
 sudo cp nginx-xboard-temp.conf /etc/nginx/sites-available/xboard
-sudo ln -s /etc/nginx/sites-available/xboard /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/xboard /etc/nginx/sites-enabled/xboard
 sudo nginx -t && sudo systemctl reload nginx
 
 # 3. Получить SSL сертификаты
@@ -83,7 +83,7 @@ sudo systemctl status nginx
 sudo cp nginx-xboard-temp.conf /etc/nginx/sites-available/xboard
 
 # Создаем символическую ссылку
-sudo ln -s /etc/nginx/sites-available/xboard /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/xboard /etc/nginx/sites-enabled/xboard
 
 # Удаляем дефолтную конфигурацию
 sudo rm /etc/nginx/sites-enabled/default
