@@ -7,22 +7,33 @@
 - [Быстрый старт](#-быстрый-старт)
 - [Установка компонентов](#1-установка-nginx-и-certbot)
 - [Настройка Nginx](#2-настройка-nginx)
-- [Получение SSL сертификатов](#3-получение-ssl-сертификатов)
-- [Автоматическое обновление](#4-настройка-автоматического-обновления-сертификатов)
-- [Проверка работы](#5-проверка-работы)
-- [Мониторинг](#6-мониторинг-и-логи)
-- [Troubleshooting](#7-troubleshooting)
+- [Получение SSL сертификатов](#4-получение-ssl-сертификатов)
+- [Автоматическое обновление](#5-настройка-автоматического-обновления-сертификатов)
+- [Проверка работы](#6-проверка-работы)
+- [Мониторинг](#8-мониторинг-и-логи)
+- [Troubleshooting](#10-troubleshooting)
 
 ## 🚀 Быстрый старт
 
 ```bash
-# 1. Скопировать файлы на сервер
-scp nginx-xboard.conf setup-nginx-ssl.sh user@server:/path/to/xboard/
+# 1. Скопировать конфигурацию на сервер
+scp nginx-xboard.conf user@server:/path/to/xboard/
 
-# 2. Запустить автоматическую настройку
-sudo bash setup-nginx-ssl.sh
+# 2. Настроить Nginx и получить SSL сертификаты
+sudo cp nginx-xboard.conf /etc/nginx/sites-available/xboard
+sudo ln -s /etc/nginx/sites-available/xboard /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
 
-# 3. Проверить работу
+# 3. Получить SSL сертификаты
+sudo certbot certonly --webroot \
+  -w /var/www/certbot \
+  -d sandbox.api.xrpchange.site \
+  -d api.xrpchange.site \
+  --email admin@xrpchange.site \
+  --agree-tos \
+  --non-interactive
+
+# 4. Проверить работу
 curl https://sandbox.api.xrpchange.site/api/v1/countries
 ```
 
@@ -130,7 +141,7 @@ sudo certbot certificates
 - `cert.pem` - сертификат сервера
 - `chain.pem` - промежуточные сертификаты
 
-## 4. Запуск Nginx
+## 3. Запуск Nginx
 
 ### 🚀 Активация конфигурации
 
@@ -141,6 +152,58 @@ sudo systemctl reload nginx
 # Проверяем статус
 sudo systemctl status nginx
 ```
+
+## 4. Получение SSL сертификатов
+
+### 🔐 Тестовая проверка (dry-run)
+
+```bash
+# Сначала тестируем получение сертификатов
+sudo certbot certonly --webroot \
+  -w /var/www/certbot \
+  -d sandbox.api.xrpchange.site \
+  -d api.xrpchange.site \
+  --email admin@xrpchange.site \
+  --agree-tos \
+  --non-interactive \
+  --dry-run
+```
+
+### 🔐 Получение реальных сертификатов
+
+```bash
+# Получаем сертификаты для sandbox и production доменов
+sudo certbot certonly --webroot \
+  -w /var/www/certbot \
+  -d sandbox.api.xrpchange.site \
+  -d api.xrpchange.site \
+  --email admin@xrpchange.site \
+  --agree-tos \
+  --non-interactive
+```
+
+> **⚠️ Важно:** Замените `admin@xrpchange.site` на ваш реальный email
+
+### ✅ Проверка сертификатов
+
+```bash
+# Проверяем, что сертификаты созданы
+sudo ls -la /etc/letsencrypt/live/sandbox.api.xrpchange.site/
+sudo ls -la /etc/letsencrypt/live/api.xrpchange.site/
+
+# Проверяем информацию о сертификатах
+sudo certbot certificates
+```
+
+### 🔧 Особенности SSL конфигурации
+
+SSL конфигурация включает:
+- ✅ **Автоматический редирект** HTTP → HTTPS
+- ✅ **Поддержка HTTP/2** (использует `http2 on;` вместо deprecated `listen ... http2`)
+- ✅ **CORS заголовки** для API
+- ✅ **Заголовки безопасности** (HSTS, X-Frame-Options, etc.)
+- ✅ **Проксирование** на XBoard (192.168.1.31:80)
+- ✅ **Keepalive** для оптимизации соединений
 
 ### 🔄 Проверка работы
 
