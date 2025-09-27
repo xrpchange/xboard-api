@@ -248,6 +248,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### System Documentation
 - **[System Overview](PROJECT_OVERVIEW.md)** - Complete architecture and components
+- **[API Compatibility Audit](API_COMPATIBILITY_AUDIT.md)** - Fork readiness and long-term compatibility
 - **[Nginx + SSL Setup](NGINX_SSL_SETUP.md)** - XBoard deployment instructions
 - **[XRPChangeCore Setup](CORE_NGINX_SETUP.md)** - Core system deployment instructions
 - **[Cron Jobs Setup](CRON_SSL_SETUP.md)** - Automatic certificate renewal

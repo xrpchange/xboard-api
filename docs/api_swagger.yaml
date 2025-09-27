@@ -1,26 +1,45 @@
 openapi: 3.0.3
 info:
-  title: XBoard API - P2P Криптобиржа
+  title: XBoard API - P2P Cryptocurrency Exchange
   description: |
-    API для P2P криптобиржи (доски объявлений) с залоговой гарантией.
+    API for P2P cryptocurrency exchange (bulletin board) with collateral guarantee.
     
-    ## Аутентификация
-    - Залоговые токены выдаются только через мобильные приложения
-    - Bearer токены получаются через API аутентификации
-    - Тестовый режим поддерживается через test_group
+    ## Authentication
+    - Collateral tokens are issued only through mobile applications
+    - Bearer tokens are obtained through API authentication
+    - Test mode is supported through test_group
     
-    ## Структура API
-    - **Публичные роуты**: справочники (страны, валюты, банки)
-    - **Защищенные роуты**: доска объявлений, триггеры, транзакции
+    ## API Structure
+    - **Public routes**: reference data (countries, currencies, banks)
+    - **Protected routes**: exchange board, triggers, transactions
+    
+    ## API Versioning
+    - All endpoints are versioned under `/v1/`
+    - Semantic versioning (SemVer) is used
+    - Breaking changes only in major versions
+    - All responses include version field
+    
+    ## Response Format
+    All API responses follow a consistent structure:
+    ```json
+    {
+      "success": true,
+      "version": "1.0",
+      "data": { ... },
+      "message": "Optional message"
+    }
+    ```
   version: 1.0.0
   contact:
     name: XBoard Team
-    email: support@xboard.com
+    email: support@xrpchange.site
 
 servers:
   - url: http://localhost:8000/api/v1
     description: Local development server
-  - url: https://api.xboard.com/v1
+  - url: https://sandbox.api.xrpchange.site/api/v1
+    description: Sandbox server (for testing)
+  - url: https://api.xrpchange.site/api/v1
     description: Production server
 
 security:
@@ -32,8 +51,8 @@ paths:
     post:
       tags:
         - Authentication
-      summary: Получить Bearer токен
-      description: Получение Bearer токена по залоговому токену
+      summary: Get Bearer token
+      description: Get Bearer token using collateral token
       requestBody:
         required: true
         content:
@@ -46,14 +65,14 @@ paths:
                 escrow_token:
                   type: string
                   maxLength: 500
-                  description: Залоговый токен из мобильного приложения
+                  description: Collateral token from mobile application
                 test_group:
                   type: string
                   maxLength: 50
-                  description: Группа для тестового режима
+                  description: Test group for sandbox mode
       responses:
         '200':
-          description: Bearer токен получен
+          description: Bearer token received
           content:
             application/json:
               schema:
@@ -61,35 +80,38 @@ paths:
                 properties:
                   success:
                     type: boolean
+                  version:
+                    type: string
+                    example: "1.0"
                   data:
                     type: object
                     properties:
                       bearer_token:
                         type: string
-                        description: Bearer токен для API
+                        description: Bearer token for API
                       expires_at:
                         type: string
                         format: date-time
-                        description: Дата истечения токена
+                        description: Token expiration date
                       test_group:
                         type: string
-                        description: Тестовая группа
+                        description: Test group
         '401':
-          description: Неверный залоговый токен
+          description: Invalid collateral token
         '422':
-          description: Ошибка валидации
+          description: Validation error
 
   /auth/validate:
     get:
       tags:
         - Authentication
-      summary: Проверить Bearer токен
-      description: Проверка валидности Bearer токена
+      summary: Validate Bearer token
+      description: Check Bearer token validity
       security:
         - BearerAuth: []
       responses:
         '200':
-          description: Токен валиден
+          description: Token is valid
           content:
             application/json:
               schema:
@@ -97,6 +119,9 @@ paths:
                 properties:
                   success:
                     type: boolean
+                  version:
+                    type: string
+                    example: "1.0"
                   data:
                     type: object
                     properties:
@@ -105,23 +130,23 @@ paths:
                       test_group:
                         type: string
         '401':
-          description: Неверный Bearer токен
+          description: Invalid Bearer token
 
-  # Справочники (публичные)
+  # Reference Data (public)
   /countries:
     get:
       tags:
         - Reference Data
-      summary: Получить список стран
+      summary: Get countries list
       parameters:
         - name: search
           in: query
           schema:
             type: string
-          description: Поиск по названию или коду страны
+          description: Search by country name or code
       responses:
         '200':
-          description: Список стран
+          description: Countries list
           content:
             application/json:
               schema:
@@ -129,6 +154,9 @@ paths:
                 properties:
                   success:
                     type: boolean
+                  version:
+                    type: string
+                    example: "1.0"
                   data:
                     type: array
                     items:
@@ -723,16 +751,16 @@ components:
           type: integer
         name:
           type: string
-          description: Название страны
+          description: Country name
         code:
           type: string
-          description: ISO 3166-1 alpha-3 код
+          description: ISO 3166-1 alpha-3 code
         phone_code:
           type: string
-          description: Телефонный код
+          description: Phone code
         is_active:
           type: boolean
-          description: Активность страны
+          description: Country activity status
         created_at:
           type: string
           format: date-time
@@ -747,16 +775,16 @@ components:
           type: integer
         code:
           type: string
-          description: ISO 4217 код валюты
+          description: ISO 4217 currency code
         name:
           type: string
-          description: Название валюты
+          description: Currency name
         symbol:
           type: string
-          description: Символ валюты
+          description: Currency symbol
         is_active:
           type: boolean
-          description: Активность валюты
+          description: Currency activity status
         created_at:
           type: string
           format: date-time
@@ -771,16 +799,16 @@ components:
           type: integer
         code:
           type: string
-          description: Тикер криптовалюты
+          description: Cryptocurrency ticker
         name:
           type: string
-          description: Название криптовалюты
+          description: Cryptocurrency name
         is_stablecoin:
           type: boolean
-          description: Флаг стейблкоина
+          description: Stablecoin flag
         is_active:
           type: boolean
-          description: Активность криптовалюты
+          description: Cryptocurrency activity status
         created_at:
           type: string
           format: date-time
@@ -795,22 +823,22 @@ components:
           type: integer
         country_id:
           type: integer
-          description: ID страны
+          description: Country ID
         name:
           type: string
-          description: Название банка
+          description: Bank name
         swift_code:
           type: string
-          description: SWIFT-код банка
+          description: Bank SWIFT code
         supports_individuals:
           type: boolean
-          description: Работает с физлицами
+          description: Supports individuals
         supports_legal_entities:
           type: boolean
-          description: Работает с юрлицами
+          description: Supports legal entities
         is_active:
           type: boolean
-          description: Активность банка
+          description: Bank activity status
         country:
           $ref: '#/components/schemas/Country'
         created_at:
@@ -934,12 +962,12 @@ components:
 
 tags:
   - name: Authentication
-    description: Аутентификация через залоговые токены
+    description: Authentication via collateral tokens
   - name: Reference Data
-    description: Справочные данные (страны, валюты, банки)
+    description: Reference data (countries, currencies, banks)
   - name: Exchange Lots
-    description: Доска объявлений (лоты обмена)
+    description: Exchange board (exchange lots)
   - name: Buy Triggers
-    description: Триггеры покупки
+    description: Buy triggers
   - name: Transactions
-    description: Транзакции 
+    description: Transactions 
