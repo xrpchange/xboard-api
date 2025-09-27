@@ -14,18 +14,18 @@ class BankSeeder extends Seeder
      */
     public function run(): void
     {
-        // Получаем страны
+        // Get countries
         $russia = Country::where('code', 'RUS')->first();
         $usa = Country::where('code', 'USA')->first();
         $germany = Country::where('code', 'DEU')->first();
 
         if ($russia) {
             $russianBanks = [
-                ['name' => 'Сбербанк России', 'swift_code' => 'SABRRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true],
-                ['name' => 'ВТБ', 'swift_code' => 'VTBRRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true],
-                ['name' => 'Газпромбанк', 'swift_code' => 'GAZPRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true],
-                ['name' => 'Россельхозбанк', 'swift_code' => 'RUAGRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true],
-                ['name' => 'Альфа-Банк', 'swift_code' => 'ALFARUMM', 'supports_individuals' => true, 'supports_legal_entities' => true],
+                ['name' => 'Sberbank of Russia', 'swift_code' => 'SABRRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true],
+                ['name' => 'VTB Bank', 'swift_code' => 'VTBRRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true],
+                ['name' => 'Gazprombank', 'swift_code' => 'GAZPRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true],
+                ['name' => 'Rosselkhozbank', 'swift_code' => 'RUAGRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true],
+                ['name' => 'Alfa-Bank', 'swift_code' => 'ALFARUMM', 'supports_individuals' => true, 'supports_legal_entities' => true],
             ];
 
             foreach ($russianBanks as $bank) {

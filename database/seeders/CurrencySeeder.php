@@ -14,18 +14,18 @@ class CurrencySeeder extends Seeder
      */
     public function run(): void
     {
-        // Фиатные валюты
+        // Fiat currencies
         $fiatCurrencies = [
-            ['code' => 'RUB', 'name' => 'Российский рубль', 'symbol' => '₽'],
-            ['code' => 'USD', 'name' => 'Доллар США', 'symbol' => '$'],
-            ['code' => 'EUR', 'name' => 'Евро', 'symbol' => '€'],
-            ['code' => 'GBP', 'name' => 'Фунт стерлингов', 'symbol' => '£'],
-            ['code' => 'CNY', 'name' => 'Китайский юань', 'symbol' => '¥'],
-            ['code' => 'JPY', 'name' => 'Японская иена', 'symbol' => '¥'],
-            ['code' => 'CAD', 'name' => 'Канадский доллар', 'symbol' => 'C$'],
-            ['code' => 'AUD', 'name' => 'Австралийский доллар', 'symbol' => 'A$'],
-            ['code' => 'CHF', 'name' => 'Швейцарский франк', 'symbol' => 'CHF'],
-            ['code' => 'BRL', 'name' => 'Бразильский реал', 'symbol' => 'R$'],
+            ['code' => 'RUB', 'name' => 'Russian Ruble', 'symbol' => '₽'],
+            ['code' => 'USD', 'name' => 'US Dollar', 'symbol' => '$'],
+            ['code' => 'EUR', 'name' => 'Euro', 'symbol' => '€'],
+            ['code' => 'GBP', 'name' => 'British Pound', 'symbol' => '£'],
+            ['code' => 'CNY', 'name' => 'Chinese Yuan', 'symbol' => '¥'],
+            ['code' => 'JPY', 'name' => 'Japanese Yen', 'symbol' => '¥'],
+            ['code' => 'CAD', 'name' => 'Canadian Dollar', 'symbol' => 'C$'],
+            ['code' => 'AUD', 'name' => 'Australian Dollar', 'symbol' => 'A$'],
+            ['code' => 'CHF', 'name' => 'Swiss Franc', 'symbol' => 'CHF'],
+            ['code' => 'BRL', 'name' => 'Brazilian Real', 'symbol' => 'R$'],
         ];
 
         foreach ($fiatCurrencies as $currency) {
@@ -35,7 +35,7 @@ class CurrencySeeder extends Seeder
             );
         }
 
-        // Криптовалюты
+        // Cryptocurrencies
         $cryptoCurrencies = [
             ['code' => 'XRP', 'name' => 'Ripple', 'is_stablecoin' => false],
             ['code' => 'BTC', 'name' => 'Bitcoin', 'is_stablecoin' => false],

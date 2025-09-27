@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @OA\Schema(
  *     schema="Bank",
  *     title="Bank",
- *     description="Модель банка"
+ *     description="Bank model"
  * )
  */
 
@@ -46,7 +46,7 @@ class Bank extends Model
     ];
 
     /**
-     * Получить страну банка
+     * Get bank's country
      */
     public function country(): BelongsTo
     {

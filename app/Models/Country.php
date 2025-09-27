@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @OA\Schema(
  *     schema="Country",
  *     title="Country",
- *     description="Модель страны"
+ *     description="Country model"
  * )
  */
 
@@ -27,7 +27,7 @@ class Country extends Model
 
     /**
      * @OA\Property(property="id", type="integer", example=1)
-     * @OA\Property(property="name", type="string", example="Россия")
+     * @OA\Property(property="name", type="string", example="Russia")
      * @OA\Property(property="code", type="string", example="RUS")
      * @OA\Property(property="phone_code", type="string", example="+7")
      * @OA\Property(property="is_active", type="boolean", example=true)
@@ -40,7 +40,7 @@ class Country extends Model
     ];
 
     /**
-     * Получить банки в этой стране
+     * Get banks in this country
      */
     public function banks(): HasMany
     {

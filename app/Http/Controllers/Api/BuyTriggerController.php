@@ -33,7 +33,7 @@ class BuyTriggerController extends Controller
         $query = BuyTrigger::active()
             ->with(['cryptoCurrency', 'country', 'bank']);
 
-        // Фильтрация по тестовому режиму
+        // Filter by test mode
         if ($request->has('is_test')) {
             if ($request->is_test === 'true') {
                 $query->test($request->test_group);
@@ -42,7 +42,7 @@ class BuyTriggerController extends Controller
             }
         }
 
-        // Фильтрация по валютам
+        // Filter by currencies
         if ($request->has('buy_currency_type')) {
             $query->where('buy_currency_type', $request->buy_currency_type);
         }
@@ -56,7 +56,7 @@ class BuyTriggerController extends Controller
             $query->where('sell_currency_id', $request->sell_currency_id);
         }
 
-        // Фильтрация по типу клиентов
+        // Filter by client type
         if ($request->has('for_individuals')) {
             if ($request->for_individuals === 'true') {
                 $query->forIndividuals();
@@ -68,22 +68,22 @@ class BuyTriggerController extends Controller
             }
         }
 
-        // Фильтрация по стране
+        // Filter by country
         if ($request->has('country_id')) {
             $query->where('country_id', $request->country_id);
         }
 
-        // Фильтрация по банку
+        // Filter by bank
         if ($request->has('bank_id')) {
             $query->where('bank_id', $request->bank_id);
         }
 
-        // Поиск по адресу кошелька
+        // Search by wallet address
         if ($request->has('wallet_address')) {
             $query->where('wallet_address', $request->wallet_address);
         }
 
-        // Сортировка
+        // Sorting
         $query->orderBy('created_at', 'desc');
 
         $triggers = $query->paginate($request->get('per_page', 20));

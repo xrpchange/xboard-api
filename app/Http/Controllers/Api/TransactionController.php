@@ -32,7 +32,7 @@ class TransactionController extends Controller
     {
         $query = Transaction::with(['exchangeLot']);
 
-        // Фильтрация по тестовому режиму
+        // Filter by test mode
         if ($request->has('is_test')) {
             if ($request->is_test === 'true') {
                 $query->test($request->test_group);
@@ -41,32 +41,32 @@ class TransactionController extends Controller
             }
         }
 
-        // Фильтрация по типу транзакции
+        // Filter by transaction type
         if ($request->has('tx_type')) {
             $query->byType($request->tx_type);
         }
 
-        // Фильтрация по адресу
+        // Filter by address
         if ($request->has('address')) {
             $query->byAddress($request->address);
         }
 
-        // Фильтрация по статусу
+        // Filter by status
         if ($request->has('status')) {
             $query->where('status', $request->status);
         }
 
-        // Фильтрация по токену
+        // Filter by token
         if ($request->has('token')) {
             $query->where('token', $request->token);
         }
 
-        // Фильтрация по лоту
+        // Filter by lot
         if ($request->has('exchange_lot_id')) {
             $query->where('exchange_lot_id', $request->exchange_lot_id);
         }
 
-        // Сортировка
+        // Sorting
         $query->orderBy('created_at', 'desc');
 
         $transactions = $query->paginate($request->get('per_page', 20));
