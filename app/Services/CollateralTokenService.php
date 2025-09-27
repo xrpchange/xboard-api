@@ -13,11 +13,11 @@ class CollateralTokenService
     public function __construct() {}
 
     /**
-     * Проверить баланс залогового токена через простое обращение к ядру
+     * Check collateral token balance via simple core request
      */
     public function checkTokenBalance(string $token): array
     {
-        // Определяем окружение и выбираем соответствующий URL ядра
+        // Determine environment and select appropriate core URL
         $isProduction = config('app.env') === 'production';
         $coreConfig = $isProduction ? 'services.core_production' : 'services.core';
         
@@ -31,7 +31,7 @@ class CollateralTokenService
         ]);
 
         try {
-            // Сначала проверим доступность ядра через echo.php
+            // First check core availability via echo.php
             $echoResponse = Http::timeout(5)->get($coreUrl . '/echo.php');
             
             if (!$echoResponse->successful()) {
@@ -46,7 +46,7 @@ class CollateralTokenService
                 ]);
             }
 
-            // Новый API эндпоинт с crypto_type
+            // New API endpoint with crypto_type
             $response = $request->post($coreUrl . '/api/escrow-tokens/balance', [
                 'crypto_type' => 'xrp',
                 'escrow_token' => $token,
@@ -73,7 +73,7 @@ class CollateralTokenService
     }
 
     /**
-     * Расшифровать залоговый токен и получить данные
+     * Decrypt collateral token and get data
      */
     public function decryptToken(string $token): array
     {
@@ -103,17 +103,17 @@ class CollateralTokenService
     }
 
     /**
-     * Получить или создать лот обмена на основе залогового токена
+     * Get or create exchange lot based on collateral token
      */
     public function getOrCreateExchangeLot(string $walletAddress, string $currency = 'XRP'): ExchangeLot
     {
-        // Найти криптовалюту
+        // Find cryptocurrency
         $cryptoCurrency = CryptoCurrency::where('code', $currency)->first();
         if (!$cryptoCurrency) {
             throw new \Exception('Unsupported currency: ' . $currency);
         }
 
-        // Найти или создать лот обмена
+        // Find or create exchange lot
         $exchangeLot = ExchangeLot::where('wallet_address', $walletAddress)
             ->where('crypto_currency_id', $cryptoCurrency->id)
             ->first();
@@ -122,7 +122,7 @@ class CollateralTokenService
             $exchangeLot = ExchangeLot::create([
                 'wallet_address' => $walletAddress,
                 'crypto_currency_id' => $cryptoCurrency->id,
-                'is_test' => false, // Будет определяться из токена
+                'is_test' => false, // Will be determined from token
                 'test_group' => null
             ]);
         }
@@ -131,26 +131,26 @@ class CollateralTokenService
     }
 
     /**
-     * Создать Bearer токен после успешной проверки баланса
+     * Create Bearer token after successful balance check
      */
     public function createBearerToken(string $collateralToken, string $ipAddress): string
     {
-        // Расшифровать залоговый токен
+        // Decrypt collateral token
         $tokenData = $this->decryptToken($collateralToken);
         
-        // Проверить баланс через ядро
+        // Check balance via core
         $balanceData = $this->checkTokenBalance($collateralToken);
         
-        // Получить или создать лот обмена
+        // Get or create exchange lot
         $exchangeLot = $this->getOrCreateExchangeLot($tokenData['wallet_address'], $tokenData['currency']);
         
-        // Сгенерировать уникальный токен
+        // Generate unique token
         $bearerToken = hash('sha256', $collateralToken . $ipAddress . time() . random_bytes(32));
         
-        // Сохранить токен в БД
+        // Save token to database
         UserToken::create([
             'token' => $bearerToken,
-            'device_id' => $tokenData['wallet_address'], // Используем адрес кошелька как device_id
+            'device_id' => $tokenData['wallet_address'], // Use wallet address as device_id
             'collateral_token' => $collateralToken,
             'ip_address' => $ipAddress,
             'expires_at' => now()->addYear()
@@ -160,7 +160,7 @@ class CollateralTokenService
     }
 
     /**
-     * Валидировать Bearer токен
+     * Validate Bearer token
      */
     public function validateBearerToken(string $bearerToken): ?UserToken
     {
@@ -170,7 +170,7 @@ class CollateralTokenService
             return null;
         }
 
-        // Обновить время последнего использования
+        // Update last used time
         $userToken->updateLastUsed();
         
         return $userToken;

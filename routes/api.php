@@ -25,29 +25,29 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-// Аутентификация (без middleware)
+// Authentication (without middleware)
 Route::prefix('v1/auth')->group(function () {
     Route::post('/bearer-token', [AuthController::class, 'getBearerToken']);
     Route::get('/validate', [AuthController::class, 'validateBearerToken']);
 });
 
-// Справочники (без аутентификации)
+// Reference data (without authentication)
 Route::prefix('v1')->group(function () {
-    // Страны
+    // Countries
     Route::prefix('countries')->group(function () {
         Route::get('/', [CountryController::class, 'index']);
         Route::get('/{country}', [CountryController::class, 'show']);
         Route::get('/{country}/banks', [CountryController::class, 'banks']);
     });
 
-    // Валюты
+    // Currencies
     Route::prefix('currencies')->group(function () {
         Route::get('/fiat', [CurrencyController::class, 'fiat']);
         Route::get('/crypto', [CurrencyController::class, 'crypto']);
         Route::get('/all', [CurrencyController::class, 'all']);
     });
 
-    // Банки
+    // Banks
     Route::prefix('banks')->group(function () {
         Route::get('/', [BankController::class, 'index']);
         Route::get('/{bank}', [BankController::class, 'show']);
@@ -55,9 +55,9 @@ Route::prefix('v1')->group(function () {
     });
 });
 
-// Защищенные роуты (с аутентификацией)
+// Protected routes (with authentication)
 Route::prefix('v1')->middleware('bearer.token')->group(function () {
-    // Доска объявлений
+    // Exchange board
     Route::prefix('exchange-lots')->group(function () {
         Route::get('/', [ExchangeLotController::class, 'index']);
         Route::get('/{lot}', [ExchangeLotController::class, 'show']);
@@ -66,7 +66,7 @@ Route::prefix('v1')->middleware('bearer.token')->group(function () {
         Route::delete('/{lot}', [ExchangeLotController::class, 'destroy']);
     });
 
-    // Триггеры покупки
+    // Buy triggers
     Route::prefix('buy-triggers')->group(function () {
         Route::get('/', [BuyTriggerController::class, 'index']);
         Route::get('/{trigger}', [BuyTriggerController::class, 'show']);
@@ -75,7 +75,7 @@ Route::prefix('v1')->middleware('bearer.token')->group(function () {
         Route::delete('/{trigger}', [BuyTriggerController::class, 'destroy']);
     });
 
-    // Транзакции
+    // Transactions
     Route::prefix('transactions')->group(function () {
         Route::get('/', [TransactionController::class, 'index']);
         Route::get('/stats', [TransactionController::class, 'stats']);
