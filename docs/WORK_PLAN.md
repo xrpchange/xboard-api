@@ -1,49 +1,49 @@
-# План работы по проекту XBoard
+# XBoard Project Work Plan
 
-## Текущий статус проекта
+## Current Project Status
 
-### ✅ Выполнено
-- [x] Удалена сложная логика балансировки нагрузки
-- [x] Упрощен CoreClient до простых HTTP вызовов
-- [x] Удален CoreStatusController и health check эндпоинты
-- [x] Упрощена конфигурация services.php
-- [x] Обновлена документация README.md
+### ✅ Completed
+- [x] Removed complex load balancing logic
+- [x] Simplified CoreClient to simple HTTP calls
+- [x] Removed CoreStatusController and health check endpoints
+- [x] Simplified services.php configuration
+- [x] Updated README.md documentation
 
-### 🔄 В процессе
-- [ ] Тестирование упрощенной архитектуры
-- [ ] Выявление ошибок после упрощения
+### 🔄 In Progress
+- [ ] Testing simplified architecture
+- [ ] Identifying errors after simplification
 
-### 📋 Планируется
+### 📋 Planned
 
-#### 1. Тестирование и отладка
-- [ ] Проверка работы аутентификации через Bearer токены
-- [ ] Тестирование вызовов к ядру через упрощенный HTTP клиент
-- [ ] Проверка всех API эндпоинтов
-- [ ] Исправление выявленных ошибок
+#### 1. Testing and Debugging
+- [ ] Check Bearer token authentication
+- [ ] Test core calls via simplified HTTP client
+- [ ] Check all API endpoints
+- [ ] Fix identified errors
 
-#### 2. Документация API
-- [ ] Обновление Swagger документации
-- [ ] Проверка OpenAPI аннотаций в контроллерах
-- [ ] Генерация актуальной документации
+#### 2. API Documentation
+- [ ] Update Swagger documentation
+- [ ] Check OpenAPI annotations in controllers
+- [ ] Generate current documentation
 
-#### 3. Безопасность
-- [ ] Проверка middleware для Bearer токенов
-- [ ] Валидация входных данных
-- [ ] Тестирование защиты эндпоинтов
+#### 3. Security
+- [ ] Check Bearer token middleware
+- [ ] Input data validation
+- [ ] Test endpoint protection
 
-#### 4. Производительность
-- [ ] Оптимизация запросов к БД
-- [ ] Кэширование справочных данных
-- [ ] Мониторинг производительности
+#### 4. Performance
+- [ ] Database query optimization
+- [ ] Reference data caching
+- [ ] Performance monitoring
 
-#### 5. Развертывание
-- [ ] Настройка nginx для балансировки
-- [ ] Конфигурация окружений (sandbox/production)
-- [ ] Настройка мониторинга
+#### 5. Deployment
+- [ ] Configure nginx for load balancing
+- [ ] Environment configuration (sandbox/production)
+- [ ] Monitoring setup
 
-## Архитектура после упрощения
+## Architecture After Simplification
 
-### Компоненты системы
+### System Components
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   Mobile App    │    │   Web Client    │    │   Admin Panel   │

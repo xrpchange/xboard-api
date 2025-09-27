@@ -12,11 +12,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('crypto_currencies', function (Blueprint $table) {
-            $table->id()->comment('Уникальный идентификатор криптовалюты');
-            $table->string('code', 10)->unique()->comment('Тикер криптовалюты (BTC, ETH и т.д.)');
-            $table->string('name', 50)->comment('Название криптовалюты');
-            $table->boolean('is_stablecoin')->default(false)->comment('Флаг стейблкоина');
-            $table->boolean('is_active')->default(true)->comment('Флаг активности криптовалюты в системе');
+            $table->id()->comment('Unique cryptocurrency identifier');
+            $table->string('code', 10)->unique()->comment('Cryptocurrency ticker (BTC, ETH, etc.)');
+            $table->string('name', 50)->comment('Cryptocurrency name');
+            $table->boolean('is_stablecoin')->default(false)->comment('Stablecoin flag');
+            $table->boolean('is_active')->default(true)->comment('Cryptocurrency activity flag in the system');
             $table->timestamps();
             
             $table->index('code', 'idx_crypto_currencies_code');

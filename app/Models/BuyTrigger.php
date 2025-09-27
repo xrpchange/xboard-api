@@ -83,7 +83,7 @@ class BuyTrigger extends Model
     }
 
     /**
-     * Получить банк
+     * Get bank
      */
     public function bank(): BelongsTo
     {
@@ -91,7 +91,7 @@ class BuyTrigger extends Model
     }
 
     /**
-     * Получить активные триггеры
+     * Get active triggers
      */
     public function scopeActive($query)
     {
@@ -99,7 +99,7 @@ class BuyTrigger extends Model
     }
 
     /**
-     * Получить тестовые триггеры
+     * Get test triggers
      */
     public function scopeTest($query, $testGroup = null)
     {
@@ -111,7 +111,7 @@ class BuyTrigger extends Model
     }
 
     /**
-     * Получить триггеры для физических лиц
+     * Get triggers for individuals
      */
     public function scopeForIndividuals($query)
     {
@@ -119,7 +119,7 @@ class BuyTrigger extends Model
     }
 
     /**
-     * Получить триггеры для юридических лиц
+     * Get triggers for legal entities
      */
     public function scopeForLegalEntities($query)
     {

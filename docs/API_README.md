@@ -1,17 +1,17 @@
-# XBoard API - Краткая документация
+# XBoard API - Brief Documentation
 
-## Обзор
+## Overview
 
-XBoard API предоставляет REST API для P2P криптобиржи с залоговой гарантией. API использует Bearer-токены для аутентификации и поддерживает тестовый режим.
+XBoard API provides REST API for P2P cryptocurrency exchange with collateral guarantee. The API uses Bearer tokens for authentication and supports test mode.
 
-## Базовый URL
+## Base URL
 
-- **Разработка**: `http://localhost:8000/api/v1`
-- **Продакшн**: `https://api.xboard.com/v1`
+- **Development**: `http://localhost:8000/api/v1`
+- **Production**: `https://api.xboard.com/v1`
 
-## Аутентификация
+## Authentication
 
-### Получение Bearer токена
+### Get Bearer token
 ```http
 POST /auth/bearer-token
 Content-Type: application/json
@@ -22,52 +22,52 @@ Content-Type: application/json
 }
 ```
 
-### Проверка токена
+### Validate token
 ```http
 GET /auth/validate
 Authorization: Bearer your_bearer_token_here
 ```
 
-## Справочники (публичные)
+## Reference Data (public)
 
-### Страны
+### Countries
 ```http
 GET /countries
 GET /countries/{country_id}
 GET /countries/{country_id}/banks
 ```
 
-### Валюты
+### Currencies
 ```http
 GET /currencies/fiat
 GET /currencies/crypto
 GET /currencies/all
 ```
 
-### Банки
+### Banks
 ```http
 GET /banks
 GET /banks/{bank_id}
 GET /banks/country/{country_code}
 ```
 
-## Доска объявлений (защищенные)
+## Exchange Board (protected)
 
-### Получение лотов
+### Get lots
 ```http
 GET /exchange-lots
 Authorization: Bearer your_token
 ```
 
-**Параметры:**
-- `is_test` - фильтр тестового режима
-- `test_group` - группа тестового режима
-- `sell_currency_type` - тип продаваемой валюты (fiat/crypto)
-- `sell_currency_id` - ID продаваемой валюты
-- `buy_currency_type` - тип покупаемой валюты (fiat/crypto)
-- `buy_currency_id` - ID покупаемой валюты
+**Parameters:**
+- `is_test` - test mode filter
+- `test_group` - test mode group
+- `sell_currency_type` - sell currency type (fiat/crypto)
+- `sell_currency_id` - sell currency ID
+- `buy_currency_type` - buy currency type (fiat/crypto)
+- `buy_currency_id` - buy currency ID
 
-### Создание лота
+### Create lot
 ```http
 POST /exchange-lots
 Authorization: Bearer your_token
@@ -83,7 +83,7 @@ Content-Type: application/json
   "country_id": 1,
   "bank_id": 1,
   "bank_account": "1234567890",
-  "payment_purpose": "Оплата услуг",
+  "payment_purpose": "Service payment",
   "contract_url": "https://example.com/contract.pdf",
   "is_for_individuals": true,
   "is_for_legal_entities": false,
@@ -92,15 +92,15 @@ Content-Type: application/json
 }
 ```
 
-## Триггеры покупки (защищенные)
+## Buy Triggers (protected)
 
-### Получение триггеров
+### Get triggers
 ```http
 GET /buy-triggers
 Authorization: Bearer your_token
 ```
 
-### Создание триггера
+### Create trigger
 ```http
 POST /buy-triggers
 Authorization: Bearer your_token
@@ -123,21 +123,21 @@ Content-Type: application/json
 }
 ```
 
-## Транзакции (защищенные)
+## Transactions (protected)
 
-### Получение транзакций
+### Get transactions
 ```http
 GET /transactions
 Authorization: Bearer your_token
 ```
 
-### Статистика транзакций
+### Transaction statistics
 ```http
 GET /transactions/stats
 Authorization: Bearer your_token
 ```
 
-### Создание транзакции
+### Create transaction
 ```http
 POST /transactions
 Authorization: Bearer your_token
@@ -154,9 +154,9 @@ Content-Type: application/json
 }
 ```
 
-## Тестовый режим
+## Test Mode
 
-В тестовом режиме все запросы должны содержать параметр `test_group` для изоляции данных:
+In test mode, all requests should contain the `test_group` parameter for data isolation:
 
 ```json
 {
@@ -165,24 +165,24 @@ Content-Type: application/json
 }
 ```
 
-## Коды ответов
+## Response Codes
 
-- `200` - Успешный запрос
-- `201` - Ресурс создан
-- `400` - Ошибка валидации
-- `401` - Неавторизованный доступ
-- `404` - Ресурс не найден
-- `422` - Ошибка валидации данных
-- `500` - Внутренняя ошибка сервера
+- `200` - Successful request
+- `201` - Resource created
+- `400` - Validation error
+- `401` - Unauthorized access
+- `404` - Resource not found
+- `422` - Data validation error
+- `500` - Internal server error
 
-## Примеры использования
+## Usage Examples
 
-### Получение всех валют
+### Get all currencies
 ```bash
 curl -X GET "http://localhost:8000/api/v1/currencies/all"
 ```
 
-### Создание лота (с аутентификацией)
+### Create lot (with authentication)
 ```bash
 curl -X POST "http://localhost:8000/api/v1/exchange-lots" \
   -H "Authorization: Bearer your_token" \
@@ -197,7 +197,7 @@ curl -X POST "http://localhost:8000/api/v1/exchange-lots" \
     "country_id": 1,
     "bank_id": 1,
     "bank_account": "1234567890",
-    "payment_purpose": "Оплата услуг",
+    "payment_purpose": "Service payment",
     "is_for_individuals": true,
     "is_for_legal_entities": false
   }'

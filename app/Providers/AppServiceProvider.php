@@ -19,7 +19,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Создаем необходимые директории для кэша при первом запуске
+        // Create necessary cache directories on first startup
         $this->ensureCacheDirectoriesExist();
     }
 

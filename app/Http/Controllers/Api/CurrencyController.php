@@ -11,7 +11,7 @@ use Illuminate\Http\JsonResponse;
 /**
  * @OA\Tag(
  *     name="Currencies",
- *     description="API эндпоинты для работы с валютами"
+ *     description="API endpoints for working with currencies"
  * )
  */
 

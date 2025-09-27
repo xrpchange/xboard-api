@@ -77,7 +77,7 @@ class ExchangeLot extends Model
     ];
 
     /**
-     * Получить криптовалюту токена
+     * Get token cryptocurrency
      */
     public function cryptoCurrency(): BelongsTo
     {
@@ -85,7 +85,7 @@ class ExchangeLot extends Model
     }
 
     /**
-     * Получить страну
+     * Get country
      */
     public function country(): BelongsTo
     {
@@ -93,7 +93,7 @@ class ExchangeLot extends Model
     }
 
     /**
-     * Получить банк
+     * Get bank
      */
     public function bank(): BelongsTo
     {
@@ -101,7 +101,7 @@ class ExchangeLot extends Model
     }
 
     /**
-     * Получить транзакции для этого лота
+     * Get transactions for this lot
      */
     public function transactions(): HasMany
     {
@@ -109,7 +109,7 @@ class ExchangeLot extends Model
     }
 
     /**
-     * Получить активные лоты
+     * Get active lots
      */
     public function scopeActive($query)
     {
@@ -117,7 +117,7 @@ class ExchangeLot extends Model
     }
 
     /**
-     * Получить тестовые лоты
+     * Get test lots
      */
     public function scopeTest($query, $testGroup = null)
     {
@@ -129,7 +129,7 @@ class ExchangeLot extends Model
     }
 
     /**
-     * Получить лоты для физических лиц
+     * Get lots for individuals
      */
     public function scopeForIndividuals($query)
     {
@@ -137,7 +137,7 @@ class ExchangeLot extends Model
     }
 
     /**
-     * Получить лоты для юридических лиц
+     * Get lots for legal entities
      */
     public function scopeForLegalEntities($query)
     {

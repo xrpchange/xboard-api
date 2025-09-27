@@ -12,13 +12,13 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('user_tokens', function (Blueprint $table) {
-            $table->id()->comment('Уникальный идентификатор токена');
-            $table->string('token', 64)->unique()->comment('Хэш Bearer-токена');
-            $table->string('device_id', 255)->unique()->comment('Уникальный ID устройства');
-            $table->text('collateral_token')->nullable()->comment('Залоговый токен');
-            $table->string('ip_address', 45)->comment('IP создания токена');
-            $table->timestamp('last_used_at')->nullable()->comment('Время последнего использования');
-            $table->timestamp('expires_at')->nullable()->comment('Время истечения токена');
+            $table->id()->comment('Unique token identifier');
+            $table->string('token', 64)->unique()->comment('Bearer token hash');
+            $table->string('device_id', 255)->unique()->comment('Unique device ID');
+            $table->text('collateral_token')->nullable()->comment('Collateral token');
+            $table->string('ip_address', 45)->comment('Token creation IP');
+            $table->timestamp('last_used_at')->nullable()->comment('Last used time');
+            $table->timestamp('expires_at')->nullable()->comment('Token expiration time');
             $table->timestamps();
             
             $table->index('token', 'idx_user_tokens_token');

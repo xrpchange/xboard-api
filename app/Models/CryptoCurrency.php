@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @OA\Schema(
  *     schema="CryptoCurrency",
  *     title="CryptoCurrency",
- *     description="Модель криптовалюты"
+ *     description="Cryptocurrency model"
  * )
  */
 
@@ -41,7 +41,7 @@ class CryptoCurrency extends Model
     ];
 
     /**
-     * Получить лоты обмена для этой криптовалюты
+     * Get exchange lots for this cryptocurrency
      */
     public function exchangeLots(): HasMany
     {
@@ -49,7 +49,7 @@ class CryptoCurrency extends Model
     }
 
     /**
-     * Получить триггеры покупки для этой криптовалюты
+     * Get buy triggers for this cryptocurrency
      */
     public function buyTriggers(): HasMany
     {
@@ -57,7 +57,7 @@ class CryptoCurrency extends Model
     }
 
     /**
-     * Получить активные криптовалюты
+     * Get active cryptocurrencies
      */
     public function scopeActive($query)
     {
@@ -65,7 +65,7 @@ class CryptoCurrency extends Model
     }
 
     /**
-     * Получить только стейблкоины
+     * Get only stablecoins
      */
     public function scopeStablecoins($query)
     {

@@ -12,17 +12,17 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('transactions', function (Blueprint $table) {
-            $table->id()->comment('Уникальный идентификатор транзакции');
-            $table->string('tx_hash', 64)->unique()->comment('Хэш транзакции');
-            $table->enum('tx_type', ['deposit', 'withdrawal', 'fee', 'refund', 'compensation', 'sale'])->comment('Тип транзакции');
-            $table->string('from_address', 50)->comment('Адрес отправителя');
-            $table->string('to_address', 50)->comment('Адрес получателя');
-            $table->decimal('amount', 20, 8)->comment('Сумма транзакции');
-            $table->string('token', 500)->nullable()->comment('Залоговый токен');
-            $table->foreignId('exchange_lot_id')->nullable()->constrained('exchange_lots')->comment('Ссылка на лот обмена');
-            $table->enum('status', ['pending', 'completed', 'failed'])->default('completed')->comment('Статус транзакции');
-            $table->boolean('is_test')->default(false)->comment('Тестовая транзакция для песочницы');
-            $table->string('test_group', 50)->nullable()->comment('Группа тестового режима');
+            $table->id()->comment('Unique transaction identifier');
+            $table->string('tx_hash', 64)->unique()->comment('Transaction hash');
+            $table->enum('tx_type', ['deposit', 'withdrawal', 'fee', 'refund', 'compensation', 'sale'])->comment('Transaction type');
+            $table->string('from_address', 50)->comment('Sender address');
+            $table->string('to_address', 50)->comment('Recipient address');
+            $table->decimal('amount', 20, 8)->comment('Transaction amount');
+            $table->string('token', 500)->nullable()->comment('Collateral token');
+            $table->foreignId('exchange_lot_id')->nullable()->constrained('exchange_lots')->comment('Reference to exchange lot');
+            $table->enum('status', ['pending', 'completed', 'failed'])->default('completed')->comment('Transaction status');
+            $table->boolean('is_test')->default(false)->comment('Test transaction for sandbox');
+            $table->string('test_group', 50)->nullable()->comment('Test mode group');
             $table->timestamps();
             
             $table->index('from_address', 'idx_transactions_from_address');

@@ -1,65 +1,65 @@
-# XBoard Client - Android приложение на Kotlin
+# XBoard Client - Android application in Kotlin
 
-## 🤖 Раздел для ИИ
+## 🤖 Section for AI
 
-**Контекст проекта**: XBoard - это P2P криптобиржа с залоговой гарантией, использующая Ripple (XRP) для залоговых токенов. Клиентское приложение должно обеспечивать простой и безопасный доступ к API.
+**Project Context**: XBoard is a P2P cryptocurrency exchange with collateral guarantee, using Ripple (XRP) for collateral tokens. The client application should provide simple and secure access to the API.
 
-**Ключевые особенности**:
-- Аутентификация через залоговые токены (без регистрации)
-- Поддержка песочницы для тестирования
-- Работа с доской объявлений P2P обмена
-- Управление триггерами покупки
-- Отслеживание транзакций
+**Key Features**:
+- Authentication via collateral tokens (no registration)
+- Sandbox support for testing
+- P2P exchange board operation
+- Buy trigger management
+- Transaction tracking
 
-**Технические требования**:
+**Technical Requirements**:
 - Kotlin + Android SDK
-- Retrofit для HTTP запросов
-- Kotlinx Serialization для JSON
-- Coroutines для асинхронности
+- Retrofit for HTTP requests
+- Kotlinx Serialization for JSON
+- Coroutines for asynchronicity
 - Material Design 3
 
-**API эндпоинты**: См. [API документацию](../README.md#api-документация)
+**API Endpoints**: See [API documentation](../README.md#api-documentation)
 
 ---
 
-## Описание проекта
+## Project Description
 
-XBoard Client - это Android приложение для P2P криптобиржи XBoard. Приложение позволяет пользователям обменивать криптовалюты через залоговые токены без необходимости регистрации.
+XBoard Client is an Android application for the P2P cryptocurrency exchange XBoard. The application allows users to exchange cryptocurrencies through collateral tokens without the need for registration.
 
-### Основные функции
+### Main Features
 
-- 🔐 **Аутентификация через залоговые токены** - никакой регистрации, токен = доступ
-- 🏪 **Доска объявлений** - просмотр и создание лотов обмена
-- 🎯 **Триггеры покупки** - автоматические покупки при достижении условий
-- 📊 **Транзакции** - отслеживание истории операций
-- 🧪 **Песочница** - тестовый режим для безопасного экспериментирования
+- 🔐 **Authentication via collateral tokens** - no registration, token = access
+- 🏪 **Exchange board** - view and create exchange lots
+- 🎯 **Buy triggers** - automatic purchases when conditions are met
+- 📊 **Transactions** - track operation history
+- 🧪 **Sandbox** - test mode for safe experimentation
 
-## Быстрый старт
+## Quick Start
 
-### Требования
+### Requirements
 
-- Android Studio Arctic Fox или новее
+- Android Studio Arctic Fox or newer
 - Android SDK 24+ (Android 7.0)
 - Kotlin 1.8+
 - JDK 11+
 
-### Установка
+### Installation
 
-1. **Клонирование репозитория**
+1. **Clone repository**
 ```bash
 git clone https://github.com/xrpchange/xboard-client.git
 cd xboard-client
 ```
 
-2. **Открытие в Android Studio**
+2. **Open in Android Studio**
 ```bash
-# Откройте проект в Android Studio
-# Синхронизируйте Gradle файлы
+# Open project in Android Studio
+# Sync Gradle files
 ```
 
-3. **Настройка окружения**
+3. **Environment setup**
 ```kotlin
-// В build.gradle (app)
+// In build.gradle (app)
 android {
     buildTypes {
         debug {
@@ -72,22 +72,22 @@ android {
 }
 ```
 
-## Архитектура
+## Architecture
 
-### Структура проекта
+### Project Structure
 
 ```
 app/
 ├── src/main/java/com/xrpchange/xboard/
 │   ├── data/
-│   │   ├── api/           # Retrofit API интерфейсы
-│   │   ├── models/        # Data классы
-│   │   └── repository/    # Репозитории
+│   │   ├── api/           # Retrofit API interfaces
+│   │   ├── models/        # Data classes
+│   │   └── repository/    # Repositories
 │   ├── domain/
-│   │   ├── models/        # Domain модели
+│   │   ├── models/        # Domain models
 │   │   └── usecases/      # Use cases
 │   ├── presentation/
-│   │   ├── ui/           # UI компоненты
+│   │   ├── ui/           # UI components
 │   │   ├── viewmodels/   # ViewModels
 │   │   └── navigation/   # Navigation
 │   └── di/               # Dependency Injection
@@ -98,20 +98,20 @@ app/
 └── build.gradle
 ```
 
-### Технологический стек
+### Technology Stack
 
 - **UI**: Jetpack Compose + Material Design 3
-- **Архитектура**: MVVM + Clean Architecture
-- **Сеть**: Retrofit + OkHttp
-- **Сериализация**: Kotlinx Serialization
-- **Асинхронность**: Coroutines + Flow
+- **Architecture**: MVVM + Clean Architecture
+- **Network**: Retrofit + OkHttp
+- **Serialization**: Kotlinx Serialization
+- **Asynchronicity**: Coroutines + Flow
 - **DI**: Hilt
-- **Навигация**: Navigation Compose
-- **Локальное хранение**: DataStore
+- **Navigation**: Navigation Compose
+- **Local Storage**: DataStore
 
-## API Интеграция
+## API Integration
 
-### Конфигурация Retrofit
+### Retrofit Configuration
 
 ```kotlin
 @Module
@@ -145,7 +145,7 @@ object NetworkModule {
 }
 ```
 
-### API Интерфейсы
+### API Interfaces
 
 ```kotlin
 interface XBoardApi {

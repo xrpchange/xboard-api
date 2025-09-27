@@ -11,7 +11,7 @@ use Illuminate\Http\JsonResponse;
 /**
  * @OA\Tag(
  *     name="Banks",
- *     description="API эндпоинты для работы с банками"
+ *     description="API endpoints for working with banks"
  * )
  */
 

@@ -28,5 +28,5 @@ namespace App\Http\Controllers\Api;
  */
 class OpenApiAnnotations
 {
-    // Этот класс нужен только для OpenAPI аннотаций
+    // This class is needed only for OpenAPI annotations
 }

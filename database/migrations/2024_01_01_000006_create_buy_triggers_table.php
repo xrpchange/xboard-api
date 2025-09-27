@@ -12,22 +12,22 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('buy_triggers', function (Blueprint $table) {
-            $table->id()->comment('Уникальный идентификатор триггера');
-            $table->foreignId('crypto_currency_id')->constrained('crypto_currencies')->comment('ID криптовалюты залогового токена');
-            $table->string('wallet_address', 50)->comment('Адрес кошелька залогового токена');
-            $table->enum('buy_currency_type', ['fiat', 'crypto'])->comment('Тип покупаемой валюты (фиат/крипто)');
-            $table->unsignedBigInteger('buy_currency_id')->comment('ID покупаемой валюты (из fiat_currencies или crypto_currencies)');
-            $table->decimal('buy_amount', 20, 8)->comment('Количество покупаемой валюты');
-            $table->enum('sell_currency_type', ['fiat', 'crypto'])->comment('Тип продаваемой валюты (фиат/крипто)');
-            $table->unsignedBigInteger('sell_currency_id')->comment('ID продаваемой валюты (из fiat_currencies или crypto_currencies)');
-            $table->decimal('max_sell_amount', 20, 8)->nullable()->comment('Максимальное количество продаваемой валюты');
-            $table->foreignId('country_id')->nullable()->constrained('countries')->comment('Страна для фиатных операций');
-            $table->foreignId('bank_id')->nullable()->constrained('banks')->comment('Банк для фиатных операций');
-            $table->boolean('is_for_individuals')->default(true)->comment('Доступно для физических лиц');
-            $table->boolean('is_for_legal_entities')->default(false)->comment('Доступно для юридических лиц');
-            $table->boolean('is_active')->default(true)->comment('Активен ли триггер');
-            $table->boolean('is_test')->default(false)->comment('Тестовый триггер для песочницы');
-            $table->string('test_group', 50)->nullable()->comment('Группа тестового режима');
+            $table->id()->comment('Unique trigger identifier');
+            $table->foreignId('crypto_currency_id')->constrained('crypto_currencies')->comment('Collateral token cryptocurrency ID');
+            $table->string('wallet_address', 50)->comment('Collateral token wallet address');
+            $table->enum('buy_currency_type', ['fiat', 'crypto'])->comment('Buy currency type (fiat/crypto)');
+            $table->unsignedBigInteger('buy_currency_id')->comment('Buy currency ID (from fiat_currencies or crypto_currencies)');
+            $table->decimal('buy_amount', 20, 8)->comment('Buy currency amount');
+            $table->enum('sell_currency_type', ['fiat', 'crypto'])->comment('Sell currency type (fiat/crypto)');
+            $table->unsignedBigInteger('sell_currency_id')->comment('Sell currency ID (from fiat_currencies or crypto_currencies)');
+            $table->decimal('max_sell_amount', 20, 8)->nullable()->comment('Maximum sell currency amount');
+            $table->foreignId('country_id')->nullable()->constrained('countries')->comment('Country for fiat operations');
+            $table->foreignId('bank_id')->nullable()->constrained('banks')->comment('Bank for fiat operations');
+            $table->boolean('is_for_individuals')->default(true)->comment('Available for individuals');
+            $table->boolean('is_for_legal_entities')->default(false)->comment('Available for legal entities');
+            $table->boolean('is_active')->default(true)->comment('Whether trigger is active');
+            $table->boolean('is_test')->default(false)->comment('Test trigger for sandbox');
+            $table->string('test_group', 50)->nullable()->comment('Test mode group');
             $table->timestamps();
             
             $table->index('crypto_currency_id', 'idx_buy_triggers_crypto_currency_id');

@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
  * @OA\Schema(
  *     schema="FiatCurrency",
  *     title="FiatCurrency",
- *     description="Модель фиатной валюты"
+ *     description="Fiat currency model"
  * )
  */
 
@@ -39,7 +39,7 @@ class FiatCurrency extends Model
     ];
 
     /**
-     * Получить активные фиатные валюты
+     * Get active fiat currencies
      */
     public function scopeActive($query)
     {

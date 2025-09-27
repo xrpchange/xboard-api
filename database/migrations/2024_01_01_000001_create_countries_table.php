@@ -12,11 +12,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('countries', function (Blueprint $table) {
-            $table->id()->comment('Уникальный идентификатор страны');
-            $table->string('name', 100)->comment('Название страны');
-            $table->string('code', 3)->unique()->comment('ISO 3166-1 alpha-3 код страны (3 буквы)');
-            $table->string('phone_code', 10)->nullable()->comment('Телефонный код страны');
-            $table->boolean('is_active')->default(true)->comment('Флаг активности страны в системе');
+            $table->id()->comment('Unique country identifier');
+            $table->string('name', 100)->comment('Country name');
+            $table->string('code', 3)->unique()->comment('ISO 3166-1 alpha-3 country code (3 letters)');
+            $table->string('phone_code', 10)->nullable()->comment('Country phone code');
+            $table->boolean('is_active')->default(true)->comment('Country activity flag in the system');
             $table->timestamps();
             
             $table->index('code', 'idx_countries_code');

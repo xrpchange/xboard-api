@@ -1,138 +1,138 @@
-# XBoard - P2P Криптобиржа с Залоговой Гарантией
+# XBoard - P2P Cryptocurrency Exchange with Collateral Guarantee
 
-## Описание проекта
+## Project Description
 
-XBoard - это P2P криптобиржа (доска объявлений) с залоговой гарантией, использующая Ripple (XRP) для залоговых токенов с возможностью расширения на другие блокчейны.
+XBoard is a P2P cryptocurrency exchange (bulletin board) with collateral guarantee, using Ripple (XRP) for collateral tokens with the ability to expand to other blockchains.
 
-### Основные принципы работы
+### Basic Operating Principles
 
-1. **Залоговые токены как идентификаторы** - сам залоговый токен является токеном доступа к доске объявлений, никакой регистрации пользователя нет
-2. **Песочница** - режим тестирования, переключаемый налету в телефонном приложении
-3. **Внешние транзакции** - транзакции проводятся не на платформе, информация о них поступает от пользователей
-4. **Безопасность** - специальные комиссии и резервирования хранятся в отдельной БД на физически отдельном сервере
+1. **Collateral tokens as identifiers** - the collateral token itself is the access token to the exchange board, no user registration required
+2. **Sandbox** - testing mode, switchable on-the-fly in the mobile application
+3. **External transactions** - transactions are not conducted on the platform, information about them comes from users
+4. **Security** - special fees and reservations are stored in a separate database on a physically separate server
 
-### API и клиентские приложения
+### API and Client Applications
 
-#### Работа через API:
-- **Основной интерфейс** - строго через REST API
-- **Мобильные приложения** - Kotlin для Android и iOS приложения
-- **Внешние IP** - функции для работы с внешними IP адресами
-- **Залоговые токены** - выдаются только через телефонные приложения
+#### Working through API:
+- **Main interface** - strictly through REST API
+- **Mobile applications** - Kotlin for Android and iOS applications
+- **External IP** - functions for working with external IP addresses
+- **Collateral tokens** - issued only through mobile applications
 
-#### Система токенов:
-- **Залоговые токены** - основной идентификатор пользователя, выдаются только через мобильные приложения
-  - Хранятся только в ядре в отдельной БД до конца транзакции
-- **User tokens** - Bearer-токены в формате хэша для API аутентификации
-  - Сеансовые токены (бессрочные или на год)
-  - Используются для доступа к API
-- **Тестовые группы** - в режиме песочницы используется поле `test_group` для группировки пользователей
-  - Обязательное поле в запросах к таблицам: exchange_lots, buy_triggers, transactions
+#### Token System:
+- **Collateral tokens** - main user identifier, issued only through mobile applications
+  - Stored only in the core in a separate database until the end of the transaction
+- **User tokens** - Bearer tokens in hash format for API authentication
+  - Session tokens (permanent or for a year)
+  - Used for API access
+- **Test groups** - in sandbox mode, the `test_group` field is used for user grouping
+  - Required field in requests to tables: exchange_lots, buy_triggers, transactions
 
-### Ключевые особенности
+### Key Features
 
-1. **Залоговые токены на XRP** - дешевый и быстрый обмен без хранения данных в БД (с песочницей для тестирования)
-2. **Шифрование данных** - информация о кошельках и правилах комиссий хранится в зашифрованном виде
-3. **Физическая защита** - серверы размещаются в защищенных местах
-4. **Комиссионная система** - ввод/вывод средств взимает комиссию согласно правилам из токена
+1. **XRP collateral tokens** - cheap and fast exchange without storing data in the database (with sandbox for testing)
+2. **Data encryption** - information about wallets and fee rules is stored in encrypted form
+3. **Physical protection** - servers are located in secure places
+4. **Fee system** - deposit/withdrawal of funds charges a fee according to the rules from the token
 
-### Архитектура
+### Architecture
 
-- **Frontend**: Kotlin для Android и iOS приложений
+- **Frontend**: Kotlin for Android and iOS applications
 - **Backend**: Laravel PHP 8.4
-- **База данных**: MySQL (см. [schema.sql](../schema.sql))
-- **API**: REST API с Bearer-токенами и Swagger документацией
-- **Внешний сервис**: Распределенное ядро на отдельном оборудовании для безопасных операций
-  - Домены: `sandbox.core*.xn--80apfreedjfbd.xn--p1ai` / `prod.core*.xn--80apfreedjfbd.xn--p1ai`
-  - Масштабирование: core1, core2, core3... для отказоустойчивости
+- **Database**: MySQL (see [schema.sql](../schema.sql))
+- **API**: REST API with Bearer tokens and Swagger documentation
+- **External service**: Distributed core on separate equipment for secure operations
+  - Domains: `sandbox.core*.xn--80apfreedjfbd.xn--p1ai` / `prod.core*.xn--80apfreedjfbd.xn--p1ai`
+  - Scaling: core1, core2, core3... for fault tolerance
 
-### Структура базы данных
+### Database Structure
 
-#### Справочники
-- **Страны** (countries) - ISO 3166-1 alpha-3 коды
-- **Фиатные валюты** (fiat_currencies) - ISO 4217 коды
-- **Криптовалюты** (crypto_currencies) - основные + стейблкоины
-- **Банки** (banks) - привязаны к странам и валютам
+#### Reference Data
+- **Countries** (countries) - ISO 3166-1 alpha-3 codes
+- **Fiat currencies** (fiat_currencies) - ISO 4217 codes
+- **Cryptocurrencies** (crypto_currencies) - major + stablecoins
+- **Banks** (banks) - linked to countries and currencies
 
-#### Основные таблицы
-- **Доска объявлений** (exchange_lots) - лоты продажи валюты
-- **Триггеры покупки** (buy_triggers) - автоматические покупки
-- **Транзакции** (transactions) - внешние транзакции от пользователей
+#### Main Tables
+- **Exchange board** (exchange_lots) - currency sale lots
+- **Buy triggers** (buy_triggers) - automatic purchases
+- **Transactions** (transactions) - external transactions from users
 
-#### Особенности
-- Залоговые токены содержат ID криптовалюты и адрес кошелька
-- Поддержка тестового режима (is_test, test_group)
-- Индексы для быстрого поиска по токенам и адресам
+#### Features
+- Collateral tokens contain cryptocurrency ID and wallet address
+- Test mode support (is_test, test_group)
+- Indexes for fast search by tokens and addresses
 
-#### Поля test_group:
-- **Назначение**: группировка пользователей в режиме песочницы
-- **Использование**: обязательное поле в запросах к таблицам с test_group
-- **Таблицы**: exchange_lots, buy_triggers, transactions
-- **Логика**: в тестовом режиме все запросы должны содержать test_group для изоляции данных
+#### test_group fields:
+- **Purpose**: user grouping in sandbox mode
+- **Usage**: required field in requests to tables with test_group
+- **Tables**: exchange_lots, buy_triggers, transactions
+- **Logic**: in test mode, all requests should contain test_group for data isolation
 
-## Документация
+## Documentation
 
-- [Схема базы данных](../schema.sql)
-- [API документация внешнего сервиса](core_swagger.yaml) - для проверки внешних переводов через ноды
-- [Код ядра системы](../XRPChangeCore) - отдельный сервис для критических операций
+- [Database schema](../schema.sql)
+- [External service API documentation](core_swagger.yaml) - for checking external transfers through nodes
+- [Core system code](../XRPChangeCore) - separate service for critical operations
 
-## Задачи
+## Tasks
 
-### Текущие задачи
-- [x] Создать базовую структуру проекта
-- [x] Настроить справочники (страны, валюты, банки)
-- [x] Реализовать доску объявлений (exchange_lots)
-- [x] Реализовать триггеры покупки (buy_triggers)
-- [x] Создать систему обработки внешних транзакций
-- [x] Реализовать тестовый режим (песочница)
-- [x] Система Bearer-токенов для API аутентификации
-- [x] Управление тестовыми группами в песочнице
-- [x] Создать полную документацию API (Swagger)
-- [x] Обновить README.md для проекта
-- [ ] Интеграция с ядром системы (XRPChangeCore)
-- [ ] Система push-уведомлений о залоговых токенах
-- [ ] Конфигурация распределенных серверов ядра
+### Current Tasks
+- [x] Create basic project structure
+- [x] Set up reference data (countries, currencies, banks)
+- [x] Implement exchange board (exchange_lots)
+- [x] Implement buy triggers (buy_triggers)
+- [x] Create external transaction processing system
+- [x] Implement test mode (sandbox)
+- [x] Bearer token system for API authentication
+- [x] Test group management in sandbox
+- [x] Create complete API documentation (Swagger)
+- [x] Update README.md for project
+- [ ] Core system integration (XRPChangeCore)
+- [ ] Push notification system for collateral tokens
+- [ ] Distributed core server configuration
 
-### Планируемые задачи
-- [ ] Интеграция с XRP Ledger (с песочницей для тестирования)
-- [ ] Интеграция с Moneyra (минимальная реализация в ядре) // пока не ясно что тут делать
-- [ ] Система безопасности доски объявлений (защита от DDoS, push-уведомления о токенах)
+### Planned Tasks
+- [ ] XRP Ledger integration (with sandbox for testing)
+- [ ] Moneyra integration (minimal implementation in core) // unclear what to do here yet
+- [ ] Exchange board security system (DDoS protection, token notifications)
 
-## Технические детали
+## Technical Details
 
-### Залоговые токены
-- Используют Ripple (XRP) для быстрых и дешевых транзакций (с песочницей для тестирования)
-- Планируется поддержка Moneyra (минимальная реализация в ядре)
-- Содержат зашифрованную информацию о кошельках и правилах комиссий
-- Обеспечивают безопасность без хранения данных в БД
+### Collateral Tokens
+- Use Ripple (XRP) for fast and cheap transactions (with sandbox for testing)
+- Planned Moneyra support (minimal implementation in core)
+- Contain encrypted information about wallets and fee rules
+- Provide security without storing data in the database
 
-### Безопасность доски объявлений
-- Защита от DDoS атак на API
-- Push-уведомления на телефоны о залоговых токенах (строго через push, не через API)
-- Информация о токенах не должна быть доступна через обычные API запросы
+### Exchange Board Security
+- DDoS attack protection on API
+- Push notifications to phones about collateral tokens (strictly through push, not through API)
+- Token information should not be available through regular API requests
 
-### Ядро системы
-- Отдельный сервис в папке `../XRPChangeCore`
-- Обработка всех критических операций (комиссии, резервирования)
-- Физически отдельное оборудование
+### System Core
+- Separate service in `../XRPChangeCore` folder
+- Processing all critical operations (fees, reservations)
+- Physically separate equipment
 
-#### Распределенная архитектура ядра:
-- **Разделение по доменам**: `sandbox.core*.xn--80apfreedjfbd.xn--p1ai` и `prod.core*.xn--80apfreedjfbd.xn--p1ai`
-- **Масштабирование**: core1, core2, core3... для отказоустойчивости
-- **Единая БД**: все серверы ядра работают с одной базой данных для отслеживания транзакций
-- **Конфигурация**: управление серверами через конфиг (пока одна коробка, планируется больше)
-- **Отказоустойчивость**: серверы стараются не отключаться одновременно
+#### Distributed Core Architecture:
+- **Domain separation**: `sandbox.core*.xn--80apfreedjfbd.xn--p1ai` and `prod.core*.xn--80apfreedjfbd.xn--p1ai`
+- **Scaling**: core1, core2, core3... for fault tolerance
+- **Unified DB**: all core servers work with one database for transaction tracking
+- **Configuration**: server management through config (currently one box, more planned)
+- **Fault tolerance**: servers try not to go down simultaneously
 
-#### Основные функции ядра:
-- **Создание залоговых токенов** - генерация зашифрованных токенов с данными кошелька
-- **Хранение токенов** - залоговые токены хранятся только в ядре в отдельной БД до конца транзакции
-- **Депозит/вывод средств** - операции с XRP через XRP Ledger
-- **Компенсация покупателей** - автоматические выплаты при сделках
-- **Резервирование средств** - блокировка средств для сделок
-- **Расчет комиссий** - с учетом типа клиента (физ/юр лицо)
-- **Шифрование данных** - AES-256-CBC для всех критических данных
+#### Core Main Functions:
+- **Collateral token creation** - generation of encrypted tokens with wallet data
+- **Token storage** - collateral tokens are stored only in the core in a separate database until the end of the transaction
+- **Deposit/withdrawal** - XRP operations through XRP Ledger
+- **Buyer compensation** - automatic payments during deals
+- **Fund reservation** - fund blocking for deals
+- **Fee calculation** - considering client type (individual/legal entity)
+- **Data encryption** - AES-256-CBC for all critical data
 
-#### Интеграция с XRP:
-- Использует библиотеку `Hardcastle\XRPL_PHP`
-- Поддержка песочницы и продакшена
-- Автоматическое пополнение аккаунтов
-- Валидация адресов и сидов
+#### XRP Integration:
+- Uses `Hardcastle\XRPL_PHP` library
+- Sandbox and production support
+- Automatic account replenishment
+- Address and seed validation

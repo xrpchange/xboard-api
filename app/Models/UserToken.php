@@ -22,7 +22,7 @@ class UserToken extends Model
     ];
 
     /**
-     * Получить связанный лот обмена
+     * Get associated exchange lot
      */
     public function exchangeLot(): BelongsTo
     {
@@ -30,7 +30,7 @@ class UserToken extends Model
     }
 
     /**
-     * Проверить, не истек ли токен
+     * Check if token is expired
      */
     public function isExpired(): bool
     {
@@ -38,7 +38,7 @@ class UserToken extends Model
     }
 
     /**
-     * Обновить время последнего использования
+     * Update last used time
      */
     public function updateLastUsed(): void
     {

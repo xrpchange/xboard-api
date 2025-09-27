@@ -53,7 +53,7 @@ class Transaction extends Model
     ];
 
     /**
-     * Получить лот обмена
+     * Get exchange lot
      */
     public function exchangeLot(): BelongsTo
     {
@@ -61,7 +61,7 @@ class Transaction extends Model
     }
 
     /**
-     * Получить активные транзакции
+     * Get active transactions
      */
     public function scopeActive($query)
     {
@@ -69,7 +69,7 @@ class Transaction extends Model
     }
 
     /**
-     * Получить тестовые транзакции
+     * Get test transactions
      */
     public function scopeTest($query, $testGroup = null)
     {
@@ -81,7 +81,7 @@ class Transaction extends Model
     }
 
     /**
-     * Получить транзакции по типу
+     * Get transactions by type
      */
     public function scopeByType($query, $type)
     {
@@ -89,7 +89,7 @@ class Transaction extends Model
     }
 
     /**
-     * Получить транзакции по адресу
+     * Get transactions by address
      */
     public function scopeByAddress($query, $address)
     {
