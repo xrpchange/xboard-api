@@ -23,11 +23,11 @@ class ValidateBearerToken
         if (!$bearerToken) {
             return response()->json([
                 'success' => false,
-                'message' => 'Bearer токен не предоставлен'
+                'message' => 'Bearer token not provided'
             ], 401);
         }
 
-        // Валидировать Bearer токен через сервис
+        // Validate Bearer token via service
         $userToken = $this->collateralTokenService->validateBearerToken($bearerToken);
         
         if (!$userToken) {
@@ -37,13 +37,13 @@ class ValidateBearerToken
             ], 401);
         }
 
-        // Добавляем информацию о токене в request
+        // Add token information to request
         $request->merge([
             'user_token' => $userToken,
             'wallet_address' => $userToken->device_id
         ]);
 
-        // Добавляем информацию о тестовой группе в request
+        // Add test group information to request
         $request->merge(['test_group' => $request->header('X-Test-Group')]);
 
         return $next($request);

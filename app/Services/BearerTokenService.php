@@ -8,7 +8,7 @@ use Illuminate\Support\Str;
 class BearerTokenService
 {
     /**
-     * Генерация Bearer токена
+     * Generate Bearer token
      */
     public function generateToken(string $escrowToken): string
     {
@@ -17,7 +17,7 @@ class BearerTokenService
     }
 
     /**
-     * Сохранение Bearer токена в таблице user_tokens
+     * Save Bearer token to user_tokens table
      */
     public function saveToken(string $bearerToken, string $escrowToken, string $ipAddress): void
     {
@@ -35,7 +35,7 @@ class BearerTokenService
     }
 
     /**
-     * Проверка Bearer токена
+     * Validate Bearer token
      */
     public function validateToken(string $bearerToken): ?object
     {
@@ -45,7 +45,7 @@ class BearerTokenService
             ->first();
 
         if ($tokenRecord) {
-            // Обновляем время последнего использования
+            // Update last used time
             DB::table('user_tokens')
                 ->where('id', $tokenRecord->id)
                 ->update(['last_used_at' => now()]);

@@ -53,10 +53,10 @@ class AuthController extends Controller
         ]);
 
         try {
-            // Создать Bearer токен (включает проверку баланса через ядро)
+            // Create Bearer token (includes balance check via core)
             $bearerToken = $this->collateralTokenService->createBearerToken($request->escrow_token, $request->ip());
             
-            // Расшифровать токен для получения данных
+            // Decrypt token to get data
             $tokenData = $this->collateralTokenService->decryptToken($request->escrow_token);
             
             return response()->json([
@@ -107,7 +107,7 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // Валидировать Bearer токен
+        // Validate Bearer token
         $userToken = $this->collateralTokenService->validateBearerToken($bearerToken);
         
         if (!$userToken) {
@@ -117,7 +117,7 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // Расшифровать залоговый токен для получения данных
+        // Decrypt collateral token to get data
         $tokenData = $this->collateralTokenService->decryptToken($userToken->collateral_token);
 
         return response()->json([
