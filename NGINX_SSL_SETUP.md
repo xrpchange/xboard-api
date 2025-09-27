@@ -1,31 +1,31 @@
-# 🔒 Настройка Nginx с SSL сертификатами для XBoard
+# 🔒 Nginx SSL Setup for XBoard
 
-> Полная инструкция по настройке Nginx с автоматическими SSL сертификатами Let's Encrypt для XBoard API
+> Complete guide for setting up Nginx with automatic Let's Encrypt SSL certificates for XBoard API
 
-## 📋 Содержание
+## 📋 Table of Contents
 
-- [Быстрый старт](#-быстрый-старт)
-- [Установка компонентов](#1-установка-nginx-и-certbot)
-- [Настройка Nginx (временная)](#2-настройка-nginx-временная-конфигурация)
-- [Получение SSL сертификатов](#4-получение-ssl-сертификатов)
-- [Замена на SSL конфигурацию](#5-замена-на-ssl-конфигурацию)
-- [Автоматическое обновление](#6-настройка-автоматического-обновления-сертификатов)
-- [Проверка работы](#7-проверка-работы)
-- [Мониторинг](#9-мониторинг-и-логи)
+- [Quick Start](#-quick-start)
+- [Component Installation](#1-install-nginx-and-certbot)
+- [Nginx Setup (Temporary)](#2-nginx-setup-temporary-configuration)
+- [SSL Certificate Acquisition](#4-obtain-ssl-certificates)
+- [Replace with SSL Configuration](#5-replace-with-ssl-configuration)
+- [Automatic Renewal](#6-setup-automatic-certificate-renewal)
+- [Verification](#7-verify-functionality)
+- [Monitoring](#9-monitoring-and-logs)
 - [Troubleshooting](#11-troubleshooting)
 
-## 🚀 Быстрый старт
+## 🚀 Quick Start
 
 ```bash
-# 1. Скопировать конфигурации на сервер
+# 1. Copy configurations to server
 scp nginx-xboard-temp.conf nginx-xboard.conf user@server:/path/to/xboard/
 
-# 2. Настроить временную конфигурацию (без SSL)
+# 2. Setup temporary configuration (without SSL)
 sudo cp nginx-xboard-temp.conf /etc/nginx/sites-available/xboard
 sudo ln -s /etc/nginx/sites-available/xboard /etc/nginx/sites-enabled/xboard
 sudo nginx -t && sudo systemctl reload nginx
 
-# 3. Получить SSL сертификаты
+# 3. Obtain SSL certificates
 sudo certbot certonly --webroot \
   -w /var/www/certbot \
   -d sandbox.api.xrpchange.site \
@@ -34,69 +34,69 @@ sudo certbot certonly --webroot \
   --agree-tos \
   --non-interactive
 
-# 4. Заменить на SSL конфигурацию
+# 4. Replace with SSL configuration
 sudo cp nginx-xboard.conf /etc/nginx/sites-available/xboard
 sudo nginx -t && sudo systemctl reload nginx
 
-# 5. Проверить работу
+# 5. Verify functionality
 curl https://sandbox.api.xrpchange.site/api/v1/countries
 ```
 
 ---
 
-## 1. Установка Nginx и Certbot
+## 1. Install Nginx and Certbot
 
-### 🛠️ Установка пакетов
+### 🛠️ Package Installation
 
 ```bash
-# Обновление системы
+# System update
 sudo apt update && sudo apt upgrade -y
 
-# Установка Nginx
+# Install Nginx
 sudo apt install nginx -y
 
-# Установка Certbot и плагина для Nginx
+# Install Certbot and Nginx plugin
 sudo apt install certbot python3-certbot-nginx -y
 
-# Запуск и включение Nginx
+# Start and enable Nginx
 sudo systemctl start nginx
 sudo systemctl enable nginx
 ```
 
-### ✅ Проверка установки
+### ✅ Installation Verification
 
 ```bash
-# Проверка версий
+# Check versions
 nginx -v
 certbot --version
 
-# Проверка статуса Nginx
+# Check Nginx status
 sudo systemctl status nginx
 ```
 
-## 2. Настройка Nginx (временная конфигурация)
+## 2. Nginx Setup (Temporary Configuration)
 
-### 📁 Копирование временной конфигурации
+### 📁 Copy Temporary Configuration
 
 ```bash
-# Копируем временную конфигурацию XBoard (без SSL)
+# Copy temporary XBoard configuration (without SSL)
 sudo cp nginx-xboard-temp.conf /etc/nginx/sites-available/xboard
 
-# Создаем символическую ссылку
+# Create symbolic link
 sudo ln -s /etc/nginx/sites-available/xboard /etc/nginx/sites-enabled/xboard
 
-# Удаляем дефолтную конфигурацию
+# Remove default configuration
 sudo rm /etc/nginx/sites-enabled/default
 
-# Проверяем конфигурацию
+# Test configuration
 sudo nginx -t
 ```
 
-> **⚠️ Важно:** Используем временную конфигурацию без SSL для получения сертификатов
+> **⚠️ Important:** We use temporary configuration without SSL to obtain certificates
 
-### ⚠️ Важно: Настройка upstream
+### ⚠️ Important: Upstream Configuration
 
-Если вы хотите использовать upstream для балансировки нагрузки, добавьте в `/etc/nginx/nginx.conf` в блок `http`:
+If you want to use upstream for load balancing, add to `/etc/nginx/nginx.conf` in the `http` block:
 
 ```nginx
 http {
@@ -113,32 +113,32 @@ http {
 }
 ```
 
-Затем в конфигурации XBoard замените `http://192.168.1.31:80` на `http://xboard_backend`.
+Then in XBoard configuration replace `http://192.168.1.31:80` with `http://xboard_backend`.
 
-### 📂 Создание директории для Certbot
+### 📂 Create Certbot Directory
 
 ```bash
-# Создаем директорию для ACME challenge
+# Create directory for ACME challenge
 sudo mkdir -p /var/www/certbot
 sudo chown -R www-data:www-data /var/www/certbot
 ```
 
-### 🔧 Особенности конфигурации
+### 🔧 Configuration Features
 
-Конфигурация включает:
-- ✅ **Автоматический редирект** HTTP → HTTPS
-- ✅ **Поддержка HTTP/2** для лучшей производительности
-- ✅ **CORS заголовки** для API
-- ✅ **Заголовки безопасности** (HSTS, X-Frame-Options, etc.)
-- ✅ **Проксирование** на XBoard (192.168.1.31:80)
-- ✅ **Keepalive** для оптимизации соединений
+Configuration includes:
+- ✅ **Automatic redirect** HTTP → HTTPS
+- ✅ **HTTP/2 support** for better performance
+- ✅ **CORS headers** for API
+- ✅ **Security headers** (HSTS, X-Frame-Options, etc.)
+- ✅ **Proxying** to XBoard (192.168.1.31:80)
+- ✅ **Keepalive** for connection optimization
 
-## 3. Получение SSL сертификатов
+## 3. Obtain SSL Certificates
 
-### 🔐 Получение сертификатов для обоих доменов
+### 🔐 Obtain Certificates for Both Domains
 
 ```bash
-# Получаем сертификаты для sandbox и production доменов
+# Obtain certificates for sandbox and production domains
 sudo certbot certonly --webroot \
   -w /var/www/certbot \
   -d sandbox.api.xrpchange.site \
@@ -200,7 +200,7 @@ sudo certbot certonly --webroot \
 ### 🔐 Получение реальных сертификатов
 
 ```bash
-# Получаем сертификаты для sandbox и production доменов
+# Obtain certificates for sandbox and production domains
 sudo certbot certonly --webroot \
   -w /var/www/certbot \
   -d sandbox.api.xrpchange.site \

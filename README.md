@@ -1,243 +1,292 @@
-# XBoard - P2P Криптобиржа с Залоговой Гарантией
+# XBoard - P2P Cryptocurrency Exchange with Collateral Guarantee
 
 <p align="center">
 <img src="https://img.shields.io/badge/Laravel-10.x-red.svg" alt="Laravel Version">
-<img src="https://img.shields.io/badge/PHP-8.1+-blue.svg" alt="PHP Version">
+<img src="https://img.shields.io/badge/PHP-8.4-blue.svg" alt="PHP Version">
 <img src="https://img.shields.io/badge/MySQL-8.0+-orange.svg" alt="MySQL Version">
+<img src="https://img.shields.io/badge/SSL-Let's%20Encrypt-green.svg" alt="SSL Certificate">
 <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
 </p>
 
-## Описание проекта
+## 🎯 Project Description
 
-XBoard - это P2P криптобиржа (доска объявлений) с залоговой гарантией, использующая Ripple (XRP) для залоговых токенов с возможностью расширения на другие блокчейны.
+XBoard is a P2P cryptocurrency exchange (bulletin board) with collateral guarantee, using Ripple (XRP) for collateral tokens with the ability to expand to other blockchains.
 
-### Основные принципы работы
+### 🏗️ System Architecture
 
-1. **Залоговые токены как идентификаторы** - сам залоговый токен является токеном доступа к доске объявлений, никакой регистрации пользователя нет
-2. **Песочница** - режим тестирования, переключаемый налету в телефонном приложении
-3. **Внешние транзакции** - транзакции проводятся не на платформе, информация о них поступает от пользователей
-4. **Безопасность** - специальные комиссии и резервирования хранятся в отдельной БД на физически отдельном сервере
+The system consists of two main components:
 
-## Быстрый старт
+- **XBoard** - Public API for P2P exchange bulletin board
+- **XRPChangeCore** - Core system for blockchain operations and collateral tokens
 
-### Требования
-- PHP 8.1+
+📋 **[Complete System Overview → PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)**
+
+### 🔑 Core Principles
+
+1. **Collateral tokens as identifiers** - The collateral token itself is the access token to the exchange board, no user registration required
+2. **Sandbox** - Testing mode, switchable on-the-fly in mobile application
+3. **External transactions** - Transactions are not conducted on the platform, information about them comes from users
+4. **Security** - Special commissions and reservations are stored in a separate database on a physically separate server
+
+### 🌐 System Domains
+
+**XBoard API:**
+- Sandbox: `https://sandbox.api.xrpchange.site`
+- Production: `https://api.xrpchange.site`
+
+**XRPChangeCore API:**
+- Sandbox: `https://sandbox.api.core.xrpchange.site`
+- Production: `https://api.core.xrpchange.site`
+
+## Quick Start
+
+### Requirements
+- PHP 8.4+
 - MySQL 8.0+
 - Composer
-- Node.js (для сборки фронтенда)
+- Nginx (for production)
+- SSL certificates (Let's Encrypt)
 
-### Установка
+### Installation
 
-1. **Клонирование репозитория**
+1. **Clone repository**
 ```bash
 git clone https://github.com/your-username/xboard.git
 cd xboard
 ```
 
-2. **Установка зависимостей**
+2. **Install dependencies**
 ```bash
 composer install
 npm install
 ```
 
-3. **Настройка окружения**
+3. **Environment setup**
 ```bash
 cp .env.example .env
 php artisan key:generate
 ```
 
-4. **Настройка базы данных**
+4. **Database setup**
 ```bash
-# Отредактируйте .env файл с вашими настройками БД
+# Edit .env file with your database settings
 php artisan migrate
 php artisan db:seed
 ```
 
-5. **Запуск сервера**
+5. **XRPChangeCore setup**
+```bash
+# Configure .env.sandbox in XRPChangeCore
+# Ensure core is accessible at core API address
+```
+
+6. **Start server**
 ```bash
 php artisan serve
 ```
 
-Приложение будет доступно по адресу: http://localhost:8000
+Application will be available at: http://localhost:8000
 
-## API Документация
+### 🚀 Production Deployment
+
+1. **Nginx with SSL setup**
+```bash
+# Follow instructions in NGINX_SSL_SETUP.md
+```
+
+2. **XRPChangeCore setup**
+```bash
+# Follow instructions in CORE_NGINX_SETUP.md
+```
+
+3. **Cron jobs setup**
+```bash
+# Follow instructions in CRON_SSL_SETUP.md
+```
+
+## API Documentation
 
 ### Swagger UI
-После запуска сервера документация доступна по адресу:
+After starting the server, documentation is available at:
 - **API**: http://localhost:8000/api/documentation
 - **Core API**: http://localhost:8000/docs/core_swagger.yaml
 
-### API Документация:
-- **Sandbox** (для тестирования): http://sandbox.api.xrpchange.site/documentation
-- **Production**: http://api.xrpchange.site/documentation
+### API Documentation:
+- **Sandbox** (for testing): https://sandbox.api.xrpchange.site/documentation
+- **Production**: https://api.xrpchange.site/documentation
 - **Local**: http://localhost:8000/api/documentation
 
-### Основные эндпоинты
+### Main Endpoints
 
-#### Аутентификация
-- `POST /api/v1/auth/bearer-token` - Получение Bearer токена
-- `GET /api/v1/auth/validate` - Проверка токена
+#### Authentication
+- `POST /api/v1/auth/bearer-token` - Get Bearer token
+- `GET /api/v1/auth/validate` - Validate token
 
-#### Справочники (публичные)
-- `GET /api/v1/countries` - Список стран
-- `GET /api/v1/currencies/fiat` - Фиатные валюты
-- `GET /api/v1/currencies/crypto` - Криптовалюты
-- `GET /api/v1/banks` - Список банков
+#### Reference Data (public)
+- `GET /api/v1/countries` - List of countries
+- `GET /api/v1/currencies/fiat` - Fiat currencies
+- `GET /api/v1/currencies/crypto` - Cryptocurrencies
+- `GET /api/v1/banks` - List of banks
 
+#### Exchange Board (protected)
+- `GET /api/v1/exchange-lots` - List of lots
+- `POST /api/v1/exchange-lots` - Create lot
+- `PUT /api/v1/exchange-lots/{id}` - Update lot
+- `DELETE /api/v1/exchange-lots/{id}` - Delete lot
 
-#### Доска объявлений (защищенные)
-- `GET /api/v1/exchange-lots` - Список лотов
-- `POST /api/v1/exchange-lots` - Создание лота
-- `PUT /api/v1/exchange-lots/{id}` - Обновление лота
-- `DELETE /api/v1/exchange-lots/{id}` - Удаление лота
+#### Buy Triggers (protected)
+- `GET /api/v1/buy-triggers` - List of triggers
+- `POST /api/v1/buy-triggers` - Create trigger
+- `PUT /api/v1/buy-triggers/{id}` - Update trigger
+- `DELETE /api/v1/buy-triggers/{id}` - Delete trigger
 
-#### Триггеры покупки (защищенные)
-- `GET /api/v1/buy-triggers` - Список триггеров
-- `POST /api/v1/buy-triggers` - Создание триггера
-- `PUT /api/v1/buy-triggers/{id}` - Обновление триггера
-- `DELETE /api/v1/buy-triggers/{id}` - Удаление триггера
+#### Transactions (protected)
+- `GET /api/v1/transactions` - List of transactions
+- `GET /api/v1/transactions/stats` - Transaction statistics
+- `POST /api/v1/transactions` - Create transaction
+- `PUT /api/v1/transactions/{id}` - Update transaction
 
-#### Транзакции (защищенные)
-- `GET /api/v1/transactions` - Список транзакций
-- `GET /api/v1/transactions/stats` - Статистика транзакций
-- `POST /api/v1/transactions` - Создание транзакции
-- `PUT /api/v1/transactions/{id}` - Обновление транзакции
-
-## Архитектура
+## Architecture
 
 ### Backend
 - **Framework**: Laravel 10.x
-- **База данных**: MySQL 8.0+
-- **API**: REST API с Bearer-токенами
-- **Документация**: Swagger/OpenAPI 3.0
+- **Database**: MySQL 8.0+
+- **API**: REST API with Bearer tokens
+- **Documentation**: Swagger/OpenAPI 3.0
 
 ### Frontend
-- **Android**: Kotlin - [Документация клиента](docs/CLIENT_README.md)
-- **iOS**: Swift (планируется)
-- **Веб**: Vue.js/React (планируется)
+- **Android**: Kotlin - [Client Documentation](docs/CLIENT_README.md)
+- **iOS**: Swift (planned)
+- **Web**: Vue.js/React (planned)
 
-### Ядро системы
-- **Отдельный сервис**: XRPChangeCore
-- **Блокчейн**: XRP Ledger
-- **Безопасность**: Физически отдельное оборудование
+### Core System
+- **Separate service**: XRPChangeCore
+- **Blockchain**: XRP Ledger
+- **Security**: Physically separate equipment
 
-#### Проверка доступности ядра (в самом ядре)
-В `XRPChangeCore/public/echo.php` должен быть эхо-эндпоинт (по умолчанию `/echo.php`), на который ходит проверка здоровья из XBoard. Путь можно переопределить через переменную окружения `CORE_HEALTH_PATH`.
+#### Core health check (in core itself)
+In `XRPChangeCore/public/echo.php` there should be an echo endpoint (default `/echo.php`), which XBoard health check uses. Path can be overridden via environment variable `CORE_HEALTH_PATH`.
 
-## Структура базы данных
+## Database Structure
 
-### Справочники
-- `countries` - Страны (ISO 3166-1 alpha-3)
-- `fiat_currencies` - Фиатные валюты (ISO 4217)
-- `crypto_currencies` - Криптовалюты
-- `banks` - Банки (привязаны к странам)
+### Reference Data
+- `countries` - Countries (ISO 3166-1 alpha-3)
+- `fiat_currencies` - Fiat currencies (ISO 4217)
+- `crypto_currencies` - Cryptocurrencies
+- `banks` - Banks (linked to countries)
 
-### Основные таблицы
-- `exchange_lots` - Доска объявлений
-- `buy_triggers` - Триггеры покупки
-- `transactions` - Внешние транзакции
+### Main Tables
+- `exchange_lots` - Exchange board
+- `buy_triggers` - Buy triggers
+- `transactions` - External transactions
 
-### Особенности
-- Поддержка тестового режима (`is_test`, `test_group`)
-- Индексы для быстрого поиска
-- Шифрование критических данных
+### Features
+- Test mode support (`is_test`, `test_group`)
+- Indexes for fast search
+- Critical data encryption
 
-## Тестирование
+## Testing
 
-### Запуск тестов
+### Run tests
 ```bash
 php artisan test
 ```
 
-### Тестовый режим
-В тестовом режиме все запросы должны содержать `test_group` для изоляции данных.
+### Test mode
+In test mode, all requests must contain `test_group` for data isolation.
 
-## Безопасность
+## Security
 
-### Залоговые токены
-- Используют XRP для быстрых транзакций
-- Содержат зашифрованную информацию
-- Хранятся только в ядре системы
+### Collateral tokens
+- Use XRP for fast transactions
+- Contain encrypted information
+- Stored only in core system
 
-### API Безопасность
-- Bearer-токены для аутентификации
-- Валидация всех входных данных
-- Защита от DDoS атак
+### API Security
+- Bearer tokens for authentication
+- Validation of all input data
+- DDoS attack protection
 
-## Разработка
+## Development
 
-### Команды Artisan
+### Artisan Commands
 ```bash
-# Миграции
+# Migrations
 php artisan migrate
 php artisan migrate:fresh --seed
 
-# Очистка кэша
+# Clear cache
 php artisan cache:clear
 php artisan config:clear
 php artisan route:clear
 
-# Генерация документации
+# Generate documentation
 php artisan l5-swagger:generate
 ```
 
-### Структура проекта
+### Project Structure
 ```
 xboard/
 ├── app/
-│   ├── Http/Controllers/Api/    # API контроллеры
-│   └── Models/                  # Eloquent модели
+│   ├── Http/Controllers/Api/    # API controllers
+│   └── Models/                  # Eloquent models
 ├── database/
-│   ├── migrations/              # Миграции БД
-│   └── seeders/                # Сидеры данных
-├── docs/                       # Документация
-│   ├── api_swagger.yaml        # API документация
-│   └── core_swagger.yaml       # Ядро документация
+│   ├── migrations/              # Database migrations
+│   └── seeders/                # Data seeders
+├── docs/                       # Documentation
+│   ├── api_swagger.yaml        # API documentation
+│   └── core_swagger.yaml       # Core documentation
 └── routes/
-    └── api.php                 # API роуты
+    └── api.php                 # API routes
 ```
 
-## Лицензия
+## License
 
-Этот проект лицензирован под MIT License - см. файл [LICENSE](LICENSE) для деталей.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Поддержка
+## 📚 Documentation
 
-- **План работы**: [docs/WORK_PLAN.md](docs/WORK_PLAN.md)
-- **Клиент Android**: [docs/CLIENT_README.md](docs/CLIENT_README.md)
-- **Документация**: [docs/](docs/)
-- **API**: [docs/api_swagger.yaml](docs/api_swagger.yaml)
-- **Задачи**: [docs/task.md](docs/task.md)
+### System Documentation
+- **[System Overview](PROJECT_OVERVIEW.md)** - Complete architecture and components
+- **[Nginx + SSL Setup](NGINX_SSL_SETUP.md)** - XBoard deployment instructions
+- **[XRPChangeCore Setup](CORE_NGINX_SETUP.md)** - Core system deployment instructions
+- **[Cron Jobs Setup](CRON_SSL_SETUP.md)** - Automatic certificate renewal
 
-## Вклад в проект
+### Developer Documentation
+- **Work Plan**: [docs/WORK_PLAN.md](docs/WORK_PLAN.md)
+- **Android Client**: [docs/CLIENT_README.md](docs/CLIENT_README.md)
+- **API Documentation**: [docs/api_swagger.yaml](docs/api_swagger.yaml)
+- **Project Tasks**: [docs/task.md](docs/task.md)
 
-1. Форкните репозиторий
-2. Создайте ветку для новой функции (`git checkout -b feature/amazing-feature`)
-3. Зафиксируйте изменения (`git commit -m 'Add amazing feature'`)
-4. Отправьте в ветку (`git push origin feature/amazing-feature`)
-5. Откройте Pull Request
+## Contributing
 
-## Доступ к ядру
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-Простое обращение к ядру (XRPChangeCore) через HTTP клиент Laravel:
+## Core Access
 
-### Конфигурация ядра
+Simple access to core (XRPChangeCore) via Laravel HTTP client:
 
-`config/services.php` → секция `core`:
+### Core Configuration
 
-- `url`: URL ядра
-- `key`: ключ авторизации (опционально)
-- `timeout`: таймаут HTTP-запросов (секунды)
+`config/services.php` → `core` section:
 
-ENV-пример:
+- `url`: Core URL
+- `key`: Authorization key (optional)
+- `timeout`: HTTP request timeout (seconds)
+
+ENV example:
 
 ```env
-CORE_URL=http://api.core.xrpchange.site
+CORE_URL=https://api.core.xrpchange.site
 CORE_KEY=your_api_key
 CORE_TIMEOUT=10
 ```
 
-### Примеры использования
+### Usage Examples
 
 ```php
 use Illuminate\Support\Facades\Http;
