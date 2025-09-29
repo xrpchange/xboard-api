@@ -37,6 +37,8 @@ info:
 servers:
   - url: http://localhost:8000/api/v1
     description: Local development server
+  - url: https://dev.api.xrpchange.site/api/v1
+    description: Development server (configurable: sandbox or production mode via DEV_MODE env)
   - url: https://sandbox.api.xrpchange.site/api/v1
     description: Sandbox server (for testing)
   - url: https://api.xrpchange.site/api/v1

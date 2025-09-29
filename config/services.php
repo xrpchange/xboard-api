@@ -47,4 +47,8 @@ return [
         'timeout' => env('CORE_PRODUCTION_TIMEOUT', 10),
     ],
 
+    'dev' => [
+        'mode' => env('DEV_MODE', 'sandbox'), // 'sandbox' or 'production'
+    ],
+
 ];

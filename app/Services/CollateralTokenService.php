@@ -19,7 +19,15 @@ class CollateralTokenService
     {
         // Determine environment and select appropriate core URL
         $isProduction = config('app.env') === 'production';
-        $coreConfig = $isProduction ? 'services.core_production' : 'services.core';
+        $isDev = config('app.env') === 'local' || str_contains(request()->getHost(), 'dev.api.xrpchange.site');
+        
+        if ($isDev) {
+            // Dev mode: use sandbox by default, but can be overridden
+            $devMode = config('services.dev.mode', 'sandbox');
+            $coreConfig = $devMode === 'production' ? 'services.core_production' : 'services.core';
+        } else {
+            $coreConfig = $isProduction ? 'services.core_production' : 'services.core';
+        }
         
         $coreUrl = config($coreConfig . '.url');
         $coreKey = config($coreConfig . '.key');
@@ -27,7 +35,7 @@ class CollateralTokenService
 
         Log::info('Checking token balance', [
             'core_url' => $coreUrl,
-            'environment' => $isProduction ? 'production' : 'sandbox'
+            'environment' => $isDev ? 'dev-' . config('services.dev.mode', 'sandbox') : ($isProduction ? 'production' : 'sandbox')
         ]);
 
         try {
