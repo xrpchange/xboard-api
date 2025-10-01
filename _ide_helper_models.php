@@ -18,13 +18,13 @@ namespace App\Models{
  *     title="Bank",
  *     description="Bank model"
  * )
- * @property int $id Уникальный идентификатор банка
+ * @property int $id Unique bank identifier
  * @property int $country_id
- * @property string $name Название банка
- * @property string|null $swift_code SWIFT-код банка
- * @property bool $supports_individuals Работает с физическими лицами
- * @property bool $supports_legal_entities Работает с юридическими лицами
- * @property bool $is_active Флаг активности банка в системе
+ * @property string $name Bank name
+ * @property string|null $swift_code Bank SWIFT code
+ * @property bool $supports_individuals Works with individuals
+ * @property bool $supports_legal_entities Works with legal entities
+ * @property bool $is_active Bank activity flag in the system
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property-read \App\Models\Country $country
@@ -54,22 +54,22 @@ namespace App\Models{
  *     title="BuyTrigger",
  *     description="Buy trigger model"
  * )
- * @property int $id Уникальный идентификатор триггера
+ * @property int $id Unique trigger identifier
  * @property int $crypto_currency_id
- * @property string $wallet_address Адрес кошелька залогового токена
- * @property string $buy_currency_type Тип покупаемой валюты (фиат/крипто)
- * @property int $buy_currency_id ID покупаемой валюты (из fiat_currencies или crypto_currencies)
- * @property numeric $buy_amount Количество покупаемой валюты
- * @property string $sell_currency_type Тип продаваемой валюты (фиат/крипто)
- * @property int $sell_currency_id ID продаваемой валюты (из fiat_currencies или crypto_currencies)
- * @property numeric|null $max_sell_amount Максимальное количество продаваемой валюты
+ * @property string $wallet_address Collateral token wallet address
+ * @property string $buy_currency_type Buy currency type (fiat/crypto)
+ * @property int $buy_currency_id Buy currency ID (from fiat_currencies or crypto_currencies)
+ * @property numeric $buy_amount Buy currency amount
+ * @property string $sell_currency_type Sell currency type (fiat/crypto)
+ * @property int $sell_currency_id Sell currency ID (from fiat_currencies or crypto_currencies)
+ * @property numeric|null $max_sell_amount Maximum sell currency amount
  * @property int|null $country_id
  * @property int|null $bank_id
- * @property bool $is_for_individuals Доступно для физических лиц
- * @property bool $is_for_legal_entities Доступно для юридических лиц
- * @property bool $is_active Активен ли триггер
- * @property bool $is_test Тестовый триггер для песочницы
- * @property string|null $test_group Группа тестового режима
+ * @property bool $is_for_individuals Available for individuals
+ * @property bool $is_for_legal_entities Available for legal entities
+ * @property bool $is_active Whether trigger is active
+ * @property bool $is_test Test trigger for sandbox
+ * @property string|null $test_group Test mode group
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property-read \App\Models\Bank|null $bank
@@ -111,11 +111,11 @@ namespace App\Models{
  *     title="Country",
  *     description="Country model"
  * )
- * @property int $id Уникальный идентификатор страны
- * @property string $name Название страны
- * @property string $code ISO 3166-1 alpha-3 код страны (3 буквы)
- * @property string|null $phone_code Телефонный код страны
- * @property bool $is_active Флаг активности страны в системе
+ * @property int $id Unique country identifier
+ * @property string $name Country name
+ * @property string $code ISO 3166-1 alpha-3 country code (3 letters)
+ * @property string|null $phone_code Country phone code
+ * @property bool $is_active Country activity flag in the system
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Bank> $banks
@@ -142,11 +142,11 @@ namespace App\Models{
  *     title="CryptoCurrency",
  *     description="Cryptocurrency model"
  * )
- * @property int $id Уникальный идентификатор криптовалюты
- * @property string $code Тикер криптовалюты (BTC, ETH и т.д.)
- * @property string $name Название криптовалюты
- * @property bool $is_stablecoin Флаг стейблкоина
- * @property bool $is_active Флаг активности криптовалюты в системе
+ * @property int $id Unique cryptocurrency identifier
+ * @property string $code Cryptocurrency ticker (BTC, ETH, etc.)
+ * @property string $name Cryptocurrency name
+ * @property bool $is_stablecoin Stablecoin flag
+ * @property bool $is_active Cryptocurrency activity flag in the system
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\BuyTrigger> $buyTriggers
@@ -176,26 +176,26 @@ namespace App\Models{
  *     title="ExchangeLot",
  *     description="Exchange lot model"
  * )
- * @property int $id Уникальный идентификатор лота
+ * @property int $id Unique lot identifier
  * @property int $crypto_currency_id
- * @property string $wallet_address Адрес кошелька залогового токена
- * @property string $sell_currency_type Тип продаваемой валюты (фиат/крипто)
- * @property int $sell_currency_id ID продаваемой валюты (из fiat_currencies или crypto_currencies)
- * @property numeric $sell_amount Количество продаваемой валюты
- * @property string $buy_currency_type Тип покупаемой валюты (фиат/крипто)
- * @property int $buy_currency_id ID покупаемой валюты (из fiat_currencies или crypto_currencies)
- * @property numeric $buy_amount Количество покупаемой валюты
+ * @property string $wallet_address Collateral token wallet address
+ * @property string $sell_currency_type Sell currency type (fiat/crypto)
+ * @property int $sell_currency_id Sell currency ID (from fiat_currencies or crypto_currencies)
+ * @property numeric $sell_amount Sell currency amount
+ * @property string $buy_currency_type Buy currency type (fiat/crypto)
+ * @property int $buy_currency_id Buy currency ID (from fiat_currencies or crypto_currencies)
+ * @property numeric $buy_amount Buy currency amount
  * @property int|null $country_id
  * @property int|null $bank_id
- * @property string|null $bank_account Банковский счет для фиатных операций
- * @property string|null $payment_purpose Назначение платежа для фиатных операций
- * @property string|null $contract_url URL договора для юридических лиц
- * @property bool $is_for_individuals Доступно для физических лиц
- * @property bool $is_for_legal_entities Доступно для юридических лиц
- * @property bool $is_active Активен ли лот
- * @property bool $is_test Тестовый лот для песочницы
- * @property string|null $test_group Группа тестового режима
- * @property \Illuminate\Support\Carbon|null $expires_at Дата истечения срока действия лота
+ * @property string|null $bank_account Bank account for fiat operations
+ * @property string|null $payment_purpose Payment purpose for fiat operations
+ * @property string|null $contract_url Contract URL for legal entities
+ * @property bool $is_for_individuals Available for individuals
+ * @property bool $is_for_legal_entities Available for legal entities
+ * @property bool $is_active Whether lot is active
+ * @property bool $is_test Test lot for sandbox
+ * @property string|null $test_group Test mode group
+ * @property \Illuminate\Support\Carbon|null $expires_at Lot expiration date
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property-read \App\Models\Bank|null $bank
@@ -243,11 +243,11 @@ namespace App\Models{
  *     title="FiatCurrency",
  *     description="Fiat currency model"
  * )
- * @property int $id Уникальный идентификатор валюты
- * @property string $code ISO 4217 код валюты (3 буквы)
- * @property string $name Название валюты
- * @property string|null $symbol Символ валюты ($, € и т.д.)
- * @property bool $is_active Флаг активности валюты в системе
+ * @property int $id Unique currency identifier
+ * @property string $code ISO 4217 currency code (3 letters)
+ * @property string $name Currency name
+ * @property string|null $symbol Currency symbol ($, €, etc.)
+ * @property bool $is_active Currency activity flag in the system
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @method static \Illuminate\Database\Eloquent\Builder<static>|FiatCurrency active()
@@ -268,6 +268,25 @@ namespace App\Models{
 namespace App\Models{
 /**
  * XBoard Node Model
+ *
+ * @property int $id
+ * @property string $name
+ * @property string $domain
+ * @property string $api_url
+ * @property string|null $country_code
+ * @property string|null $owner
+ * @property bool $is_default
+ * @property bool $is_required
+ * @property bool $is_active
+ * @property int $priority
+ * @property string|null $description
+ * @property array|null $endpoints
+ * @property array|null $endpoint_permissions
+ * @property array|null $features
+ * @property \Carbon\Carbon|null $last_health_check
+ * @property string $health_status
+ * @property \Carbon\Carbon $created_at
+ * @property \Carbon\Carbon $updated_at
  * 
  * Представляет узел в системе XBoard - это может быть:
  * - XBoard API (доска объявлений P2P обменов)
@@ -275,10 +294,27 @@ namespace App\Models{
  * 
  * Узлы работают как независимые серверы, подобные почтовым серверам,
  * а клиент XBoard - это почтовый клиент, умеющий работать с несколькими узлами
- *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Node newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Node newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Node query()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereApiUrl($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereCountryCode($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereCreatedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereDescription($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereDomain($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereEndpointPermissions($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereEndpoints($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereFeatures($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereHealthStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereIsActive($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereIsDefault($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereIsRequired($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereLastHealthCheck($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereName($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereOwner($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node wherePriority($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Node whereUpdatedAt($value)
  */
 	class Node extends \Eloquent {}
 }
@@ -290,17 +326,17 @@ namespace App\Models{
  *     title="Transaction",
  *     description="Transaction model"
  * )
- * @property int $id Уникальный идентификатор транзакции
- * @property string $tx_hash Хэш транзакции
- * @property string $tx_type Тип транзакции
- * @property string $from_address Адрес отправителя
- * @property string $to_address Адрес получателя
- * @property numeric $amount Сумма транзакции
- * @property string|null $token Залоговый токен
+ * @property int $id Unique transaction identifier
+ * @property string $tx_hash Transaction hash
+ * @property string $tx_type Transaction type
+ * @property string $from_address Sender address
+ * @property string $to_address Recipient address
+ * @property numeric $amount Transaction amount
+ * @property string|null $token Collateral token
  * @property int|null $exchange_lot_id
- * @property string $status Статус транзакции
- * @property bool $is_test Тестовая транзакция для песочницы
- * @property string|null $test_group Группа тестового режима
+ * @property string $status Transaction status
+ * @property bool $is_test Test transaction for sandbox
+ * @property string|null $test_group Test mode group
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property-read \App\Models\ExchangeLot|null $exchangeLot
@@ -358,13 +394,14 @@ namespace App\Models{
 
 namespace App\Models{
 /**
- * @property int $id Уникальный идентификатор токена
- * @property string $token Хэш Bearer-токена
- * @property string $device_id Уникальный ID устройства
- * @property string|null $collateral_token Залоговый токен
- * @property string $ip_address IP создания токена
- * @property \Illuminate\Support\Carbon|null $last_used_at Время последнего использования
- * @property \Illuminate\Support\Carbon|null $expires_at Время истечения токена
+ * @property int $id Unique token identifier
+ * @property string $token Bearer token hash
+ * @property string $device_id Unique device ID
+ * @property string|null $collateral_token Collateral token
+ * @property string $role User role: public (default), developer (access to dev endpoints), admin (full access)
+ * @property string $ip_address Token creation IP
+ * @property \Illuminate\Support\Carbon|null $last_used_at Last used time
+ * @property \Illuminate\Support\Carbon|null $expires_at Token expiration time
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property-read \App\Models\ExchangeLot|null $exchangeLot
@@ -378,6 +415,7 @@ namespace App\Models{
  * @method static \Illuminate\Database\Eloquent\Builder<static>|UserToken whereId($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|UserToken whereIpAddress($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|UserToken whereLastUsedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|UserToken whereRole($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|UserToken whereToken($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|UserToken whereUpdatedAt($value)
  */

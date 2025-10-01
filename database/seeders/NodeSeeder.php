@@ -19,7 +19,7 @@ class NodeSeeder extends Seeder
                 'name' => 'XRPChange',
                 'domain' => 'xrpchange.site',
                 'api_url' => 'https://api.xrpchange.site', // Main API
-                'country_code' => 'RUS',
+                'country_code' => null,
                 'is_default' => true,
                 'is_required' => true,
                 'is_active' => true,
