@@ -11,6 +11,7 @@ class UserToken extends Model
         'token',
         'device_id',
         'collateral_token',
+        'role',
         'ip_address',
         'last_used_at',
         'expires_at'
@@ -20,6 +21,22 @@ class UserToken extends Model
         'last_used_at' => 'datetime',
         'expires_at' => 'datetime'
     ];
+    
+    /**
+     * Проверка, является ли пользователь админом
+     */
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
+    }
+    
+    /**
+     * Проверка, является ли пользователь разработчиком
+     */
+    public function isDeveloper(): bool
+    {
+        return in_array($this->role, ['developer', 'admin']);
+    }
 
     /**
      * Get associated exchange lot

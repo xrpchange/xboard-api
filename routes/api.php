@@ -1,5 +1,8 @@
 <?php
 
+/** @noinspection PhpUndefinedMethodInspection */
+/** @noinspection PhpUndefinedClassInspection */
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
@@ -9,6 +12,8 @@ use App\Http\Controllers\Api\BankController;
 use App\Http\Controllers\Api\ExchangeLotController;
 use App\Http\Controllers\Api\BuyTriggerController;
 use App\Http\Controllers\Api\TransactionController;
+use App\Http\Controllers\Api\NodeController;
+use App\Http\Controllers\Api\Admin\NodeAdminController;
 
 /*
 |--------------------------------------------------------------------------
@@ -21,9 +26,10 @@ use App\Http\Controllers\Api\TransactionController;
 |
 */
 
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-    return $request->user();
-});
+// Default Laravel route - not used in our project
+// Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
+//     return $request->user();
+// });
 
 // Authentication (without middleware)
 Route::prefix('v1/auth')->group(function () {
@@ -52,6 +58,14 @@ Route::prefix('v1')->group(function () {
         Route::get('/', [BankController::class, 'index']);
         Route::get('/{bank}', [BankController::class, 'show']);
         Route::get('/country/{country:code}', [BankController::class, 'byCountry']);
+    });
+
+    // Nodes (exchange bulletin boards)
+    Route::prefix('nodes')->group(function () {
+        Route::get('/', [NodeController::class, 'index']);
+        Route::get('/required', [NodeController::class, 'required']);
+        Route::get('/{id}', [NodeController::class, 'show']);
+        Route::post('/{id}/health-check', [NodeController::class, 'healthCheck']);
     });
 });
 
@@ -82,5 +96,18 @@ Route::prefix('v1')->middleware('bearer.token')->group(function () {
         Route::get('/{transaction}', [TransactionController::class, 'show']);
         Route::post('/', [TransactionController::class, 'store']);
         Route::put('/{transaction}', [TransactionController::class, 'update']);
+    });
+});
+
+// Admin routes (require admin role)
+Route::prefix('v1/admin')->middleware(['bearer.token', 'admin'])->group(function () {
+    // Node management
+    Route::prefix('nodes')->group(function () {
+        Route::post('/', [NodeAdminController::class, 'store']);
+        Route::put('/{id}', [NodeAdminController::class, 'update']);
+        Route::delete('/{id}', [NodeAdminController::class, 'destroy']);
+        Route::put('/{id}/toggle', [NodeAdminController::class, 'toggle']);
+        Route::post('/{id}/set-default', [NodeAdminController::class, 'setDefault']);
+        Route::put('/{id}/endpoints', [NodeAdminController::class, 'updateEndpoints']);
     });
 }); 
