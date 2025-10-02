@@ -28,9 +28,9 @@ sudo nginx -t && sudo systemctl reload nginx
 # 3. Obtain SSL certificates
 sudo certbot certonly --webroot \
   -w /var/www/certbot \
-  -d sandbox.api.xrpchange.site \
-  -d api.xrpchange.site \
-  --email admin@xrpchange.site \
+  -d sandbox.api.xdexboard.com \
+  -d api.xdexboard.com \
+  --email admin@xdexboard.com \
   --agree-tos \
   --non-interactive
 
@@ -39,7 +39,7 @@ sudo cp nginx-xboard.conf /etc/nginx/sites-available/xboard
 sudo nginx -t && sudo systemctl reload nginx
 
 # 5. Verify functionality
-curl https://sandbox.api.xrpchange.site/api/v1/countries
+curl https://sandbox.api.xdexboard.com/api/v1/countries
 ```
 
 ---
@@ -141,21 +141,21 @@ Configuration includes:
 # Obtain certificates for sandbox and production domains
 sudo certbot certonly --webroot \
   -w /var/www/certbot \
-  -d sandbox.api.xrpchange.site \
-  -d api.xrpchange.site \
-  --email admin@xrpchange.site \
+  -d sandbox.api.xdexboard.com \
+  -d api.xdexboard.com \
+  --email admin@xdexboard.com \
   --agree-tos \
   --non-interactive
 ```
 
-> **⚠️ Важно:** Замените `admin@xrpchange.site` на ваш реальный email
+> **⚠️ Важно:** Замените `admin@xdexboard.com` на ваш реальный email
 
 ### ✅ Проверка сертификатов
 
 ```bash
 # Проверяем, что сертификаты созданы
-sudo ls -la /etc/letsencrypt/live/sandbox.api.xrpchange.site/
-sudo ls -la /etc/letsencrypt/live/api.xrpchange.site/
+sudo ls -la /etc/letsencrypt/live/sandbox.api.xdexboard.com/
+sudo ls -la /etc/letsencrypt/live/api.xdexboard.com/
 
 # Проверяем информацию о сертификатах
 sudo certbot certificates
@@ -189,9 +189,9 @@ sudo systemctl status nginx
 # Сначала тестируем получение сертификатов
 sudo certbot certonly --webroot \
   -w /var/www/certbot \
-  -d sandbox.api.xrpchange.site \
-  -d api.xrpchange.site \
-  --email admin@xrpchange.site \
+  -d sandbox.api.xdexboard.com \
+  -d api.xdexboard.com \
+  --email admin@xdexboard.com \
   --agree-tos \
   --non-interactive \
   --dry-run
@@ -203,21 +203,21 @@ sudo certbot certonly --webroot \
 # Obtain certificates for sandbox and production domains
 sudo certbot certonly --webroot \
   -w /var/www/certbot \
-  -d sandbox.api.xrpchange.site \
-  -d api.xrpchange.site \
-  --email admin@xrpchange.site \
+  -d sandbox.api.xdexboard.com \
+  -d api.xdexboard.com \
+  --email admin@xdexboard.com \
   --agree-tos \
   --non-interactive
 ```
 
-> **⚠️ Важно:** Замените `admin@xrpchange.site` на ваш реальный email
+> **⚠️ Важно:** Замените `admin@xdexboard.com` на ваш реальный email
 
 ### ✅ Проверка сертификатов
 
 ```bash
 # Проверяем, что сертификаты созданы
-sudo ls -la /etc/letsencrypt/live/sandbox.api.xrpchange.site/
-sudo ls -la /etc/letsencrypt/live/api.xrpchange.site/
+sudo ls -la /etc/letsencrypt/live/sandbox.api.xdexboard.com/
+sudo ls -la /etc/letsencrypt/live/api.xdexboard.com/
 
 # Проверяем информацию о сертификатах
 sudo certbot certificates
@@ -245,8 +245,8 @@ sudo systemctl reload nginx
 **Полная конфигурация Nginx для XBoard API включает:**
 
 #### 🌐 Домены и SSL
-- **sandbox.api.xrpchange.site** - sandbox окружение
-- **api.xrpchange.site** - production окружение  
+- **sandbox.api.xdexboard.com** - sandbox окружение
+- **api.xdexboard.com** - production окружение  
 - **Общий SSL сертификат** для обоих доменов (создан с флагом `--expand`)
 - **Автоматический редирект** HTTP → HTTPS
 - **HTTP/2 поддержка** (современный `http2 on;` синтаксис)
@@ -281,7 +281,7 @@ sudo systemctl reload nginx
 
 #### 📁 Структура файлов
 ```
-/etc/letsencrypt/live/api.xrpchange.site/
+/etc/letsencrypt/live/api.xdexboard.com/
 ├── fullchain.pem    # Полная цепочка сертификатов
 ├── privkey.pem      # Приватный ключ
 ├── cert.pem         # Сертификат сервера
@@ -299,13 +299,13 @@ sudo systemctl reload nginx
 - Поддерживает оба домена: sandbox и production
 
 **2. HTTPS sandbox сервер (порт 443)**
-- Обрабатывает HTTPS запросы для `sandbox.api.xrpchange.site`
+- Обрабатывает HTTPS запросы для `sandbox.api.xdexboard.com`
 - Использует общий SSL сертификат
 - Проксирует запросы на XBoard (192.168.1.31:80)
 - Специальная обработка API запросов с CORS
 
 **3. HTTPS production сервер (порт 443)**
-- Обрабатывает HTTPS запросы для `api.xrpchange.site`
+- Обрабатывает HTTPS запросы для `api.xdexboard.com`
 - Идентичная конфигурация с sandbox для консистентности
 - Использует тот же SSL сертификат
 - Проксирует на тот же XBoard сервер
@@ -398,20 +398,20 @@ sudo certbot renew --force-renewal
 
 ```bash
 # Проверяем, что HTTP редиректит на HTTPS
-curl -I http://sandbox.api.xrpchange.site
-curl -I http://api.xrpchange.site
+curl -I http://sandbox.api.xdexboard.com
+curl -I http://api.xdexboard.com
 
 # Ожидаемый результат:
 # HTTP/1.1 301 Moved Permanently
-# Location: https://sandbox.api.xrpchange.site/
+# Location: https://sandbox.api.xdexboard.com/
 ```
 
 ### 🔒 Проверка HTTPS
 
 ```bash
 # Проверяем HTTPS соединение
-curl -I https://sandbox.api.xrpchange.site
-curl -I https://api.xrpchange.site
+curl -I https://sandbox.api.xdexboard.com
+curl -I https://api.xdexboard.com
 
 # Ожидаемый результат:
 # HTTP/2 200
@@ -422,8 +422,8 @@ curl -I https://api.xrpchange.site
 
 ```bash
 # Проверяем API эндпоинты
-curl https://sandbox.api.xrpchange.site/api/v1/countries
-curl https://api.xrpchange.site/api/v1/countries
+curl https://sandbox.api.xdexboard.com/api/v1/countries
+curl https://api.xdexboard.com/api/v1/countries
 
 # Ожидаемый результат:
 # {"success":true,"data":[...]}
@@ -433,11 +433,11 @@ curl https://api.xrpchange.site/api/v1/countries
 
 ```bash
 # Проверяем SSL сертификат
-openssl s_client -connect sandbox.api.xrpchange.site:443 -servername sandbox.api.xrpchange.site
-openssl s_client -connect api.xrpchange.site:443 -servername api.xrpchange.site
+openssl s_client -connect sandbox.api.xdexboard.com:443 -servername sandbox.api.xdexboard.com
+openssl s_client -connect api.xdexboard.com:443 -servername api.xdexboard.com
 
 # Проверяем срок действия сертификата
-echo | openssl s_client -servername sandbox.api.xrpchange.site -connect sandbox.api.xrpchange.site:443 2>/dev/null | openssl x509 -noout -dates
+echo | openssl s_client -servername sandbox.api.xdexboard.com -connect sandbox.api.xdexboard.com:443 2>/dev/null | openssl x509 -noout -dates
 ```
 
 ### 🧪 Комплексная проверка
@@ -449,17 +449,17 @@ echo "🔍 Проверка XBoard API..."
 
 # Проверка HTTP редиректа
 echo "1. HTTP редирект:"
-curl -s -o /dev/null -w "%{http_code}" http://sandbox.api.xrpchange.site
+curl -s -o /dev/null -w "%{http_code}" http://sandbox.api.xdexboard.com
 echo " (должно быть 301)"
 
 # Проверка HTTPS
 echo "2. HTTPS доступность:"
-curl -s -o /dev/null -w "%{http_code}" https://sandbox.api.xrpchange.site
+curl -s -o /dev/null -w "%{http_code}" https://sandbox.api.xdexboard.com
 echo " (должно быть 200)"
 
 # Проверка API
 echo "3. API ответ:"
-curl -s https://sandbox.api.xrpchange.site/api/v1/countries | jq '.success'
+curl -s https://sandbox.api.xdexboard.com/api/v1/countries | jq '.success'
 echo " (должно быть true)"
 
 echo "✅ Проверка завершена!"
@@ -518,7 +518,7 @@ sudo systemctl status certbot.timer
 
 # Скрипт проверки срока действия
 #!/bin/bash
-for domain in sandbox.api.xrpchange.site api.xrpchange.site; do
+for domain in sandbox.api.xdexboard.com api.xdexboard.com; do
     expiry=$(echo | openssl s_client -servername $domain -connect $domain:443 2>/dev/null | openssl x509 -noout -dates | grep notAfter | cut -d= -f2)
     echo "$domain expires: $expiry"
 done
@@ -545,20 +545,20 @@ sudo netstat -an | grep :443 | wc -l
 
 ```bash
 # В файле .env изменить APP_URL
-APP_URL=https://sandbox.api.xrpchange.site
+APP_URL=https://sandbox.api.xdexboard.com
 ```
 
 ### ⚙️ Обновление config/services.php
 
 ```php
 'core' => [
-    'url' => env('CORE_URL', 'https://sandbox.api.core.xrpchange.site'),
+    'url' => env('CORE_URL', 'https://sandbox.api.core.xdexboard.com'),
     'key' => env('CORE_KEY', ''),
     'timeout' => env('CORE_TIMEOUT', 10),
 ],
 
 'core_production' => [
-    'url' => env('CORE_PRODUCTION_URL', 'https://api.core.xrpchange.site'),
+    'url' => env('CORE_PRODUCTION_URL', 'https://api.core.xdexboard.com'),
     'key' => env('CORE_PRODUCTION_KEY', ''),
     'timeout' => env('CORE_PRODUCTION_TIMEOUT', 10),
 ],
@@ -570,15 +570,15 @@ APP_URL=https://sandbox.api.xrpchange.site
 
 ```bash
 # Проверка DNS записей
-nslookup sandbox.api.xrpchange.site
-nslookup api.xrpchange.site
+nslookup sandbox.api.xdexboard.com
+nslookup api.xdexboard.com
 
 # Проверка доступности доменов
-ping sandbox.api.xrpchange.site
-ping api.xrpchange.site
+ping sandbox.api.xdexboard.com
+ping api.xdexboard.com
 
 # Проверка ACME challenge
-curl http://sandbox.api.xrpchange.site/.well-known/acme-challenge/test
+curl http://sandbox.api.xdexboard.com/.well-known/acme-challenge/test
 ```
 
 ### ⚠️ Проблемы с Nginx

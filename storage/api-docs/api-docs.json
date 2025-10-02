@@ -7,11 +7,11 @@
     },
     "servers": [
         {
-            "url": "http://sandbox.api.xrpchange.site/api/v1",
+            "url": "http://sandbox.api.xdexboard.com/api/v1",
             "description": "Sandbox server (for testing)"
         },
         {
-            "url": "http://api.xrpchange.site/api/v1",
+            "url": "http://api.xdexboard.com/api/v1",
             "description": "Production server"
         },
         {
