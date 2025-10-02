@@ -49,21 +49,21 @@ CREATE TABLE `nodes` (
   },
   "sandbox": {
     "name": "sandbox", 
-    "url": "https://sandbox.api.xrpchange.site/api/v1",
+    "url": "https://sandbox.api.xdexboard.com/api/v1",
     "description": "Sandbox API",
     "requires_auth": true,
     "is_primary": false
   },
   "dev_api": {
     "name": "dev_api",
-    "url": "https://dev.api.xrpchange.site/api/v1", 
+    "url": "https://dev.api.xdexboard.com/api/v1", 
     "description": "Development API",
     "requires_auth": true,
     "is_primary": false
   },
   "core_api": {
     "name": "core_api",
-    "url": "https://core.xrpchange.site/api",
+    "url": "https://api.core.xdexboard.com/api",
     "description": "Core API",
     "requires_auth": true,
     "is_primary": false
@@ -120,7 +120,7 @@ Get all active nodes with filtered endpoints based on user role.
         },
         {
           "name": "sandbox",
-          "url": "https://sandbox.api.xrpchange.site/api/v1",
+          "url": "https://sandbox.api.xdexboard.com/api/v1",
           "description": "Sandbox API", 
           "requires_auth": true,
           "is_primary": false
@@ -443,27 +443,27 @@ public function checkHealth(): bool
 ### Get All Nodes (Public)
 
 ```bash
-curl -X GET "https://api.xrpchange.site/api/v1/nodes" \
+curl -X GET "https://api.xdexboard.com/api/v1/nodes" \
   -H "X-User-Role: public"
 ```
 
 ### Get All Nodes (Developer)
 
 ```bash
-curl -X GET "https://api.xrpchange.site/api/v1/nodes" \
+curl -X GET "https://api.xdexboard.com/api/v1/nodes" \
   -H "X-User-Role: developer"
 ```
 
 ### Check Node Health
 
 ```bash
-curl -X POST "https://api.xrpchange.site/api/v1/nodes/1/health-check"
+curl -X POST "https://api.xdexboard.com/api/v1/nodes/1/health-check"
 ```
 
 ### Create New Node (Admin)
 
 ```bash
-curl -X POST "https://api.xrpchange.site/api/v1/admin/nodes" \
+curl -X POST "https://api.xdexboard.com/api/v1/admin/nodes" \
   -H "Authorization: Bearer {admin_token}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -491,7 +491,7 @@ curl -X POST "https://api.xrpchange.site/api/v1/admin/nodes" \
 
 ```env
 # Node configuration
-NODE_DOMAIN=api.xrpchange.site
+NODE_DOMAIN=api.xdexboard.com
 
 # Database configuration
 DB_CONNECTION=mysql

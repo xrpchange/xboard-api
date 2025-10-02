@@ -22,13 +22,13 @@
 #### **Точки входа узла XRPChange:**
 
 **XBoard API (Доска объявлений):**
-- `api.xrpchange.site` - Production с реальной криптой
-- `sandbox.api.xrpchange.site` - Sandbox с тестовой криптой
-- `dev.api.xrpchange.site` - Development для разработки
+- `api.xdexboard.com` - Production с реальной криптой
+- `sandbox.api.xdexboard.com` - Sandbox с тестовой криптой
+- `dev.api.xdexboard.com` - Development для разработки
 
 **Core API (Ядро блокчейна):**
-- `api.core.xrpchange.site` - Production ядро с реальной криптой
-- `sandbox.api.core.xrpchange.site` - Sandbox ядро с тестовой криптой
+- `api.core.xdexboard.com` - Production ядро с реальной криптой
+- `sandbox.api.core.xdexboard.com` - Sandbox ядро с тестовой криптой
 
 ### Будущие узлы
 
@@ -68,8 +68,8 @@ CREATE TABLE `nodes` (
 | Field | Description |
 |-------|-------------|
 | `name` | Node name (e.g., "XRPChange") |
-| `domain` | Main node domain (e.g., "xrpchange.site") |
-| `api_url` | Main API URL (e.g., "https://api.xrpchange.site") |
+| `domain` | Main node domain (e.g., "xdexboard.com") |
+| `api_url` | Main API URL (e.g., "https://api.xdexboard.com") |
 | `country_code` | Node location country code (ISO 3166-1 alpha-3) |
 | `owner` | Node owner (organization/company) |
 | `is_default` | Default node (shown first) |
@@ -131,11 +131,11 @@ The **XRPChange** node provides multiple entry points:
 
 | Entry Point | Purpose | URL |
 |-------------|---------|-----|
-| Production API | Real crypto | `https://api.xrpchange.site` |
-| Sandbox API | Test crypto | `https://sandbox.api.xrpchange.site` |
-| Dev API | Development | `https://dev.api.xrpchange.site` |
-| Production Core | Core with real crypto | `https://api.core.xrpchange.site` |
-| Sandbox Core | Core with test crypto | `https://sandbox.api.core.xrpchange.site` |
+| Production API | Real crypto | `https://api.xdexboard.com` |
+| Sandbox API | Test crypto | `https://sandbox.api.xdexboard.com` |
+| Dev API | Development | `https://dev.api.xdexboard.com` |
+| Production Core | Core with real crypto | `https://api.core.xdexboard.com` |
+| Sandbox Core | Core with test crypto | `https://sandbox.api.core.xdexboard.com` |
 
 **All these URLs are parts of ONE XRPChange node!**
 
@@ -186,8 +186,8 @@ Client can:
 {
   "id": 1,
   "name": "XRPChange",
-  "domain": "xrpchange.site",
-  "api_url": "https://api.xrpchange.site",
+  "domain": "xdexboard.com",
+  "api_url": "https://api.xdexboard.com",
   "country_code": "RUS",
   "owner": "XRPChange Team",
   "is_default": true,
@@ -196,11 +196,11 @@ Client can:
   "priority": 100,
   "description": "XRPChange - main P2P cryptocurrency exchange node",
   "endpoints": {
-    "production_api": "https://api.xrpchange.site",
-    "sandbox_api": "https://sandbox.api.xrpchange.site",
-    "dev_api": "https://dev.api.xrpchange.site",
-    "production_core": "https://api.core.xrpchange.site",
-    "sandbox_core": "https://sandbox.api.core.xrpchange.site"
+    "production_api": "https://api.xdexboard.com",
+    "sandbox_api": "https://sandbox.api.xdexboard.com",
+    "dev_api": "https://dev.api.xdexboard.com",
+    "production_core": "https://api.core.xdexboard.com",
+    "sandbox_core": "https://sandbox.api.core.xdexboard.com"
   },
   "features": [
     "escrow_tokens",

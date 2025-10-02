@@ -9,8 +9,8 @@
 Добавить в конец файла следующие строки:
 
 ```
-195.46.191.38 sandbox.api.core.xrpchange.site
-195.46.191.38 api.core.xrpchange.site
+195.46.191.38 sandbox.api.core.xdexboard.com
+195.46.191.38 api.core.xdexboard.com
 ```
 
 ## 3. Сохранить файл
@@ -29,12 +29,12 @@ ipconfig /flushdns
 
 ```bash
 # Проверить echo.php
-curl http://sandbox.api.core.xrpchange.site/echo.php
+curl http://sandbox.api.core.xdexboard.com/echo.php
 
 # Проверить API эндпоинт
 curl -X POST -H "Content-Type: application/json" \
   -d '{"crypto_type":"xrp","escrow_token":"test"}' \
-  http://sandbox.api.core.xrpchange.site/api/escrow-tokens/balance
+  http://sandbox.api.core.xdexboard.com/api/escrow-tokens/balance
 ```
 
 ## 6. Удалить записи после тестирования

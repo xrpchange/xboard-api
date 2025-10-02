@@ -9,11 +9,11 @@
 
 ### 2. **Точки входа (Endpoints) = API URLs одного узла**
 Узел XRPChange имеет 5 точек входа:
-- `api.xrpchange.site` - production API
-- `sandbox.api.xrpchange.site` - sandbox API  
-- `dev.api.xrpchange.site` - dev API
-- `api.core.xrpchange.site` - production Core
-- `sandbox.api.core.xrpchange.site` - sandbox Core
+- `api.xdexboard.com` - production API
+- `sandbox.api.xdexboard.com` - sandbox API  
+- `dev.api.xdexboard.com` - dev API
+- `api.core.xdexboard.com` - production Core
+- `sandbox.api.core.xdexboard.com` - sandbox Core
 
 **ВСЕ это части ОДНОГО узла!**
 
@@ -78,10 +78,10 @@
 {
   "name": "XRPChange",
   "endpoints": {
-    "production_api": "https://api.xrpchange.site",
-    "sandbox_api": "https://sandbox.api.xrpchange.site",
-    "production_core": "https://api.core.xrpchange.site",
-    "sandbox_core": "https://sandbox.api.core.xrpchange.site"
+    "production_api": "https://api.xdexboard.com",
+    "sandbox_api": "https://sandbox.api.xdexboard.com",
+    "production_core": "https://api.core.xdexboard.com",
+    "sandbox_core": "https://sandbox.api.core.xdexboard.com"
   }
 }
 ```

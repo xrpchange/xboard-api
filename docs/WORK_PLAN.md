@@ -102,7 +102,7 @@
 ### Переменные окружения
 ```env
 # Ядро системы
-CORE_URL=http://api.core.xrpchange.site
+CORE_URL=http://api.core.xdexboard.com
 CORE_KEY=your_api_key
 CORE_TIMEOUT=10
 
@@ -132,7 +132,7 @@ upstream xboard_backend {
 
 server {
     listen 80;
-    server_name api.xrpchange.site;
+    server_name api.xdexboard.com;
     
     location / {
         proxy_pass http://xboard_backend;

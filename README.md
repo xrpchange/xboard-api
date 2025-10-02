@@ -31,12 +31,12 @@ The system consists of two main components:
 ### 🌐 System Domains
 
 **XBoard API:**
-- Sandbox: `https://sandbox.api.xrpchange.site`
-- Production: `https://api.xrpchange.site`
+- Sandbox: `https://sandbox.api.xdexboard.com`
+- Production: `https://api.xdexboard.com`
 
 **XRPChangeCore API:**
-- Sandbox: `https://sandbox.api.core.xrpchange.site`
-- Production: `https://api.core.xrpchange.site`
+- Sandbox: `https://sandbox.api.core.xdexboard.com`
+- Production: `https://api.core.xdexboard.com`
 
 ## Quick Start
 
@@ -112,8 +112,8 @@ After starting the server, documentation is available at:
 - **Core API**: http://localhost:8000/docs/core_swagger.yaml
 
 ### API Documentation:
-- **Sandbox** (for testing): https://sandbox.api.xrpchange.site/documentation
-- **Production**: https://api.xrpchange.site/documentation
+- **Sandbox** (for testing): https://sandbox.api.xdexboard.com/documentation
+- **Production**: https://api.xdexboard.com/documentation
 - **Local**: http://localhost:8000/api/documentation
 
 ### Main Endpoints
@@ -282,7 +282,7 @@ Simple access to core (XRPChangeCore) via Laravel HTTP client:
 ENV example:
 
 ```env
-CORE_URL=https://api.core.xrpchange.site
+CORE_URL=https://api.core.xdexboard.com
 CORE_KEY=your_api_key
 CORE_TIMEOUT=10
 ```

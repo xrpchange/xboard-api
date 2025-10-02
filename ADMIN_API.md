@@ -124,7 +124,7 @@
 Админ создает escrow token с специальными параметрами:
 
 ```bash
-curl -X POST https://api.core.xrpchange.site/api/escrow-tokens/create \
+curl -X POST https://api.core.xdexboard.com/api/escrow-tokens/create \
   -H "Content-Type: application/json" \
   -d '{
     "crypto_type": "xrp",
@@ -167,7 +167,7 @@ WHERE token = 'specific_admin_token';
 
 **Request:**
 ```bash
-curl https://dev.api.xrpchange.site/api/v1/nodes \
+curl https://dev.api.xdexboard.com/api/v1/nodes \
   -H "Authorization: Bearer <public_token>"
 ```
 
@@ -176,10 +176,10 @@ curl https://dev.api.xrpchange.site/api/v1/nodes \
 {
   "name": "XRPChange",
   "endpoints": {
-    "production_api": "https://api.xrpchange.site",
-    "sandbox_api": "https://sandbox.api.xrpchange.site",
-    "production_core": "https://api.core.xrpchange.site",
-    "sandbox_core": "https://sandbox.api.core.xrpchange.site"
+    "production_api": "https://api.xdexboard.com",
+    "sandbox_api": "https://sandbox.api.xdexboard.com",
+    "production_core": "https://api.core.xdexboard.com",
+    "sandbox_core": "https://sandbox.api.core.xdexboard.com"
   }
 }
 ```
@@ -188,7 +188,7 @@ curl https://dev.api.xrpchange.site/api/v1/nodes \
 
 **Request:**
 ```bash
-curl https://dev.api.xrpchange.site/api/v1/nodes \
+curl https://dev.api.xdexboard.com/api/v1/nodes \
   -H "Authorization: Bearer <developer_token>"
 ```
 
@@ -197,11 +197,11 @@ curl https://dev.api.xrpchange.site/api/v1/nodes \
 {
   "name": "XRPChange",
   "endpoints": {
-    "production_api": "https://api.xrpchange.site",
-    "sandbox_api": "https://sandbox.api.xrpchange.site",
-    "dev_api": "https://dev.api.xrpchange.site",  ← Доступен!
-    "production_core": "https://api.core.xrpchange.site",
-    "sandbox_core": "https://sandbox.api.core.xrpchange.site"
+    "production_api": "https://api.xdexboard.com",
+    "sandbox_api": "https://sandbox.api.xdexboard.com",
+    "dev_api": "https://dev.api.xdexboard.com",  ← Доступен!
+    "production_core": "https://api.core.xdexboard.com",
+    "sandbox_core": "https://sandbox.api.core.xdexboard.com"
   }
 }
 ```

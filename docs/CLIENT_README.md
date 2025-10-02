@@ -63,10 +63,10 @@ cd xboard-client
 android {
     buildTypes {
         debug {
-            buildConfigField "String", "API_BASE_URL", "\"http://sandbox.api.xrpchange.site\""
+            buildConfigField "String", "API_BASE_URL", "\"http://sandbox.api.xdexboard.com\""
         }
         release {
-            buildConfigField "String", "API_BASE_URL", "\"https://api.xrpchange.site\""
+            buildConfigField "String", "API_BASE_URL", "\"https://api.xdexboard.com\""
         }
     }
 }
@@ -538,8 +538,8 @@ android {
 
 ```properties
 # API Configuration
-API_BASE_URL_DEBUG=http://sandbox.api.xrpchange.site
-API_BASE_URL_RELEASE=https://api.xrpchange.site
+API_BASE_URL_DEBUG=http://sandbox.api.xdexboard.com
+API_BASE_URL_RELEASE=https://api.xdexboard.com
 
 # Build Configuration
 VERSION_NAME=1.0.0

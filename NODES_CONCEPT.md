@@ -60,13 +60,13 @@
 ### Узел XRPChange имеет:
 
 **Для клиентов (XBoard API):**
-- `api.xrpchange.site` - реальные деньги
-- `sandbox.api.xrpchange.site` - для тестов
-- `dev.api.xrpchange.site` - для разработчиков
+- `api.xdexboard.com` - реальные деньги
+- `sandbox.api.xdexboard.com` - для тестов
+- `dev.api.xdexboard.com` - для разработчиков
 
 **Для блокчейна (Core API):**
-- `api.core.xrpchange.site` - реальный блокчейн
-- `sandbox.api.core.xrpchange.site` - тестовый блокчейн
+- `api.core.xdexboard.com` - реальный блокчейн
+- `sandbox.api.core.xdexboard.com` - тестовый блокчейн
 
 **Важно:** Все эти URL - это **части ОДНОГО узла XRPChange**, а не отдельные узлы!
 

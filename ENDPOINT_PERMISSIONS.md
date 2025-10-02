@@ -2,7 +2,7 @@
 
 ## 🎯 Проблема
 
-**Dev API** (`dev.api.xrpchange.site`) не должен быть доступен обычным пользователям - только разработчикам.
+**Dev API** (`dev.api.xdexboard.com`) не должен быть доступен обычным пользователям - только разработчикам.
 
 ## 💡 Решение
 
@@ -136,10 +136,10 @@ public function getAccessibleEndpoints(string $userRole = 'public'): array
 {
   "name": "XRPChange",
   "endpoints": {
-    "production_api": "https://api.xrpchange.site",
-    "sandbox_api": "https://sandbox.api.xrpchange.site",
-    "production_core": "https://api.core.xrpchange.site",
-    "sandbox_core": "https://sandbox.api.core.xrpchange.site"
+    "production_api": "https://api.xdexboard.com",
+    "sandbox_api": "https://sandbox.api.xdexboard.com",
+    "production_core": "https://api.core.xdexboard.com",
+    "sandbox_core": "https://sandbox.api.core.xdexboard.com"
   }
 }
 ```
@@ -150,11 +150,11 @@ public function getAccessibleEndpoints(string $userRole = 'public'): array
 {
   "name": "XRPChange",
   "endpoints": {
-    "production_api": "https://api.xrpchange.site",
-    "sandbox_api": "https://sandbox.api.xrpchange.site",
-    "dev_api": "https://dev.api.xrpchange.site",  ← Дополнительно!
-    "production_core": "https://api.core.xrpchange.site",
-    "sandbox_core": "https://sandbox.api.core.xrpchange.site"
+    "production_api": "https://api.xdexboard.com",
+    "sandbox_api": "https://sandbox.api.xdexboard.com",
+    "dev_api": "https://dev.api.xdexboard.com",  ← Дополнительно!
+    "production_core": "https://api.core.xdexboard.com",
+    "sandbox_core": "https://sandbox.api.core.xdexboard.com"
   }
 }
 ```

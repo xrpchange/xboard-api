@@ -9,11 +9,11 @@ namespace App\Http\Controllers\Api;
  *     description="API for P2P cryptocurrency exchange with escrow guarantee"
  * )
  * @OA\Server(
- *     url="http://sandbox.api.xrpchange.site/api/v1",
+ *     url="http://sandbox.api.xdexboard.com/api/v1",
  *     description="Sandbox server (for testing)"
  * )
  * @OA\Server(
- *     url="http://api.xrpchange.site/api/v1",
+ *     url="http://api.xdexboard.com/api/v1",
  *     description="Production server"
  * )
  * @OA\Server(

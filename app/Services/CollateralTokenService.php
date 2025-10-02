@@ -19,7 +19,7 @@ class CollateralTokenService
     {
         // Determine environment and select appropriate core URL
         $isProduction = config('app.env') === 'production';
-        $isDev = config('app.env') === 'local' || str_contains(request()->getHost(), 'dev.api.xrpchange.site');
+        $isDev = config('app.env') === 'local' || str_contains(request()->getHost(), 'dev.api.xdexboard.com');
         
         if ($isDev) {
             // Dev mode: use sandbox by default, but can be overridden

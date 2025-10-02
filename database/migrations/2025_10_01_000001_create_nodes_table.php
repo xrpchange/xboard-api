@@ -14,8 +14,8 @@ return new class extends Migration
         Schema::create('nodes', function (Blueprint $table) {
             $table->id();
             $table->string('name', 100); // Node name (e.g., "XRPChange")
-            $table->string('domain', 255)->unique(); // Main node domain (e.g., "xrpchange.site")
-            $table->string('api_url', 255); // Main API URL (e.g., "https://api.xrpchange.site")
+            $table->string('domain', 255)->unique(); // Main node domain (e.g., "xdexboard.com")
+            $table->string('api_url', 255); // Main API URL (e.g., "https://api.xdexboard.com")
             $table->string('country_code', 3)->nullable(); // Country code (ISO 3166-1 alpha-3)
             $table->string('owner', 255)->nullable(); // Node owner (organization/company)
             $table->boolean('is_default')->default(false); // Default node (shown first)

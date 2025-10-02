@@ -2,7 +2,7 @@
 
 ## Overview
 
-`dev.api.xrpchange.site` is your local development server that can be configured to work in either sandbox or production mode.
+`dev.api.xdexboard.com` is your local development server that can be configured to work in either sandbox or production mode.
 
 ## Configuration
 
@@ -22,21 +22,21 @@ DEV_MODE=sandbox
 ```env
 DEV_MODE=sandbox
 ```
-- Uses sandbox core: `https://sandbox.api.core.xrpchange.site`
+- Uses sandbox core: `https://sandbox.api.core.xdexboard.com`
 - Safe for testing
 
 #### Production Mode
 ```env
 DEV_MODE=production
 ```
-- Uses production core: `https://api.core.xrpchange.site`
+- Uses production core: `https://api.core.xdexboard.com`
 - Use with caution
 
 ## Detection
 
 The system automatically detects dev mode when:
 1. `APP_ENV=local` in your environment
-2. Hostname contains `dev.api.xrpchange.site`
+2. Hostname contains `dev.api.xdexboard.com`
 
 ## Usage
 
@@ -58,11 +58,11 @@ DEV_MODE=sandbox
 
 The system logs which mode is active:
 ```
-[INFO] Checking token balance: {"core_url":"https://sandbox.api.core.xrpchange.site","environment":"dev-sandbox"}
+[INFO] Checking token balance: {"core_url":"https://sandbox.api.core.xdexboard.com","environment":"dev-sandbox"}
 ```
 
 or
 
 ```
-[INFO] Checking token balance: {"core_url":"https://api.core.xrpchange.site","environment":"dev-production"}
+[INFO] Checking token balance: {"core_url":"https://api.core.xdexboard.com","environment":"dev-production"}
 ```

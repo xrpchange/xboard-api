@@ -19,12 +19,12 @@ XBoard is a P2P cryptocurrency exchange platform with collateral guarantee syste
 ## 🌐 Domain Structure
 
 ### XBoard Domains
-- **Sandbox**: `sandbox.api.xrpchange.site`
-- **Production**: `api.xrpchange.site`
+- **Sandbox**: `sandbox.api.xdexboard.com`
+- **Production**: `api.xdexboard.com`
 
 ### XRPChangeCore Domains
-- **Sandbox**: `sandbox.api.core.xrpchange.site`
-- **Production**: `api.core.xrpchange.site`
+- **Sandbox**: `sandbox.api.core.xdexboard.com`
+- **Production**: `api.core.xdexboard.com`
 
 ## 🔧 Current Infrastructure
 

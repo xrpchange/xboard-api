@@ -21,8 +21,8 @@ XBoard Client is a Kotlin Multiplatform application for the XBoard P2P Cryptocur
 ## API Integration
 
 ### Base URLs
-- **Sandbox**: `https://sandbox.api.xrpchange.site/api/v1`
-- **Production**: `https://api.xrpchange.site/api/v1`
+- **Sandbox**: `https://sandbox.api.xdexboard.com/api/v1`
+- **Production**: `https://api.xdexboard.com/api/v1`
 
 ### Authentication System
 1. **Collateral Token** - user enters escrow token (XRP-based)

@@ -32,16 +32,16 @@ info:
   version: 1.0.0
   contact:
     name: XBoard Team
-    email: support@xrpchange.site
+    email: support@xdexboard.com
 
 servers:
   - url: http://localhost:8000/api/v1
     description: Local development server
-  - url: https://dev.api.xrpchange.site/api/v1
+  - url: https://dev.api.xdexboard.com/api/v1
     description: Development server (configurable: sandbox or production mode via DEV_MODE env)
-  - url: https://sandbox.api.xrpchange.site/api/v1
+  - url: https://sandbox.api.xdexboard.com/api/v1
     description: Sandbox server (for testing)
-  - url: https://api.xrpchange.site/api/v1
+  - url: https://api.xdexboard.com/api/v1
     description: Production server
 
 security:

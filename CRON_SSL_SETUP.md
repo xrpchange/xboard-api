@@ -179,7 +179,7 @@ sudo systemctl enable cron
 #### Уведомления по email
 ```bash
 # Добавить в crontab для отправки уведомлений
-0 2 * * * /usr/bin/certbot renew --quiet --nginx && echo "SSL certificates renewed successfully" | mail -s "SSL Renewal Success" admin@xrpchange.site
+0 2 * * * /usr/bin/certbot renew --quiet --nginx && echo "SSL certificates renewed successfully" | mail -s "SSL Renewal Success" admin@xdexboard.com
 ```
 
 #### Резервное копирование сертификатов
