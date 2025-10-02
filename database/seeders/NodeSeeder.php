@@ -8,65 +8,55 @@ use App\Models\Node;
 class NodeSeeder extends Seeder
 {
     /**
-     * Seed the nodes table with initial XBoard and Core nodes
+     * Run the database seeds.
      */
     public function run(): void
     {
-        // XRPChange Node - currently the only node in the system
-        // ALL entry points (including Core) are parts of ONE node
-        $nodes = [
+        // Создаем основной узел XBoard
+        Node::updateOrCreate(
+            ['api_url' => 'https://api.xdexboard.com'],
             [
-                'name' => 'XRPChange',
-                'domain' => 'xrpchange.site',
-                'api_url' => 'https://api.xrpchange.site', // Main API
-                'country_code' => null,
+                'name' => 'XBoard Main',
+                'domain' => 'xdexboard.com',
+                'api_url' => 'https://api.xdexboard.com',
+                'country_code' => 'USA',
+                'owner' => 'XBoard Team',
                 'is_default' => true,
                 'is_required' => true,
                 'is_active' => true,
+                'is_trusted' => true,
+                'trust_level' => 10,
+                'user_connections' => 0,
                 'priority' => 100,
-                'description' => 'XRPChange - P2P cryptocurrency exchange. All entry points (production, sandbox, dev, core) are parts of this node.',
+                'description' => 'The XBoard main node is the entry point to the network.',
                 'endpoints' => [
-                    // XBoard API endpoints (bulletin board)
-                    'production_api' => 'https://api.xrpchange.site',
-                    'sandbox_api' => 'https://sandbox.api.xrpchange.site',
-                    'dev_api' => 'https://dev.api.xrpchange.site',
-                    // Core API endpoints (blockchain operations)
-                    'production_core' => 'https://api.core.xrpchange.site',
-                    'sandbox_core' => 'https://sandbox.api.core.xrpchange.site'
+                    'production' => 'https://api.xdexboard.com',
+                    'sandbox' => 'https://sandbox.api.xdexboard.com',
+                    'dev' => 'https://dev.api.xdexboard.com',
+                    'core_production' => 'https://api.core.xdexboard.com',
+                    'core_sandbox' => 'https://sandbox.api.core.xdexboard.com',
+                    'core_dev' => 'https://dev.api.core.xdexboard.com'
                 ],
                 'endpoint_permissions' => [
-                    'production_api' => 'public',      // Available to everyone
-                    'sandbox_api' => 'public',         // Available to everyone
-                    'dev_api' => 'developer',          // Developers only
-                    'production_core' => 'public',     // Available to everyone
-                    'sandbox_core' => 'public'         // Available to everyone
+                    'production' => 'public',
+                    'sandbox' => 'developer',
+                    'dev' => 'developer',
+                    'core_production' => 'public',
+                    'core_sandbox' => 'developer',
+                    'core_dev' => 'developer'
                 ],
                 'features' => [
                     'escrow_tokens',
-                    'exchange_lots',
-                    'buy_triggers',
-                    'transactions',
-                    'multi_crypto',
-                    'core_integration'
-                ]
+                    'multi_currency',
+                    'node_discovery',
+                    'trust_management'
+                ],
+                'health_status' => 'online'
             ]
-            
-            // Future: Other NODES from different providers will be added here:
-            // [
-            //     'name' => 'AnotherExchange',
-            //     'domain' => 'anotherexchange.com',
-            //     'api_url' => 'https://api.anotherexchange.com',
-            //     'endpoints' => [
-            //         'production_api' => 'https://api.anotherexchange.com',
-            //         'sandbox_api' => 'https://sandbox.anotherexchange.com'
-            //     ],
-            //     ...
-            // ]
-        ];
+        );
 
-        foreach ($nodes as $nodeData) {
-            Node::create($nodeData);
-        }
+        $this->command->info('Nodes seeded successfully!');
+        $this->command->info('Main node: https://api.xdexboard.com');
+        $this->command->info('Only real nodes are added - no fake examples');
     }
 }
-

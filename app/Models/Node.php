@@ -16,6 +16,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property bool $is_default
  * @property bool $is_required
  * @property bool $is_active
+ * @property bool $is_trusted
+ * @property int $trust_level
+ * @property int $user_connections
  * @property int $priority
  * @property string|null $description
  * @property array|null $endpoints
@@ -44,6 +47,9 @@ class Node extends Model
         'is_default',
         'is_required',
         'is_active',
+        'is_trusted',
+        'trust_level',
+        'user_connections',
         'priority',
         'description',
         'endpoints',
@@ -57,6 +63,9 @@ class Node extends Model
         'is_default' => 'boolean',
         'is_required' => 'boolean',
         'is_active' => 'boolean',
+        'is_trusted' => 'boolean',
+        'trust_level' => 'integer',
+        'user_connections' => 'integer',
         'endpoints' => 'array',
         'endpoint_permissions' => 'array',
         'features' => 'array',
@@ -91,11 +100,21 @@ class Node extends Model
     }
 
     /**
-     * Получить активные узлы
+     * Получить активные узлы с учетом весов и подключений
      */
     public static function getActive()
     {
         return self::where('is_active', true)
+            ->orderByRaw('
+                CASE 
+                    WHEN is_required = 1 THEN 1
+                    WHEN is_default = 1 THEN 2  
+                    WHEN is_trusted = 1 THEN 3
+                    ELSE 4
+                END
+            ')
+                ->orderBy('trust_level', 'desc')
+                ->orderBy('user_connections', 'desc')
             ->orderBy('priority', 'desc')
             ->orderBy('name')
             ->get();
@@ -145,6 +164,38 @@ class Node extends Model
             $this->save();
             return false;
         }
+    }
+
+    /**
+     * Увеличить счетчик подключений пользователей
+     */
+    public function incrementUserConnections(): void
+    {
+        $this->increment('user_connections');
+        \Log::info("User connected to node {$this->name} (total: {$this->user_connections})");
+    }
+
+    /**
+     * Уменьшить счетчик подключений пользователей
+     */
+    public function decrementUserConnections(): void
+    {
+        if ($this->user_connections > 0) {
+            $this->decrement('user_connections');
+            \Log::info("User disconnected from node {$this->name} (total: {$this->user_connections})");
+        }
+    }
+
+
+    /**
+     * Установить узел как доверенный
+     */
+    public function setAsTrusted(int $trustLevel = 5): void
+    {
+        $this->update([
+            'is_trusted' => true,
+            'trust_level' => $trustLevel
+        ]);
     }
 }
 
