@@ -44,18 +44,9 @@ class NodeController extends BaseApiController
     {
         $nodes = Node::getActive();
         
-        // Определяем роль пользователя (по умолчанию - public)
-        // В будущем это будет из bearer token или другой аутентификации
-        $userRole = $request->header('X-User-Role', 'public');
-        
-        // Фильтруем endpoints по правам доступа
-        $filteredNodes = $nodes->map(function ($node) use ($userRole) {
-            $nodeArray = $node->toArray();
-            $nodeArray['endpoints'] = $node->getAccessibleEndpoints($userRole);
-            return $nodeArray;
-        });
-        
-        return $this->successResponse($filteredNodes);
+        // Возвращаем все endpoints без фильтрации
+        // Клиент сам решит какой endpoint использовать на основе своих настроек
+        return $this->successResponse($nodes);
     }
 
     /**

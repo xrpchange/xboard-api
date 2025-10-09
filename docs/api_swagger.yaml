@@ -424,6 +424,172 @@ paths:
         '404':
           description: Страна не найдена
 
+  # Health Check
+  /health:
+    get:
+      tags:
+        - System
+      summary: Проверить состояние API
+      description: Простая проверка что API работает
+      responses:
+        '200':
+          description: API работает нормально
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  version:
+                    type: string
+                    example: "1.0"
+                  data:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        example: "ok"
+                      timestamp:
+                        type: string
+                        format: date-time
+                        example: "2024-01-15T10:30:00Z"
+                      message:
+                        type: string
+                        example: "API is running"
+
+  # Nodes API
+  /nodes:
+    get:
+      tags:
+        - Nodes
+      summary: Получить список активных узлов
+      description: Возвращает список всех активных узлов сети с их endpoint'ами
+      parameters:
+        - name: X-User-Role
+          in: header
+          schema:
+            type: string
+            enum: [public, developer, admin]
+            default: public
+          description: Роль пользователя для фильтрации endpoint'ов
+      responses:
+        '200':
+          description: Список активных узлов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  version:
+                    type: string
+                    example: "1.0"
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Node'
+
+  /nodes/required:
+    get:
+      tags:
+        - Nodes
+      summary: Получить обязательные узлы
+      description: Возвращает список узлов, которые всегда должны быть подключены
+      parameters:
+        - name: X-User-Role
+          in: header
+          schema:
+            type: string
+            enum: [public, developer, admin]
+            default: public
+          description: Роль пользователя для фильтрации endpoint'ов
+      responses:
+        '200':
+          description: Список обязательных узлов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Node'
+
+  /nodes/{id}:
+    get:
+      tags:
+        - Nodes
+      summary: Получить узел по ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: ID узла
+      responses:
+        '200':
+          description: Информация об узле
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Node'
+        '404':
+          description: Узел не найден
+
+  /nodes/{id}/health-check:
+    post:
+      tags:
+        - Nodes
+      summary: Проверить здоровье узла
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: ID узла
+      responses:
+        '200':
+          description: Результат проверки здоровья
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      node_id:
+                        type: integer
+                      status:
+                        type: string
+                        example: "online"
+                      checked_at:
+                        type: string
+                        format: date-time
+                      is_online:
+                        type: boolean
+        '404':
+          description: Узел не найден
+
   # Защищенные роуты
   /exchange-lots:
     get:
@@ -962,11 +1128,106 @@ components:
         total:
           type: integer
 
+    Node:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Уникальный ID узла
+        name:
+          type: string
+          description: Название узла
+        domain:
+          type: string
+          description: Домен узла
+        type:
+          type: string
+          enum: [xboard, core]
+          description: Тип узла
+        environment:
+          type: string
+          enum: [production, sandbox, development]
+          description: Окружение узла
+        api_url:
+          type: string
+          description: Основной URL API узла
+        country_code:
+          type: string
+          description: Код страны узла
+        owner:
+          type: string
+          description: Владелец узла
+        is_default:
+          type: boolean
+          description: Является ли узел узлом по умолчанию
+        is_required:
+          type: boolean
+          description: Является ли узел обязательным
+        is_trusted:
+          type: boolean
+          description: Является ли узел доверенным
+        trust_level:
+          type: integer
+          description: Уровень доверия (1-10)
+        priority:
+          type: integer
+          description: Приоритет узла
+        description:
+          type: string
+          description: Описание узла
+        supported_currencies:
+          type: array
+          items:
+            type: string
+          description: Поддерживаемые валюты
+        features:
+          type: array
+          items:
+            type: string
+          description: Доступные функции
+        health_status:
+          type: string
+          enum: [online, offline, unknown]
+          description: Статус здоровья узла
+        endpoints:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Название endpoint'а
+              url:
+                type: string
+                description: URL endpoint'а
+              description:
+                type: string
+                description: Описание endpoint'а
+              is_active:
+                type: boolean
+                description: Активен ли endpoint
+              requires_auth:
+                type: boolean
+                description: Требует ли endpoint аутентификации
+          description: Доступные endpoint'ы узла
+        created_at:
+          type: string
+          format: date-time
+          description: Дата создания
+        updated_at:
+          type: string
+          format: date-time
+          description: Дата обновления
+
 tags:
   - name: Authentication
     description: Authentication via collateral tokens
+  - name: System
+    description: System health and status
   - name: Reference Data
     description: Reference data (countries, currencies, banks)
+  - name: Nodes
+    description: Node management and discovery
   - name: Exchange Lots
     description: Exchange board (exchange lots)
   - name: Buy Triggers

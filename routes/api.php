@@ -39,6 +39,19 @@ Route::prefix('v1/auth')->group(function () {
 
 // Reference data (without authentication)
 Route::prefix('v1')->group(function () {
+    // Health check
+    Route::get('/health', function () {
+        return response()->json([
+            'success' => true,
+            'version' => '1.0',
+            'data' => [
+                'status' => 'ok',
+                'timestamp' => now()->toISOString(),
+                'message' => 'API is running'
+            ]
+        ]);
+    });
+
     // Countries
     Route::prefix('countries')->group(function () {
         Route::get('/', [CountryController::class, 'index']);
