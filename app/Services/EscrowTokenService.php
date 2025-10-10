@@ -12,13 +12,19 @@ class EscrowTokenService
     public function __construct() {}
 
     /**
-     * Validate escrow token through core
+     * Validate escrow token through core using token_hash
      */
     public function validateToken(string $token): array
     {
         $coreUrl = config('services.core.url');
         $coreKey = config('services.core.key');
         $timeout = config('services.core.timeout', 10);
+
+        // Decode token to get token_hash and wallet_address
+        $tokenDecoded = json_decode($token, true);
+        if (!$tokenDecoded || !isset($tokenDecoded['token_hash']) || !isset($tokenDecoded['wallet_address'])) {
+            throw new InvalidTokenException('Invalid token format: missing token_hash or wallet_address');
+        }
 
         try {
             $request = Http::timeout($timeout);
@@ -29,8 +35,9 @@ class EscrowTokenService
                 ]);
             }
 
-            $response = $request->post($coreUrl . '/api/tokens/balance', [
-                'token' => $token,
+            // Валидация через новый endpoint /api/escrow-tokens/validate
+            $response = $request->post($coreUrl . '/api/escrow-tokens/validate', [
+                'token_hash' => $tokenDecoded['token_hash'],
             ]);
 
             if (!$response->successful()) {
@@ -38,19 +45,20 @@ class EscrowTokenService
             }
 
             $data = $response->json();
+            
+            // Проверяем, что токен валиден
+            if (!isset($data['valid']) || $data['valid'] !== true) {
+                throw new InvalidTokenException('Token validation failed');
+            }
         } catch (\Throwable $e) {
-            throw new InvalidTokenException('Token is invalid or unavailable');
-        }
-        
-        // Decode token to get wallet_address
-        $tokenDecoded = json_decode($token, true);
-        if (!$tokenDecoded || !isset($tokenDecoded['wallet_address'])) {
-            throw new InvalidTokenException('Invalid token format');
+            throw new InvalidTokenException('Token is invalid or unavailable: ' . $e->getMessage());
         }
         
         return [
             'wallet_address' => $tokenDecoded['wallet_address'],
-            'balance' => $data['data'] ?? $data
+            'token_hash' => $tokenDecoded['token_hash'],
+            'crypto_type' => $data['data']['crypto_type'] ?? null,
+            'expires_at' => $data['data']['expires_at'] ?? null
         ];
     }
 

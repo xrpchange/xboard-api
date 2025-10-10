@@ -68,10 +68,7 @@ class Node extends Model
         'user_connections' => 'integer',
         'endpoints' => 'array',
         'endpoint_permissions' => 'array',
-        'features' => 'array',
-        'last_health_check' => 'datetime',
-        'created_at' => 'datetime',
-        'updated_at' => 'datetime'
+        'features' => 'array'
     ];
     
     /**
