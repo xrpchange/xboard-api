@@ -63,7 +63,7 @@ class EscrowTokenController extends BaseApiController
 
             return response()->json($result, 201);
         } catch (\Exception $e) {
-            return $this->errorResponse($e->getMessage(), 'TOKEN_CREATION_ERROR', 400);
+            return $this->errorResponse($e->getMessage(), 400);
         }
     }
 }
