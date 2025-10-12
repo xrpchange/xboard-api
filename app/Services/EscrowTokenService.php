@@ -31,14 +31,21 @@ class EscrowTokenService
             }
 
             // Создание токена через Core API
+            error_log("EscrowTokenService: Creating token via Core API: {$coreUrl}");
+            error_log("EscrowTokenService: Request data: " . json_encode(['crypto_type' => $cryptoType, 'amount' => $amount]));
+            
             $response = $request->post($coreUrl . '/api/escrow-tokens/create', [
                 'crypto_type' => $cryptoType,
                 'amount' => $amount
             ]);
 
+            error_log("EscrowTokenService: Response status: " . $response->status());
+            error_log("EscrowTokenService: Response body: " . $response->body());
+
             if (!$response->successful()) {
                 $errorData = $response->json();
                 $errorMessage = $errorData['message'] ?? 'Token creation failed';
+                error_log("EscrowTokenService: Error from Core: {$errorMessage}");
                 throw new \Exception($errorMessage);
             }
 
