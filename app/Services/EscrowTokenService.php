@@ -29,23 +29,15 @@ class EscrowTokenService
                     'X-Core-Key' => $coreKey,
                 ]);
             }
-
-            // Создание токена через Core API
-            error_log("EscrowTokenService: Creating token via Core API: {$coreUrl}");
-            error_log("EscrowTokenService: Request data: " . json_encode(['crypto_type' => $cryptoType, 'amount' => $amount]));
             
-            $response = $request->post($coreUrl . '/v1/escrow-tokens/create', [
+            $response = $request->post($coreUrl . '/api/escrow-tokens/create', [
                 'crypto_type' => $cryptoType,
                 'amount' => $amount
             ]);
 
-            error_log("EscrowTokenService: Response status: " . $response->status());
-            error_log("EscrowTokenService: Response body: " . $response->body());
-
             if (!$response->successful()) {
                 $errorData = $response->json();
                 $errorMessage = $errorData['message'] ?? 'Token creation failed';
-                error_log("EscrowTokenService: Error from Core: {$errorMessage}");
                 throw new \Exception($errorMessage);
             }
 
@@ -80,7 +72,7 @@ class EscrowTokenService
             }
 
             // Валидация через новый endpoint /api/escrow-tokens/validate
-            $response = $request->post($coreUrl . '/v1/escrow-tokens/validate', [
+            $response = $request->post($coreUrl . '/api/escrow-tokens/validate', [
                 'token_hash' => $tokenDecoded['token_hash'],
             ]);
 
