@@ -12,6 +12,43 @@ class EscrowTokenService
     public function __construct() {}
 
     /**
+     * Create escrow token through core API
+     * Stage 1: Get open part of token
+     */
+    public function createToken(string $cryptoType, float $amount = 0.0): array
+    {
+        $coreUrl = config('services.core.url');
+        $coreKey = config('services.core.key');
+        $timeout = config('services.core.timeout', 10);
+
+        try {
+            $request = Http::timeout($timeout);
+            
+            if (!empty($coreKey)) {
+                $request = $request->withHeaders([
+                    'X-Core-Key' => $coreKey,
+                ]);
+            }
+
+            // Создание токена через Core API
+            $response = $request->post($coreUrl . '/api/escrow-tokens/create', [
+                'crypto_type' => $cryptoType,
+                'amount' => $amount
+            ]);
+
+            if (!$response->successful()) {
+                $errorData = $response->json();
+                $errorMessage = $errorData['message'] ?? 'Token creation failed';
+                throw new \Exception($errorMessage);
+            }
+
+            return $response->json();
+        } catch (\Throwable $e) {
+            throw new \Exception('Failed to create escrow token: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Validate escrow token through core using token_hash
      */
     public function validateToken(string $token): array

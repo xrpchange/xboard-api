@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\ExchangeLotController;
 use App\Http\Controllers\Api\BuyTriggerController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\NodeController;
+use App\Http\Controllers\Api\EscrowTokenController;
 use App\Http\Controllers\Api\Admin\NodeAdminController;
 
 /*
@@ -79,6 +80,11 @@ Route::prefix('v1')->group(function () {
         Route::get('/required', [NodeController::class, 'required']);
         Route::get('/{id}', [NodeController::class, 'show']);
         Route::post('/{id}/health-check', [NodeController::class, 'healthCheck']);
+    });
+
+    // Escrow Tokens (Stage 1 - no authentication required)
+    Route::prefix('escrow-tokens')->group(function () {
+        Route::post('/create', [EscrowTokenController::class, 'create']);
     });
 });
 
