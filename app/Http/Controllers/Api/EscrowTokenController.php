@@ -16,6 +16,19 @@ class EscrowTokenController extends BaseApiController
     }
 
     /**
+     * Get available cryptocurrencies from Core
+     */
+    public function getAvailableCryptos(): JsonResponse
+    {
+        try {
+            $result = $this->escrowTokenService->getAvailableCryptos();
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return $this->errorResponse($e->getMessage(), 400);
+        }
+    }
+
+    /**
      * Create escrow token (Stage 1 - Open Part)
      * 
      * @OA\Post(

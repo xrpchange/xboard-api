@@ -34,7 +34,7 @@ class EscrowTokenService
             error_log("EscrowTokenService: Creating token via Core API: {$coreUrl}");
             error_log("EscrowTokenService: Request data: " . json_encode(['crypto_type' => $cryptoType, 'amount' => $amount]));
             
-            $response = $request->post($coreUrl . '/api/escrow-tokens/create', [
+            $response = $request->post($coreUrl . '/v1/escrow-tokens/create', [
                 'crypto_type' => $cryptoType,
                 'amount' => $amount
             ]);
@@ -80,7 +80,7 @@ class EscrowTokenService
             }
 
             // Валидация через новый endpoint /api/escrow-tokens/validate
-            $response = $request->post($coreUrl . '/api/escrow-tokens/validate', [
+            $response = $request->post($coreUrl . '/v1/escrow-tokens/validate', [
                 'token_hash' => $tokenDecoded['token_hash'],
             ]);
 
@@ -104,6 +104,36 @@ class EscrowTokenService
             'crypto_type' => $data['data']['crypto_type'] ?? null,
             'expires_at' => $data['data']['expires_at'] ?? null
         ];
+    }
+
+    /**
+     * Get available cryptocurrencies from Core API
+     */
+    public function getAvailableCryptos(): array
+    {
+        $coreUrl = config('services.core.url');
+        $coreKey = config('services.core.key');
+        $timeout = config('services.core.timeout', 10);
+
+        try {
+            $request = Http::timeout($timeout);
+            
+            if (!empty($coreKey)) {
+                $request = $request->withHeaders([
+                    'X-Core-Key' => $coreKey,
+                ]);
+            }
+
+            $response = $request->get($coreUrl . '/api/info');
+
+            if (!$response->successful()) {
+                throw new \Exception('Failed to get cryptocurrencies from Core');
+            }
+
+            return $response->json();
+        } catch (\Throwable $e) {
+            throw new \Exception('Failed to get available cryptocurrencies: ' . $e->getMessage());
+        }
     }
 
     /**
