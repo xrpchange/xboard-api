@@ -36,13 +36,13 @@ return [
     ],
 
     'core' => [
-        'url' => env('CORE_URL', 'https://sandbox.api.core.xdexboard.com'),
+        'url' => env('CORE_URL'),  // REQUIRED: Must be set in .env (sandbox Core URL)
         'key' => env('CORE_KEY', ''),
         'timeout' => env('CORE_TIMEOUT', 10),
     ],
     
     'core_production' => [
-        'url' => env('CORE_PRODUCTION_URL', 'https://api.core.xdexboard.com'),
+        'url' => env('CORE_PRODUCTION_URL'),  // REQUIRED: Must be set in .env (production Core URL)
         'key' => env('CORE_PRODUCTION_KEY', ''),
         'timeout' => env('CORE_PRODUCTION_TIMEOUT', 10),
     ],

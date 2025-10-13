@@ -13,6 +13,10 @@ class NodeSeeder extends Seeder
     public function run(): void
     {
         // Создаем основной узел XBoard
+        // Get URLs from config to avoid hardcoding
+        $coreUrlSandbox = config('services.core.url');
+        $coreUrlProduction = config('services.core_production.url');
+        
         Node::updateOrCreate(
             ['api_url' => 'https://api.xdexboard.com'],
             [
@@ -33,9 +37,8 @@ class NodeSeeder extends Seeder
                     'production' => 'https://api.xdexboard.com',
                     'sandbox' => 'https://sandbox.api.xdexboard.com',
                     'dev' => 'https://dev.api.xdexboard.com',
-                    'core_production' => 'https://api.core.xdexboard.com',
-                    'core_sandbox' => 'https://sandbox.api.core.xdexboard.com',
-                    'core_dev' => 'https://dev.api.core.xdexboard.com'
+                    'core_production' => $coreUrlProduction,
+                    'core_sandbox' => $coreUrlSandbox,
                 ],
                 'endpoint_permissions' => [
                     'production' => 'public',

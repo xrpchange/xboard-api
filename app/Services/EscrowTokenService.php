@@ -17,7 +17,15 @@ class EscrowTokenService
      */
     public function createToken(string $cryptoType, float $amount = 0.0): array
     {
-        $coreUrl = config('services.core.url');
+        // Determine Core URL based on current API host (preserve environment)
+        $host = $_SERVER['HTTP_HOST'] ?? '';
+        $coreUrl = config('services.core.url'); // default (sandbox)
+        
+        // If request came to production API, use production Core
+        if (!preg_match('/^(sandbox\.|dev\.)/', $host)) {
+            $coreUrl = config('services.core_production.url');
+        }
+        
         $coreKey = config('services.core.key');
         $timeout = config('services.core.timeout', 10);
 
@@ -103,7 +111,15 @@ class EscrowTokenService
      */
     public function getAvailableCryptos(): array
     {
-        $coreUrl = config('services.core.url');
+        // Determine Core URL based on current API host (preserve environment)
+        $host = $_SERVER['HTTP_HOST'] ?? '';
+        $coreUrl = config('services.core.url'); // default (sandbox)
+        
+        // If request came to production API, use production Core
+        if (!preg_match('/^(sandbox\.|dev\.)/', $host)) {
+            $coreUrl = config('services.core_production.url');
+        }
+        
         $coreKey = config('services.core.key');
         $timeout = config('services.core.timeout', 10);
 
