@@ -42,11 +42,27 @@ class NodeController extends BaseApiController
      */
     public function index(Request $request): JsonResponse
     {
-        $nodes = Node::getActive();
-        
-        // Возвращаем все endpoints без фильтрации
-        // Клиент сам решит какой endpoint использовать на основе своих настроек
-        return $this->successResponse($nodes);
+        try {
+            $nodes = Node::getActive();
+
+            // Возвращаем все endpoints без фильтрации
+            // Клиент сам решит какой endpoint использовать на основе своих настроек
+            return $this->successResponse($nodes);
+        } catch (\Throwable $e) {
+            \Log::error('Failed to load nodes', [
+                'exception' => $e->getMessage(),
+                'code' => $e->getCode(),
+            ]);
+
+            return $this->errorResponse(
+                'Failed to load nodes',
+                500,
+                [
+                    'error_code' => $e->getCode(),
+                    'error_message' => $e->getMessage(),
+                ]
+            );
+        }
     }
 
     /**
