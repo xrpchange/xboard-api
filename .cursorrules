@@ -1,0 +1,32 @@
+# Cursor Rules for XBoard API
+
+## Git Operations - STRICT PROHIBITION
+
+**CRITICAL: NEVER commit or push changes without explicit user permission.**
+
+- ❌ **DO NOT** run `git commit` or `git push` commands automatically
+- ❌ **DO NOT** commit changes "just because" they were made
+- ❌ **DO NOT** push to remote repositories without explicit user request
+- ✅ **ONLY** commit/push when the user explicitly asks you to do so
+- ✅ **ALWAYS** ask for confirmation before any git operations
+- ✅ **ALWAYS** show what will be committed before committing
+
+## Workflow
+
+1. Make code changes as requested
+2. Show the user what was changed
+3. **WAIT** for explicit user instruction to commit/push
+4. Only then proceed with git operations
+
+## Exception
+
+The only exception is when the user explicitly says:
+- "Закоммить"
+- "Коммит"
+- "Запушить"
+- "Push"
+- "Commit"
+- Or similar explicit commands
+
+Even then, show what will be committed first.
+
