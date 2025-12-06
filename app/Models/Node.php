@@ -118,6 +118,28 @@ class Node extends Model
     }
 
     /**
+     * Получить активные узлы по стране
+     */
+    public static function getActiveByCountry(string $countryCode)
+    {
+        return self::where('is_active', true)
+            ->where('country_code', strtoupper($countryCode))
+            ->orderByRaw('
+                CASE 
+                    WHEN is_required = 1 THEN 1
+                    WHEN is_default = 1 THEN 2  
+                    WHEN is_trusted = 1 THEN 3
+                    ELSE 4
+                END
+            ')
+                ->orderBy('trust_level', 'desc')
+                ->orderBy('user_connections', 'desc')
+            ->orderBy('priority', 'desc')
+            ->orderBy('name')
+            ->get();
+    }
+
+    /**
      * Получить обязательные узлы (всегда подключенные)
      */
     public static function getRequired()

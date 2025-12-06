@@ -13,6 +13,13 @@ class NodeController extends BaseApiController
      *     path="/nodes",
      *     summary="Get all active nodes",
      *     tags={"Nodes"},
+     *     @OA\Parameter(
+     *         name="country",
+     *         in="query",
+     *         required=false,
+     *         description="Filter nodes by country code (ISO 3166-1 alpha-3, e.g., 'USA', 'RUS', 'GBR')",
+     *         @OA\Schema(type="string", example="USA")
+     *     ),
      *     @OA\Response(
      *         response=200,
      *         description="List of active nodes",
@@ -43,7 +50,13 @@ class NodeController extends BaseApiController
     public function index(Request $request): JsonResponse
     {
         try {
-            $nodes = Node::getActive();
+            $countryCode = $request->query('country');
+            
+            if ($countryCode) {
+                $nodes = Node::getActiveByCountry($countryCode);
+            } else {
+                $nodes = Node::getActive();
+            }
 
             // Возвращаем все endpoints без фильтрации
             // Клиент сам решит какой endpoint использовать на основе своих настроек
