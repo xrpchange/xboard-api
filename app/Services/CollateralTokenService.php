@@ -161,7 +161,7 @@ class CollateralTokenService
             'device_id' => $tokenData['wallet_address'], // Use wallet address as device_id
             'collateral_token' => $collateralToken,
             'ip_address' => $ipAddress,
-            'expires_at' => now()->addYear()
+            'expires_at' => now()->addMonth() // Bearer token lifetime: 1 month
         ]);
 
         return $bearerToken;
@@ -182,5 +182,40 @@ class CollateralTokenService
         $userToken->updateLastUsed();
         
         return $userToken;
+    }
+
+    /**
+     * Refresh Bearer token using existing Bearer token
+     * Returns new Bearer token based on the same escrow token
+     */
+    public function refreshBearerToken(string $bearerToken, string $ipAddress): ?string
+    {
+        // Validate current Bearer token
+        $userToken = $this->validateBearerToken($bearerToken);
+        
+        if (!$userToken) {
+            return null;
+        }
+
+        // Get collateral token from existing Bearer token
+        $collateralToken = $userToken->collateral_token;
+        
+        // Invalidate old token (optional - can keep it for grace period)
+        // $userToken->update(['expires_at' => now()]);
+        
+        // Create new Bearer token using same collateral token
+        $newBearerToken = hash('sha256', $collateralToken . $ipAddress . time() . random_bytes(32));
+        
+        // Save new token to database
+        UserToken::create([
+            'token' => $newBearerToken,
+            'device_id' => $userToken->device_id,
+            'collateral_token' => $collateralToken,
+            'ip_address' => $ipAddress,
+            'role' => $userToken->role,
+            'expires_at' => now()->addMonth() // Bearer token lifetime: 1 month
+        ]);
+
+        return $newBearerToken;
     }
 }

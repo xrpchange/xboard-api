@@ -129,4 +129,61 @@ class AuthController extends Controller
             ]
         ]);
     }
+
+    /**
+     * @OA\Post(
+     *     path="/auth/refresh-token",
+     *     summary="Refresh bearer token",
+     *     tags={"Authentication"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Response(
+     *         response=200,
+     *         description="Bearer token refreshed",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="bearer_token", type="string", example="1|abc123..."),
+     *                 @OA\Property(property="expires_at", type="string", example="2024-02-15T10:30:00Z")
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Invalid or expired bearer token")
+     * )
+     */
+    public function refreshBearerToken(Request $request): JsonResponse
+    {
+        $bearerToken = $request->bearerToken();
+
+        if (!$bearerToken) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bearer token not provided'
+            ], 401);
+        }
+
+        try {
+            // Refresh Bearer token
+            $newBearerToken = $this->collateralTokenService->refreshBearerToken($bearerToken, $request->ip());
+            
+            if (!$newBearerToken) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid or expired bearer token'
+                ], 401);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'bearer_token' => $newBearerToken,
+                    'expires_at' => now()->addMonth()->toIso8601String()
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to refresh bearer token'
+            ], 500);
+        }
+    }
 } 

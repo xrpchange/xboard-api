@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\Admin\NodeAdminController;
 Route::prefix('v1/auth')->group(function () {
     Route::post('/bearer-token', [AuthController::class, 'getBearerToken']);
     Route::get('/validate', [AuthController::class, 'validateBearerToken']);
+    Route::post('/refresh-token', [AuthController::class, 'refreshBearerToken']);
 });
 
 // Reference data (without authentication)
