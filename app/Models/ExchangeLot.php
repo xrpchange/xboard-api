@@ -101,6 +101,38 @@ class ExchangeLot extends Model
     }
 
     /**
+     * Get sell currency (fiat) - only loaded when sell_currency_type is 'fiat'
+     */
+    public function sellCurrency(): BelongsTo
+    {
+        return $this->belongsTo(FiatCurrency::class, 'sell_currency_id');
+    }
+
+    /**
+     * Get sell crypto currency - only loaded when sell_currency_type is 'crypto'
+     */
+    public function sellCryptoCurrency(): BelongsTo
+    {
+        return $this->belongsTo(CryptoCurrency::class, 'sell_currency_id');
+    }
+
+    /**
+     * Get buy currency (fiat) - only loaded when buy_currency_type is 'fiat'
+     */
+    public function buyCurrency(): BelongsTo
+    {
+        return $this->belongsTo(FiatCurrency::class, 'buy_currency_id');
+    }
+
+    /**
+     * Get buy crypto currency - only loaded when buy_currency_type is 'crypto'
+     */
+    public function buyCryptoCurrency(): BelongsTo
+    {
+        return $this->belongsTo(CryptoCurrency::class, 'buy_currency_id');
+    }
+
+    /**
      * Get transactions for this lot
      */
     public function transactions(): HasMany

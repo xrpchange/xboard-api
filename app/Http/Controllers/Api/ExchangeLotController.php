@@ -34,7 +34,7 @@ class ExchangeLotController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = ExchangeLot::active()
-            ->with(['cryptoCurrency', 'country', 'bank']);
+            ->with(['cryptoCurrency', 'country', 'bank', 'sellCurrency', 'sellCryptoCurrency', 'buyCurrency', 'buyCryptoCurrency']);
 
         // Filter by test mode
         if ($request->has('is_test')) {
@@ -46,15 +46,47 @@ class ExchangeLotController extends Controller
         }
 
         // Filter by currencies
-        if ($request->has('sell_currency_type')) {
+        // Support both old format (sell_currency_type/id, buy_currency_type/id) and new format (from_currency, to_currency)
+        if ($request->has('from_currency')) {
+            // New format: from_currency is symbol (e.g., "BTC", "USD")
+            $fromCurrencySymbol = strtoupper($request->from_currency);
+            $fromCurrency = \App\Models\FiatCurrency::where('code', $fromCurrencySymbol)->first();
+            if (!$fromCurrency) {
+                $fromCurrency = \App\Models\CryptoCurrency::where('code', $fromCurrencySymbol)->first();
+                if ($fromCurrency) {
+                    $query->where('sell_currency_type', 'crypto')
+                          ->where('sell_currency_id', $fromCurrency->id);
+                }
+            } else {
+                $query->where('sell_currency_type', 'fiat')
+                      ->where('sell_currency_id', $fromCurrency->id);
+            }
+        } elseif ($request->has('sell_currency_type')) {
             $query->where('sell_currency_type', $request->sell_currency_type);
         }
+        
         if ($request->has('sell_currency_id')) {
             $query->where('sell_currency_id', $request->sell_currency_id);
         }
-        if ($request->has('buy_currency_type')) {
+        
+        if ($request->has('to_currency')) {
+            // New format: to_currency is symbol (e.g., "BTC", "USD")
+            $toCurrencySymbol = strtoupper($request->to_currency);
+            $toCurrency = \App\Models\FiatCurrency::where('code', $toCurrencySymbol)->first();
+            if (!$toCurrency) {
+                $toCurrency = \App\Models\CryptoCurrency::where('code', $toCurrencySymbol)->first();
+                if ($toCurrency) {
+                    $query->where('buy_currency_type', 'crypto')
+                          ->where('buy_currency_id', $toCurrency->id);
+                }
+            } else {
+                $query->where('buy_currency_type', 'fiat')
+                      ->where('buy_currency_id', $toCurrency->id);
+            }
+        } elseif ($request->has('buy_currency_type')) {
             $query->where('buy_currency_type', $request->buy_currency_type);
         }
+        
         if ($request->has('buy_currency_id')) {
             $query->where('buy_currency_id', $request->buy_currency_id);
         }
@@ -93,7 +125,7 @@ class ExchangeLotController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $lots
+            'data' => \App\Http\Resources\ExchangeLotResource::collection($lots->items())
         ]);
     }
 

@@ -11,6 +11,7 @@ class UserToken extends Model
         'token',
         'device_id',
         'collateral_token',
+        'escrow_token_hash', // Hash of escrow token public part
         'role',
         'ip_address',
         'last_used_at',

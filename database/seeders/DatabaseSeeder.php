@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
             CurrencySeeder::class,
             BankSeeder::class,
             NodeSeeder::class,
+            ExchangeLotSeeder::class,
         ]);
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\CollateralTokenService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 
 class AuthController extends Controller
 {
@@ -53,11 +54,26 @@ class AuthController extends Controller
         ]);
 
         try {
+            // Client sends publicPart (JSON string), not full token
+            $publicPart = $request->escrow_token;
+            
+            Log::info('Bearer token request received', [
+                'public_part_length' => strlen($publicPart),
+                'public_part_preview' => substr($publicPart, 0, 200) . '...',
+                'ip' => $request->ip()
+            ]);
+            
             // Create Bearer token (includes balance check via core)
-            $bearerToken = $this->collateralTokenService->createBearerToken($request->escrow_token, $request->ip());
+            $bearerToken = $this->collateralTokenService->createBearerToken($publicPart, $request->ip());
             
             // Decrypt token to get data
-            $tokenData = $this->collateralTokenService->decryptToken($request->escrow_token);
+            $tokenData = $this->collateralTokenService->decryptToken($publicPart);
+            
+            Log::info('Bearer token created successfully', [
+                'wallet_address' => substr($tokenData['wallet_address'], 0, 10) . '...',
+                'currency' => $tokenData['currency'],
+                'environment' => $tokenData['environment'] ?? 'unknown'
+            ]);
             
             return response()->json([
                 'success' => true,
@@ -68,9 +84,16 @@ class AuthController extends Controller
                 ]
             ]);
         } catch (\Exception $e) {
+            Log::error('Bearer token creation failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'public_part_preview' => substr($request->escrow_token ?? '', 0, 200) . '...',
+                'public_part_length' => strlen($request->escrow_token ?? '')
+            ]);
+            
             return response()->json([
                 'success' => false,
-                'message' => 'Invalid escrow token'
+                'message' => 'Invalid escrow token: ' . $e->getMessage()
             ], 401);
         }
     }
@@ -131,59 +154,10 @@ class AuthController extends Controller
     }
 
     /**
-     * @OA\Post(
-     *     path="/auth/refresh-token",
-     *     summary="Refresh bearer token",
-     *     tags={"Authentication"},
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Response(
-     *         response=200,
-     *         description="Bearer token refreshed",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(property="data", type="object",
-     *                 @OA\Property(property="bearer_token", type="string", example="1|abc123..."),
-     *                 @OA\Property(property="expires_at", type="string", example="2024-02-15T10:30:00Z")
-     *             )
-     *         )
-     *     ),
-     *     @OA\Response(response=401, description="Invalid or expired bearer token")
-     * )
+     * REMOVED: refreshBearerToken endpoint
+     * 
+     * Security reason: If Bearer token is stolen, attacker could refresh it indefinitely.
+     * Instead, client should request new Bearer token using escrow token via /auth/bearer-token
+     * This requires escrow token which is stored only on client device.
      */
-    public function refreshBearerToken(Request $request): JsonResponse
-    {
-        $bearerToken = $request->bearerToken();
-
-        if (!$bearerToken) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Bearer token not provided'
-            ], 401);
-        }
-
-        try {
-            // Refresh Bearer token
-            $newBearerToken = $this->collateralTokenService->refreshBearerToken($bearerToken, $request->ip());
-            
-            if (!$newBearerToken) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid or expired bearer token'
-                ], 401);
-            }
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'bearer_token' => $newBearerToken,
-                    'expires_at' => now()->addMonth()->toIso8601String()
-                ]
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to refresh bearer token'
-            ], 500);
-        }
-    }
 } 
