@@ -12,6 +12,7 @@ class UserToken extends Model
         'device_id',
         'collateral_token',
         'escrow_token_hash', // Hash of escrow token public part
+        'node_domain', // Node domain - one Bearer token per node
         'role',
         'ip_address',
         'last_used_at',

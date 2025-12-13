@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\Admin\NodeAdminController;
 Route::prefix('v1/auth')->group(function () {
     Route::post('/bearer-token', [AuthController::class, 'getBearerToken']);
     Route::get('/validate', [AuthController::class, 'validateBearerToken']);
+    Route::delete('/bearer-tokens/node', [AuthController::class, 'deleteBearerTokensForNode']);
     // REMOVED: /refresh-token endpoint - security risk (allows infinite token refresh if stolen)
     // Client should use /auth/bearer-token with escrow token instead
 });

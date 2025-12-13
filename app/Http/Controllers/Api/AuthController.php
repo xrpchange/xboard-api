@@ -50,21 +50,29 @@ class AuthController extends Controller
     public function getBearerToken(Request $request): JsonResponse
     {
         $request->validate([
-            'escrow_token' => 'required|string'
+            'escrow_token' => 'required|string',
+            'device_id' => 'required|string|max:255'
+            // NOTE: node_domain is not needed - it's already in escrow token
         ]);
 
         try {
             // Client sends publicPart (JSON string), not full token
             $publicPart = $request->escrow_token;
+            $deviceId = $request->device_id;
+            // nodeDomain will be extracted from escrow token if not provided
+            $nodeDomain = $request->node_domain ?? null;
             
             Log::info('Bearer token request received', [
                 'public_part_length' => strlen($publicPart),
                 'public_part_preview' => substr($publicPart, 0, 200) . '...',
+                'device_id' => substr($deviceId, 0, 32) . '...',
+                'node_domain' => $nodeDomain,
                 'ip' => $request->ip()
             ]);
             
             // Create Bearer token (includes balance check via core)
-            $bearerToken = $this->collateralTokenService->createBearerToken($publicPart, $request->ip());
+            // IMPORTANT: Each node gets its own Bearer token (one token per node)
+            $bearerTokenResult = $this->collateralTokenService->createBearerTokenWithExpiry($publicPart, $request->ip(), $deviceId, $nodeDomain);
             
             // Decrypt token to get data
             $tokenData = $this->collateralTokenService->decryptToken($publicPart);
@@ -72,13 +80,15 @@ class AuthController extends Controller
             Log::info('Bearer token created successfully', [
                 'wallet_address' => substr($tokenData['wallet_address'], 0, 10) . '...',
                 'currency' => $tokenData['currency'],
-                'environment' => $tokenData['environment'] ?? 'unknown'
+                'environment' => $tokenData['environment'] ?? 'unknown',
+                'expires_at' => $bearerTokenResult['expires_at']
             ]);
             
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'bearer_token' => $bearerToken,
+                    'bearer_token' => $bearerTokenResult['token'],
+                    'expires_at' => $bearerTokenResult['expires_at'],
                     'wallet_address' => $tokenData['wallet_address'],
                     'crypto_currency' => $tokenData['currency']
                 ]
@@ -86,9 +96,12 @@ class AuthController extends Controller
         } catch (\Exception $e) {
             Log::error('Bearer token creation failed', [
                 'error' => $e->getMessage(),
+                'error_class' => get_class($e),
                 'trace' => $e->getTraceAsString(),
                 'public_part_preview' => substr($request->escrow_token ?? '', 0, 200) . '...',
-                'public_part_length' => strlen($request->escrow_token ?? '')
+                'public_part_length' => strlen($request->escrow_token ?? ''),
+                'device_id' => substr($deviceId ?? '', 0, 16) . '...',
+                'node_domain' => $nodeDomain
             ]);
             
             return response()->json([
@@ -160,4 +173,45 @@ class AuthController extends Controller
      * Instead, client should request new Bearer token using escrow token via /auth/bearer-token
      * This requires escrow token which is stored only on client device.
      */
+    
+    /**
+     * Delete bearer tokens for a specific node
+     * Called when node is removed or untrusted
+     * IMPORTANT: This prevents memory leaks and ensures clean state for testing
+     */
+    public function deleteBearerTokensForNode(Request $request): JsonResponse
+    {
+        $request->validate([
+            'node_domain' => 'required|string|max:255'
+        ]);
+
+        try {
+            $nodeDomain = $request->node_domain;
+            
+            $deletedCount = $this->collateralTokenService->deleteBearerTokensForNode($nodeDomain);
+            
+            Log::info('Bearer tokens deleted for node', [
+                'node_domain' => $nodeDomain,
+                'deleted_count' => $deletedCount
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'node_domain' => $nodeDomain,
+                    'deleted_count' => $deletedCount
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to delete bearer tokens for node', [
+                'error' => $e->getMessage(),
+                'node_domain' => $request->node_domain ?? 'unknown'
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete bearer tokens: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 } 

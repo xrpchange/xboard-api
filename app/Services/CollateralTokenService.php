@@ -148,7 +148,8 @@ class CollateralTokenService
                 'has_version' => isset($tokenData['version']),
                 'has_wallet_address' => isset($tokenData['wallet_address']),
                 'has_currency' => isset($tokenData['currency']),
-                'has_environment' => isset($tokenData['environment'])
+                'has_environment' => isset($tokenData['environment']),
+                'has_node_domain' => isset($tokenData['node_domain'])
             ]);
             
             if (!isset($tokenData['version'], $tokenData['wallet_address'], $tokenData['currency'])) {
@@ -156,7 +157,11 @@ class CollateralTokenService
                     'public_part_preview' => substr($publicPart, 0, 200) . '...',
                     'public_part_length' => strlen($publicPart),
                     'keys' => array_keys($tokenData ?? []),
-                    'token_data' => $tokenData
+                    'has_version' => isset($tokenData['version']),
+                    'has_wallet_address' => isset($tokenData['wallet_address']),
+                    'has_currency' => isset($tokenData['currency']),
+                    'has_node_domain' => isset($tokenData['node_domain']),
+                    'token_data_preview' => json_encode(array_intersect_key($tokenData ?? [], array_flip(['version', 'wallet_address', 'currency', 'node_domain', 'environment'])))
                 ]);
                 throw new \Exception('Invalid token structure: missing required fields (version, wallet_address, currency)');
             }
@@ -195,6 +200,7 @@ class CollateralTokenService
             Log::info('Token decrypted successfully', [
                 'currency' => $tokenData['currency'],
                 'environment' => $environment,
+                'node_domain' => $tokenData['node_domain'] ?? 'not_set',
                 'wallet_address' => substr($walletAddress, 0, 20) . '...',
                 'wallet_address_length' => strlen($walletAddress),
                 'public_part_length' => strlen($publicPart)
@@ -203,7 +209,8 @@ class CollateralTokenService
             return [
                 'wallet_address' => $walletAddress,
                 'currency' => $tokenData['currency'],
-                'environment' => $environment
+                'environment' => $environment,
+                'node_domain' => $tokenData['node_domain'] ?? null // CRITICAL: Include node_domain in return
             ];
         } catch (\Exception $e) {
             Log::error('Token decryption failed', [
@@ -245,34 +252,106 @@ class CollateralTokenService
     }
 
     /**
+     * Create Bearer token with expiry information
+     * @param string $publicPart JSON string with public_part of escrow token (not full token)
+     * @return array ['token' => string, 'expires_at' => string]
+     */
+    public function createBearerTokenWithExpiry(string $publicPart, string $ipAddress, string $deviceId, ?string $nodeDomain = null): array
+    {
+        $token = $this->createBearerToken($publicPart, $ipAddress, $deviceId, $nodeDomain);
+        
+        // Get the token record to get expires_at
+        $userToken = UserToken::where('token', $token)->first();
+        if ($userToken && $userToken->expires_at) {
+            return [
+                'token' => $token,
+                'expires_at' => $userToken->expires_at->toIso8601String()
+            ];
+        }
+        
+        // Fallback: calculate expires_at (1 month from now)
+        return [
+            'token' => $token,
+            'expires_at' => now()->addMonth()->toIso8601String()
+        ];
+    }
+
+    /**
      * Create Bearer token after successful balance check
      * @param string $publicPart JSON string with public_part of escrow token (not full token)
      */
-    public function createBearerToken(string $publicPart, string $ipAddress): string
+    public function createBearerToken(string $publicPart, string $ipAddress, string $deviceId, ?string $nodeDomain = null): string
     {
         // Decrypt publicPart to get token data
         $tokenData = $this->decryptToken($publicPart);
         
+        // IMPORTANT: Escrow token is already bound to a node (nodeDomain is in escrow token data)
+        // If nodeDomain is not provided in request, extract it from escrow token
+        if ($nodeDomain === null && isset($tokenData['node_domain'])) {
+            $nodeDomain = $tokenData['node_domain'];
+        }
+        
+        // Log node_domain extraction for debugging
+        Log::info('Extracting node_domain from escrow token', [
+            'node_domain_from_param' => $nodeDomain,
+            'node_domain_from_token' => $tokenData['node_domain'] ?? null,
+            'final_node_domain' => $nodeDomain,
+            'token_data_keys' => array_keys($tokenData ?? [])
+        ]);
+        
         // Calculate escrow_token_hash from publicPart (same as client does)
         $escrowTokenHash = hash('sha256', $publicPart);
         
-        // Check if valid (non-expired) Bearer token already exists for this escrow_token_hash
-        // If valid token exists, return it (don't extend - let it expire naturally)
-        // If expired or doesn't exist, create new one
-        $existingToken = UserToken::where('escrow_token_hash', $escrowTokenHash)
-            ->where('expires_at', '>', now())
+        // IMPORTANT: Each node should have its own Bearer token
+        // Escrow token gives the right to obtain Bearer token, but Bearer tokens are different for different nodes
+        // For same escrow_token_hash + device_id + node_domain, return existing token if valid
+        // This ensures one Bearer token per node, even if using the same escrow token
+        // CRITICAL: Always check node_domain (even if null) to prevent creating duplicate tokens for different nodes
+        $query = UserToken::where('escrow_token_hash', $escrowTokenHash)
+            ->where('device_id', $deviceId)
+            ->where('expires_at', '>', now());
+        
+        // ALWAYS filter by node_domain (even if null) - this is critical to prevent duplicates
+        if ($nodeDomain !== null) {
+            $query->where('node_domain', $nodeDomain);
+        } else {
+            // If nodeDomain is null, only match tokens where node_domain is also null
+            $query->whereNull('node_domain');
+        }
+        
+        $existingToken = $query->orderBy('created_at', 'desc') // Get most recent valid token
             ->first();
         
         if ($existingToken) {
             // Token is still valid - return it without extending expiration
-            // This prevents creating duplicate tokens for same escrow token
             $existingToken->updateLastUsed();
-            Log::info('Valid Bearer token found for escrow_token_hash, returning existing', [
+            Log::info('Valid Bearer token found for escrow_token_hash + device_id + node_domain, returning existing', [
                 'escrow_token_hash' => substr($escrowTokenHash, 0, 16) . '...',
                 'token_id' => $existingToken->id,
+                'device_id' => substr($deviceId, 0, 16) . '...',
+                'node_domain' => $nodeDomain,
                 'expires_at' => $existingToken->expires_at->format('Y-m-d H:i:s')
             ]);
             return $existingToken->token;
+        }
+        
+        Log::info('No existing Bearer token found, creating new one', [
+            'escrow_token_hash' => substr($escrowTokenHash, 0, 16) . '...',
+            'device_id' => substr($deviceId, 0, 16) . '...',
+            'node_domain' => $nodeDomain
+        ]);
+        
+        // Also check for expired tokens with same escrow_token_hash to clean up
+        // (optional: can be done via scheduled job instead)
+        $expiredCount = UserToken::where('escrow_token_hash', $escrowTokenHash)
+            ->where('expires_at', '<=', now())
+            ->count();
+        
+        if ($expiredCount > 0) {
+            Log::info('Found expired tokens for escrow_token_hash, will create new one', [
+                'escrow_token_hash' => substr($escrowTokenHash, 0, 16) . '...',
+                'expired_count' => $expiredCount
+            ]);
         }
         
         // Token expired or doesn't exist - create new one
@@ -303,27 +382,179 @@ class CollateralTokenService
         // ExchangeLot is only needed for actual exchange operations, not for authentication
         // We skip ExchangeLot creation here to avoid requiring unnecessary fields
         
+        // Double-check: Re-query to prevent race condition
+        // (Another request might have created token between our check and now)
+        // CRITICAL: Include ALL matching criteria (escrow_token_hash + device_id + node_domain)
+        $doubleCheckQuery = UserToken::where('escrow_token_hash', $escrowTokenHash)
+            ->where('device_id', $deviceId)
+            ->where('expires_at', '>', now());
+        
+        // ALWAYS filter by node_domain in double-check too
+        if ($nodeDomain !== null) {
+            $doubleCheckQuery->where('node_domain', $nodeDomain);
+        } else {
+            $doubleCheckQuery->whereNull('node_domain');
+        }
+        
+        $existingTokenAfterCheck = $doubleCheckQuery->orderBy('created_at', 'desc')->first();
+        
+        if ($existingTokenAfterCheck) {
+            // Token was created by another request - return it
+            $existingTokenAfterCheck->updateLastUsed();
+            Log::info('Valid Bearer token found after double-check (race condition prevented)', [
+                'escrow_token_hash' => substr($escrowTokenHash, 0, 16) . '...',
+                'token_id' => $existingTokenAfterCheck->id,
+                'device_id' => substr($existingTokenAfterCheck->device_id, 0, 16) . '...',
+                'node_domain' => $nodeDomain
+            ]);
+            return $existingTokenAfterCheck->token;
+        }
+        
         // Generate unique Bearer token
         $bearerToken = hash('sha256', $publicPart . $ipAddress . time() . random_bytes(32));
         
-        // Save token to database with escrow_token_hash
-        UserToken::create([
-            'token' => $bearerToken,
-            'device_id' => $tokenData['wallet_address'], // Use wallet address as device_id
-            'escrow_token_hash' => $escrowTokenHash, // Hash of publicPart
-            'collateral_token' => null, // Optional, prefer hash
-            'ip_address' => $ipAddress,
-            'role' => 'public', // Default role
-            'expires_at' => now()->addMonth() // Bearer token lifetime: 1 month
-        ]);
+        // Use device_id from client (should be unique per device)
+        // Validate device_id format (should be non-empty string)
+        if (empty($deviceId) || strlen($deviceId) > 255) {
+            Log::error('Invalid device_id received from client', [
+                'device_id_length' => strlen($deviceId ?? ''),
+                'escrow_token_hash' => substr($escrowTokenHash, 0, 16) . '...'
+            ]);
+            throw new \InvalidArgumentException('Invalid device_id');
+        }
         
-        Log::info('Bearer token created', [
+        // IMPORTANT: For same escrow_token_hash, there should be only ONE bearer token
+        // We already checked for existing token above, so if we reach here, token doesn't exist
+        // Check if device_id is already used with different escrow_token_hash
+        // This is OK - same device can have multiple escrow tokens (different bearer tokens)
+        $existingDeviceToken = UserToken::where('device_id', $deviceId)
+            ->where('escrow_token_hash', '!=', $escrowTokenHash)
+            ->where('expires_at', '>', now())
+            ->first();
+        
+        if ($existingDeviceToken) {
+            Log::info('Device_id already used with different escrow_token_hash (OK - multiple escrow tokens per device)', [
+                'device_id' => substr($deviceId, 0, 32) . '...',
+                'existing_escrow_hash' => substr($existingDeviceToken->escrow_token_hash ?? '', 0, 16) . '...',
+                'new_escrow_hash' => substr($escrowTokenHash, 0, 16) . '...'
+            ]);
+            // This is OK - same device can have multiple escrow tokens
+        }
+        
+        // Save token to database with escrow_token_hash and node_domain
+        // NOTE: After migration, device_id is no longer UNIQUE, so multiple tokens per device are allowed
+        // IMPORTANT: One Bearer token per node (node_domain), even if using the same escrow token
+        try {
+            Log::info('Creating Bearer token in database', [
+                'escrow_token_hash' => substr($escrowTokenHash, 0, 16) . '...',
+                'device_id' => substr($deviceId, 0, 16) . '...',
+                'node_domain' => $nodeDomain,
+                'node_domain_is_null' => $nodeDomain === null,
+                'token_length' => strlen($bearerToken),
+                'ip_address' => $ipAddress
+            ]);
+            
+            $userToken = UserToken::create([
+                'token' => $bearerToken,
+                'device_id' => $deviceId, // Device identifier from client, NOT wallet address
+                'escrow_token_hash' => $escrowTokenHash, // Hash of publicPart
+                'node_domain' => $nodeDomain, // Node domain - one Bearer token per node (can be null)
+                'collateral_token' => null, // Optional, prefer hash
+                'ip_address' => $ipAddress,
+                'role' => 'public', // Default role
+                'expires_at' => now()->addMonth() // Bearer token lifetime: 1 month
+            ]);
+            
+            Log::info('Bearer token created successfully in database', [
+                'token_id' => $userToken->id,
+                'node_domain' => $nodeDomain,
+                'expires_at' => $userToken->expires_at->format('Y-m-d H:i:s')
+            ]);
+        } catch (\Illuminate\Database\QueryException $e) {
+            Log::error('Database error creating Bearer token', [
+                'error' => $e->getMessage(),
+                'code' => $e->getCode(),
+                'sql_state' => $e->errorInfo[0] ?? null,
+                'sql_error_code' => $e->errorInfo[1] ?? null,
+                'sql_error_message' => $e->errorInfo[2] ?? null,
+                'node_domain' => $nodeDomain,
+                'node_domain_is_null' => $nodeDomain === null,
+                'escrow_token_hash' => substr($escrowTokenHash, 0, 16) . '...',
+                'device_id' => substr($deviceId, 0, 16) . '...'
+            ]);
+            // Handle unique constraint violation (race condition)
+            if ($e->getCode() == 23000 || str_contains($e->getMessage(), 'Duplicate entry')) {
+                // Check if it's token duplicate (token is still UNIQUE)
+                if (str_contains($e->getMessage(), 'token')) {
+                    // Token already exists - find and return it
+                    $existingToken = UserToken::where('token', $bearerToken)
+                        ->where('expires_at', '>', now())
+                        ->first();
+                    
+                    if ($existingToken) {
+                        Log::info('Token creation failed due to duplicate token, returning existing', [
+                            'token_id' => $existingToken->id,
+                            'escrow_token_hash' => substr($escrowTokenHash, 0, 16) . '...'
+                        ]);
+                        return $existingToken->token;
+                    }
+                }
+                
+                // For other duplicates, try to find existing token by escrow_token_hash + device_id + node_domain
+                $duplicateCheckQuery = UserToken::where('escrow_token_hash', $escrowTokenHash)
+                    ->where('device_id', $deviceId)
+                    ->where('expires_at', '>', now());
+                
+                // ALWAYS filter by node_domain (even if null)
+                if ($nodeDomain !== null) {
+                    $duplicateCheckQuery->where('node_domain', $nodeDomain);
+                } else {
+                    $duplicateCheckQuery->whereNull('node_domain');
+                }
+                
+                $existingToken = $duplicateCheckQuery->orderBy('created_at', 'desc')
+                    ->first();
+                
+                if ($existingToken) {
+                    Log::info('Token creation failed due to duplicate, returning existing token', [
+                        'escrow_token_hash' => substr($escrowTokenHash, 0, 16) . '...',
+                        'token_id' => $existingToken->id
+                    ]);
+                    return $existingToken->token;
+                }
+            }
+            throw $e;
+        }
+        
+        Log::info('Bearer token created successfully', [
             'escrow_token_hash' => substr($escrowTokenHash, 0, 16) . '...',
             'wallet_address' => $tokenData['wallet_address'],
-            'currency' => $tokenData['currency']
+            'currency' => $tokenData['currency'],
+            'device_id' => substr($deviceId, 0, 16) . '...',
+            'node_domain' => $nodeDomain,
+            'ip_address' => $ipAddress
         ]);
 
         return $bearerToken;
+    }
+    
+    /**
+     * Delete all bearer tokens for a specific node
+     * IMPORTANT: Called when node is removed or untrusted to prevent memory leaks
+     * 
+     * @param string $nodeDomain Node domain to delete tokens for
+     * @return int Number of deleted tokens
+     */
+    public function deleteBearerTokensForNode(string $nodeDomain): int
+    {
+        $deletedCount = UserToken::where('node_domain', $nodeDomain)->delete();
+        
+        Log::info('Bearer tokens deleted for node', [
+            'node_domain' => $nodeDomain,
+            'deleted_count' => $deletedCount
+        ]);
+        
+        return $deletedCount;
     }
 
     /**
