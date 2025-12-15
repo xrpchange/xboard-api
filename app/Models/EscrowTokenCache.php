@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Model;
  * - No token versioning
  * - Easier to maintain and migrate
  * 
- * Key: token_hash (SHA256 of publicPart)
+ * Key: token_hash (part of escrow token, comes from Core API in publicPart)
  * Purpose: Fast token validation without Core API calls
  */
 class EscrowTokenCache extends Model
@@ -24,7 +24,7 @@ class EscrowTokenCache extends Model
     protected $table = 'escrow_token_cache';
 
     protected $fillable = [
-        'token_hash', // SHA256 hash of publicPart - used as key
+        'token_hash', // Part of escrow token, extracted from publicPart - used as key
         // NOTE: public_part is NOT stored - it comes from client in every request
         'currency', // Extracted from publicPart for indexing/filtering
         'node_domain', // Extracted from publicPart for indexing/filtering
@@ -53,7 +53,14 @@ class EscrowTokenCache extends Model
      */
     public static function findOrCreate(string $publicPart, ?string $deviceId = null, ?string $ipAddress = null): self
     {
-        $tokenHash = hash('sha256', $publicPart);
+        // Extract token_hash from publicPart - it's already in the token from Core API
+        // We don't calculate it, we just extract it
+        $tokenData = json_decode($publicPart, true);
+        if (!$tokenData || !isset($tokenData['token_hash'])) {
+            throw new \InvalidArgumentException('Invalid publicPart: token_hash is missing');
+        }
+        
+        $tokenHash = strtolower(trim($tokenData['token_hash']));
         
         // Try to find existing cache entry
         $cache = self::where('token_hash', $tokenHash)->first();

@@ -33,7 +33,7 @@ This paradigm allows:
 Simple cache for fast token validation without Core API calls.
 
 **Structure:**
-- `token_hash` (unique) - SHA256 hash of publicPart
+- `token_hash` (unique) - Part of escrow token, comes from Core API in publicPart
 - `public_part` (text) - Full publicPart JSON string (contains wallet_address, currency, node_domain, environment)
 - `currency` - Currency (XRP, BTC, XMR, etc.) - extracted from publicPart for indexing
 - `node_domain` - Node domain where token was created - extracted from publicPart for indexing
@@ -46,9 +46,10 @@ Simple cache for fast token validation without Core API calls.
 **Note:** `wallet_address` is NOT stored separately - it's already in `public_part` JSON. This reduces data duplication and improves security.
 
 **Caching logic:**
-- Cache is considered fresh if `last_validated_at` < 1 hour ago
-- If cache is stale or missing - validate via Core API
+- If token exists in cache (`last_validated_at` is set) - token is considered valid, no validation needed
+- If token is NOT in cache (`last_validated_at` is null) - **MUST validate via Core API** and add to cache
 - After successful validation, `last_validated_at` is updated
+- **Important:** Once token is validated and added to cache, it remains valid. There are no "stale" tokens - if token is in table, it's valid.
 
 ### API Endpoints
 
@@ -111,15 +112,17 @@ Route::middleware(['escrow.token'])->group(function () {
 1. **Client sends request** with `publicPart` in `X-Escrow-Token` header
 2. **Middleware receives token** and calls `EscrowTokenValidationService::validateToken()`
 3. **Service checks cache:**
-   - If token is in cache and fresh (< 1 hour) - returns cached data
-   - If cache is stale or missing - validates via Core API
-4. **Validation via Core API:**
+   - If token exists in cache (`last_validated_at` is set) - returns as valid, no validation needed
+   - If token is NOT in cache (`last_validated_at` is null) - validates via Core API
+4. **Validation via Core API (only for tokens not in cache):**
    - POST request to `{core_api_url}/api/escrow-tokens/validate`
-   - Body: `{"escrow_token": publicPart}`
-   - Checks balance and token validity
+   - Body: `{"token_hash": tokenHash, "crypto_type": cryptoType}`
+   - Core API checks if token exists and is valid
+   - **Important:** Only tokens that are NOT in cache table are validated through Core API
 5. **Cache update:**
    - After successful validation, `last_validated_at` is updated
    - `last_used_at` is updated on every use
+   - **Note:** Once token is validated and added to cache, it remains valid forever (no re-validation needed)
 
 ## Benefits of Simplified System
 

@@ -59,8 +59,12 @@ class ValidateEscrowToken
             ], 401);
         }
 
+        // Extract token_hash from publicPart for logging
+        $tokenData = json_decode($publicPart, true);
+        $tokenHashPreview = isset($tokenData['token_hash']) ? substr($tokenData['token_hash'], 0, 16) . '...' : 'missing';
+        
         Log::debug('ValidateEscrowToken middleware: Token found, starting validation', [
-            'token_hash' => substr(hash('sha256', $publicPart), 0, 16) . '...',
+            'token_hash' => $tokenHashPreview,
             'token_length' => strlen($publicPart)
         ]);
 
@@ -79,8 +83,12 @@ class ValidateEscrowToken
             ]);
 
             if (!$validation['valid']) {
+                // Extract token_hash from publicPart for logging
+                $tokenData = json_decode($publicPart, true);
+                $tokenHashPreview = isset($tokenData['token_hash']) ? substr($tokenData['token_hash'], 0, 16) . '...' : 'missing';
+                
                 Log::warning('Escrow token validation failed in middleware', [
-                    'token_hash' => substr(hash('sha256', $publicPart), 0, 16) . '...',
+                    'token_hash' => $tokenHashPreview,
                     'error' => $validation['error'] ?? 'Unknown error',
                     'ip' => $request->ip()
                 ]);

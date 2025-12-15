@@ -94,7 +94,7 @@ Route::prefix('v1')->group(function () {
 });
 
 // Protected routes (with escrow token authentication)
-Route::prefix('v1')->middleware('escrow.token')->group(function () {
+Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)->group(function () {
     // Exchange board
     Route::prefix('exchange-lots')->group(function () {
         Route::get('/', [ExchangeLotController::class, 'index']);
@@ -124,7 +124,7 @@ Route::prefix('v1')->middleware('escrow.token')->group(function () {
 });
 
 // Admin routes (require admin role)
-Route::prefix('v1/admin')->middleware(['escrow.token', 'admin'])->group(function () {
+Route::prefix('v1/admin')->middleware([\App\Http\Middleware\ValidateEscrowToken::class, 'admin'])->group(function () {
     // Node management
     Route::prefix('nodes')->group(function () {
         Route::post('/', [NodeAdminController::class, 'store']);

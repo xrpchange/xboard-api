@@ -42,7 +42,7 @@ class EscrowTokenValidationService
                 Log::debug('EscrowTokenValidationService: Cache entry found/created', [
                     'token_hash' => substr($cache->token_hash, 0, 16) . '...',
                     'last_validated_at' => $cache->last_validated_at?->format('Y-m-d H:i:s'),
-                    'needs_revalidation' => $cache->needsRevalidation()
+                    'was_just_created' => !$cache->last_validated_at
                 ]);
             } catch (\Exception $e) {
                 Log::error('EscrowTokenValidationService: Failed to find/create cache entry', [
@@ -54,16 +54,17 @@ class EscrowTokenValidationService
                 throw $e;
             }
             
-            // If cache is fresh (validated less than 1 hour ago), return cached data
-            if (!$cache->needsRevalidation()) {
-                Log::debug('Escrow token validated from cache', [
+            // Extract wallet_address from publicPart
+            $tokenData = json_decode($publicPart, true);
+            $walletAddress = $tokenData['wallet_address'] ?? '';
+            
+            // If token exists in cache (was validated before) - return valid
+            // No re-validation needed - if token is in table, it's valid
+            if ($cache->last_validated_at) {
+                Log::debug('Escrow token found in cache - returning as valid', [
                     'token_hash' => substr($cache->token_hash, 0, 16) . '...',
-                    'last_validated_at' => $cache->last_validated_at?->format('Y-m-d H:i:s')
+                    'last_validated_at' => $cache->last_validated_at->format('Y-m-d H:i:s')
                 ]);
-                
-                // Extract wallet_address from publicPart (publicPart comes from client request)
-                $tokenData = json_decode($publicPart, true);
-                $walletAddress = $tokenData['wallet_address'] ?? '';
                 
                 return [
                     'valid' => true,
@@ -77,18 +78,18 @@ class EscrowTokenValidationService
                 ];
             }
             
-            // Cache is stale or never validated - check with Core API
-            Log::info('Validating escrow token via Core API', [
+            // Token not in cache (just created) - validate via Core API
+            Log::info('Token not in cache - validating via Core API', [
                 'token_hash' => substr($cache->token_hash, 0, 16) . '...'
             ]);
             
             $coreValidation = $this->validateViaCoreApi($publicPart);
             
             if ($coreValidation['valid']) {
-                // Mark as validated
+                // Mark as validated and add to cache
                 $cache->markAsValidated();
                 
-                Log::info('Escrow token validated successfully via Core API', [
+                Log::info('Escrow token validated successfully via Core API and added to cache', [
                     'token_hash' => substr($cache->token_hash, 0, 16) . '...'
                 ]);
             } else {
@@ -98,9 +99,7 @@ class EscrowTokenValidationService
                 ]);
             }
             
-            // Extract wallet_address from publicPart (publicPart comes from client request)
-            $tokenData = json_decode($publicPart, true);
-            $walletAddress = $coreValidation['token_data']['wallet_address'] ?? ($tokenData['wallet_address'] ?? '');
+            $walletAddress = $coreValidation['token_data']['wallet_address'] ?? $walletAddress;
             
             return [
                 'valid' => $coreValidation['valid'],
@@ -138,15 +137,88 @@ class EscrowTokenValidationService
     private function validateViaCoreApi(string $publicPart): array
     {
         try {
-            // Get Core API URL from config
-            $coreUrl = config('app.core_api_url', 'https://sandbox.api.core.xdexboard.com');
+            // Extract token data from publicPart first to get environment
+            $tokenData = json_decode($publicPart, true);
+            if (!$tokenData) {
+                return [
+                    'valid' => false,
+                    'error' => 'Invalid token format: not valid JSON',
+                    'token_data' => null
+                ];
+            }
             
-            // Call Core API to validate token
-            $response = Http::timeout(10)->post("$coreUrl/api/escrow-tokens/validate", [
+            // Get token_hash from publicPart (it's already there from Core API)
+            if (!isset($tokenData['token_hash'])) {
+                return [
+                    'valid' => false,
+                    'error' => 'Invalid token format: token_hash is missing',
+                    'token_data' => null
+                ];
+            }
+            
+            $tokenHash = strtolower(trim($tokenData['token_hash']));
+            
+            // Determine Core URL based on environment from token (not from HTTP_HOST!)
+            // Token contains 'environment' field: 'sandbox', 'production', or 'prod' (short form)
+            $environment = $tokenData['environment'] ?? 'sandbox';
+            
+            // Normalize 'prod' to 'production' (token may contain shortened form)
+            if (strtolower($environment) === 'prod') {
+                $environment = 'production';
+            }
+            
+            $isProduction = ($environment === 'production');
+            if ($isProduction) {
+                $coreUrl = config('services.core_production.url');
+            } else {
+                $coreUrl = config('services.core.url'); // sandbox
+            }
+            
+            // Fallback to default if config is missing
+            if (empty($coreUrl)) {
+                $coreUrl = $isProduction
+                    ? 'https://api.core.xdexboard.com'
+                    : 'https://sandbox.api.core.xdexboard.com';
+            }
+            
+            $validateUrl = "$coreUrl/api/escrow-tokens/validate";
+            // Core API теперь принимает открытую часть токена (escrow_token), а не token_hash
+            $requestBody = [
                 'escrow_token' => $publicPart
+            ];
+            
+            Log::info('Validating token via Core API', [
+                'token_hash' => substr($tokenHash, 0, 16) . '...',
+                'environment' => $environment, // From token (normalized: 'prod' -> 'production'), not from HTTP_HOST
+                'environment_raw' => $tokenData['environment'] ?? 'missing', // Original value from token
+                'core_url' => $coreUrl,
+                'validate_url' => $validateUrl,
+                'currency_from_token' => $tokenData['currency'] ?? 'unknown',
+                'public_part_preview' => substr($publicPart, 0, 200) . '...'
+            ]);
+            
+            // Call Core API to validate token - Core expects token_hash, not escrow_token
+            $response = Http::timeout(10)->post($validateUrl, $requestBody);
+            
+            $responseBody = $response->body();
+            Log::debug('Core API validation response', [
+                'status' => $response->status(),
+                'headers' => $response->headers(),
+                'body' => $responseBody
             ]);
             
             if (!$response->successful()) {
+                Log::error('Core API validation failed', [
+                    'status' => $response->status(),
+                    'token_hash' => substr($tokenHash, 0, 16) . '...',
+                    'environment' => $environment,
+                    'core_url' => $coreUrl,
+                    'validate_url' => $validateUrl,
+                    'response_body' => $responseBody,
+                    'currency_from_token' => $tokenData['currency'] ?? 'unknown',
+                    'public_part_preview' => substr($publicPart, 0, 200) . '...'
+                ]);
+                
                 return [
                     'valid' => false,
                     'error' => 'Core API validation failed: HTTP ' . $response->status(),

@@ -23,7 +23,7 @@ return new class extends Migration
     {
         Schema::create('escrow_token_cache', function (Blueprint $table) {
             $table->id();
-            $table->string('token_hash', 64)->unique()->comment('SHA256 hash of publicPart - used as key');
+            $table->string('token_hash', 64)->unique()->comment('Part of escrow token, extracted from publicPart - used as key');
             // NOTE: public_part is NOT stored - it comes from client in every request
             // We only cache validation metadata to avoid calling Core API on every request
             $table->string('currency', 10)->comment('Currency: XRP, BTC, XMR, etc. (extracted from publicPart for indexing)');
