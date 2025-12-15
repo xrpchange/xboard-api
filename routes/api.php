@@ -34,11 +34,12 @@ use App\Http\Controllers\Api\Admin\NodeAdminController;
 
 // Authentication (without middleware)
 Route::prefix('v1/auth')->group(function () {
-    Route::post('/bearer-token', [AuthController::class, 'getBearerToken']);
-    Route::get('/validate', [AuthController::class, 'validateBearerToken']);
-    Route::delete('/bearer-tokens/node', [AuthController::class, 'deleteBearerTokensForNode']);
-    // REMOVED: /refresh-token endpoint - security risk (allows infinite token refresh if stolen)
-    // Client should use /auth/bearer-token with escrow token instead
+    // NEW: Simple token validation - no Bearer tokens, just validate publicPart
+    Route::post('/validate-token', [AuthController::class, 'validateToken']);
+    
+    // DEPRECATED: Old Bearer token endpoints (kept for backward compatibility, will be removed)
+    // Route::post('/bearer-token', [AuthController::class, 'getBearerToken']);
+    // Route::get('/validate', [AuthController::class, 'validateBearerToken']);
 });
 
 // Reference data (without authentication)
@@ -92,8 +93,8 @@ Route::prefix('v1')->group(function () {
     });
 });
 
-// Protected routes (with authentication)
-Route::prefix('v1')->middleware('bearer.token')->group(function () {
+// Protected routes (with escrow token authentication)
+Route::prefix('v1')->middleware('escrow.token')->group(function () {
     // Exchange board
     Route::prefix('exchange-lots')->group(function () {
         Route::get('/', [ExchangeLotController::class, 'index']);
@@ -123,7 +124,7 @@ Route::prefix('v1')->middleware('bearer.token')->group(function () {
 });
 
 // Admin routes (require admin role)
-Route::prefix('v1/admin')->middleware(['bearer.token', 'admin'])->group(function () {
+Route::prefix('v1/admin')->middleware(['escrow.token', 'admin'])->group(function () {
     // Node management
     Route::prefix('nodes')->group(function () {
         Route::post('/', [NodeAdminController::class, 'store']);

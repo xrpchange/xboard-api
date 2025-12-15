@@ -65,7 +65,8 @@ class Kernel extends HttpKernel
         'signed' => \App\Http\Middleware\ValidateSignature::class,
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
-        'bearer.token' => \App\Http\Middleware\ValidateBearerToken::class,
+        'bearer.token' => \App\Http\Middleware\ValidateBearerToken::class, // DEPRECATED
+        'escrow.token' => \App\Http\Middleware\ValidateEscrowToken::class, // NEW: Escrow token validation
         'admin' => \App\Http\Middleware\AdminAccess::class,
     ];
 } 

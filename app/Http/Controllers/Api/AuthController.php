@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Services\CollateralTokenService;
+use App\Services\EscrowTokenValidationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 class AuthController extends Controller
 {
     public function __construct(
-        private CollateralTokenService $collateralTokenService
+        private EscrowTokenValidationService $tokenValidationService
     ) {}
 
     /**
@@ -47,67 +47,65 @@ class AuthController extends Controller
      *     @OA\Response(response=422, description="Validation error")
      * )
      */
-    public function getBearerToken(Request $request): JsonResponse
+    /**
+     * Validate escrow token (publicPart)
+     * Simple validation endpoint - no Bearer tokens, just validate and cache
+     */
+    public function validateToken(Request $request): JsonResponse
     {
         $request->validate([
             'escrow_token' => 'required|string',
-            'device_id' => 'required|string|max:255'
-            // NOTE: node_domain is not needed - it's already in escrow token
+            'device_id' => 'nullable|string|max:255'
         ]);
 
         try {
-            // Client sends publicPart (JSON string), not full token
             $publicPart = $request->escrow_token;
             $deviceId = $request->device_id;
-            // nodeDomain will be extracted from escrow token if not provided
-            $nodeDomain = $request->node_domain ?? null;
             
-            Log::info('Bearer token request received', [
+            Log::info('Escrow token validation request', [
                 'public_part_length' => strlen($publicPart),
                 'public_part_preview' => substr($publicPart, 0, 200) . '...',
-                'device_id' => substr($deviceId, 0, 32) . '...',
-                'node_domain' => $nodeDomain,
+                'device_id' => $deviceId ? substr($deviceId, 0, 32) . '...' : null,
                 'ip' => $request->ip()
             ]);
             
-            // Create Bearer token (includes balance check via core)
-            // IMPORTANT: Each node gets its own Bearer token (one token per node)
-            $bearerTokenResult = $this->collateralTokenService->createBearerTokenWithExpiry($publicPart, $request->ip(), $deviceId, $nodeDomain);
+            // Validate token (uses cache, calls Core API if needed)
+            $validation = $this->tokenValidationService->validateToken($publicPart, $deviceId, $request->ip());
             
-            // Decrypt token to get data
-            $tokenData = $this->collateralTokenService->decryptToken($publicPart);
+            if (!$validation['valid']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid escrow token: ' . ($validation['error'] ?? 'Validation failed')
+                ], 401);
+            }
             
-            Log::info('Bearer token created successfully', [
-                'wallet_address' => substr($tokenData['wallet_address'], 0, 10) . '...',
-                'currency' => $tokenData['currency'],
-                'environment' => $tokenData['environment'] ?? 'unknown',
-                'expires_at' => $bearerTokenResult['expires_at']
+            Log::info('Escrow token validated successfully', [
+                'wallet_address' => substr($validation['token_data']['wallet_address'] ?? '', 0, 10) . '...',
+                'currency' => $validation['token_data']['currency'] ?? 'unknown'
             ]);
             
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'bearer_token' => $bearerTokenResult['token'],
-                    'expires_at' => $bearerTokenResult['expires_at'],
-                    'wallet_address' => $tokenData['wallet_address'],
-                    'crypto_currency' => $tokenData['currency']
+                    'valid' => true,
+                    'wallet_address' => $validation['token_data']['wallet_address'],
+                    'crypto_currency' => $validation['token_data']['currency'],
+                    'node_domain' => $validation['token_data']['node_domain'] ?? null,
+                    'environment' => $validation['token_data']['environment'] ?? 'sandbox'
                 ]
             ]);
         } catch (\Exception $e) {
-            Log::error('Bearer token creation failed', [
+            Log::error('Escrow token validation error', [
                 'error' => $e->getMessage(),
                 'error_class' => get_class($e),
                 'trace' => $e->getTraceAsString(),
-                'public_part_preview' => substr($request->escrow_token ?? '', 0, 200) . '...',
-                'public_part_length' => strlen($request->escrow_token ?? ''),
-                'device_id' => substr($deviceId ?? '', 0, 16) . '...',
-                'node_domain' => $nodeDomain
+                'public_part_preview' => substr($request->escrow_token ?? '', 0, 200) . '...'
             ]);
             
             return response()->json([
                 'success' => false,
-                'message' => 'Invalid escrow token: ' . $e->getMessage()
-            ], 401);
+                'message' => 'Token validation error: ' . $e->getMessage()
+            ], 500);
         }
     }
 
