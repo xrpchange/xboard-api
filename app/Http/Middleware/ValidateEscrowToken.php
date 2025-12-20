@@ -35,11 +35,10 @@ class ValidateEscrowToken
      */
     public function handle(Request $request, Closure $next): Response
     {
-        Log::info('ValidateEscrowToken middleware: Request received', [
+        Log::debug('ValidateEscrowToken middleware: Request received', [
             'path' => $request->path(),
             'method' => $request->method(),
             'has_x_escrow_token' => $request->hasHeader('X-Escrow-Token'),
-            'x_escrow_token_length' => strlen($request->header('X-Escrow-Token', '')),
             'ip' => $request->ip()
         ]);
 

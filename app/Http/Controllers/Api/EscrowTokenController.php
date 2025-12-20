@@ -79,5 +79,44 @@ class EscrowTokenController extends BaseApiController
             return $this->errorResponse($e->getMessage(), 400);
         }
     }
+
+    /**
+     * Validate and cache escrow token
+     * 
+     * Empty endpoint that requires token validation.
+     * Token is validated through ValidateEscrowToken middleware, which automatically
+     * saves it to escrow_token_cache. This endpoint just returns success.
+     * 
+     * @OA\Post(
+     *     path="/api/v1/escrow-tokens/validate-cache",
+     *     tags={"Escrow Tokens"},
+     *     summary="Validate and cache escrow token",
+     *     description="Validates escrow token and saves it to cache. Token must be sent in X-Escrow-Token header.",
+     *     security={{"escrowToken": {}}},
+     *     @OA\Response(
+     *         response=200,
+     *         description="Token validated and cached successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean", example=true)
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Invalid token",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean", example=false),
+     *             @OA\Property(property="message", type="string")
+     *         )
+     *     )
+     * )
+     */
+    public function validateCache(Request $request): JsonResponse
+    {
+        // Token is already validated by ValidateEscrowToken middleware
+        // and saved to escrow_token_cache
+        // Just return success
+        
+        return response()->json(['success' => true]);
+    }
 }
 

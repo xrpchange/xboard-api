@@ -91,6 +91,11 @@ Route::prefix('v1')->group(function () {
         Route::get('/available-cryptos', [EscrowTokenController::class, 'getAvailableCryptos']);
         Route::post('/create', [EscrowTokenController::class, 'create']);
     });
+    
+    // Escrow Tokens (with authentication - for caching)
+    Route::prefix('escrow-tokens')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)->group(function () {
+        Route::post('/validate-cache', [EscrowTokenController::class, 'validateCache']);
+    });
 });
 
 // Protected routes (with escrow token authentication)
