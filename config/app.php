@@ -17,6 +17,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Default Environment for API
+    |--------------------------------------------------------------------------
+    |
+    | This value is the default environment returned to clients in the /nodes
+    | endpoint meta field. If set to 'sandbox', Developer Mode will be
+    | automatically enabled in the client application.
+    |
+    | TODO: Remove this in future app versions
+    |
+    */
+
+    'default_environment' => env('APP_DEFAULT_ENVIRONMENT', 'sandbox'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |

@@ -20,8 +20,13 @@ abstract class BaseApiController extends Controller
 
     /**
      * Return a successful JSON response
+     * 
+     * @param mixed $data Response data
+     * @param string|null $message Optional message
+     * @param int $status HTTP status code
+     * @param array|null $meta Optional metadata (e.g., default_environment)
      */
-    protected function successResponse($data = null, string $message = null, int $status = 200): JsonResponse
+    protected function successResponse($data = null, string|array $message = null, int $status = 200, ?array $meta = null): JsonResponse
     {
         $response = [
             'success' => true,
@@ -32,8 +37,18 @@ abstract class BaseApiController extends Controller
             $response['data'] = $data;
         }
 
+        // Support both string message and array (for backward compatibility)
         if ($message !== null) {
-            $response['message'] = $message;
+            if (is_array($message)) {
+                // If message is array, treat it as meta
+                $meta = $message;
+            } else {
+                $response['message'] = $message;
+            }
+        }
+
+        if ($meta !== null) {
+            $response['meta'] = $meta;
         }
 
         return response()->json($response, $status);

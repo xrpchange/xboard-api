@@ -60,7 +60,18 @@ class NodeController extends BaseApiController
 
             // Возвращаем все endpoints без фильтрации
             // Клиент сам решит какой endpoint использовать на основе своих настроек
-            return $this->successResponse($nodes);
+            // TODO: Remove default_environment in future app versions
+            // This is a temporary solution for first launch with testers - should be removed later
+            // Добавляем default_environment для первого запуска приложения
+            // Если данных нет в приложении - работаем в production (настройки по умолчанию)
+            // Но первичный запрос от сервера возвращает sandbox для тестировщиков
+            // Если сервер возвращает sandbox в default_environment - в приложении автоматически включается Developer Mode
+            // default_environment читается из конфигурации
+            $defaultEnvironment = config('app.default_environment', 'production');
+            
+            return $this->successResponse($nodes, null, 200, [
+                'default_environment' => $defaultEnvironment // TODO: Remove in future versions
+            ]);
         } catch (\Throwable $e) {
             \Log::error('Failed to load nodes', [
                 'exception' => $e->getMessage(),
