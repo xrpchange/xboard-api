@@ -1,0 +1,32 @@
+# XBoard Dovecot Configuration
+# Основной конфиг для /etc/dovecot/dovecot.conf
+
+protocols = imap lmtp
+listen = *
+mail_location = maildir:/var/mail/vhosts/%d/%n
+mail_privileged_group = mail
+
+# Virtual users
+userdb {
+    driver = static
+    args = uid=vmail gid=vmail home=/var/mail/vhosts/%d/%n
+}
+
+passdb {
+    driver = static
+    args = nopassword=y
+}
+
+# SSL/TLS
+ssl = required
+ssl_cert = </etc/letsencrypt/live/xdexboard.com/fullchain.pem
+ssl_key = </etc/letsencrypt/live/xdexboard.com/privkey.pem
+ssl_protocols = !SSLv2 !SSLv3
+ssl_cipher_list = ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384
+ssl_prefer_server_ciphers = yes
+
+# Logging
+log_path = /var/log/dovecot.log
+info_log_path = /var/log/dovecot-info.log
+debug_log_path = /var/log/dovecot-debug.log
+

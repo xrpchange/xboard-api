@@ -1,0 +1,9 @@
+# XBoard Postfix Master Configuration
+# Пример конфигурации для /etc/postfix/master.cf
+# Добавьте эти строки в конец файла /etc/postfix/master.cf
+
+# PHP verifier pipe для check@xdexboard.com
+# Формат: адрес unix - n n - - pipe flags=F user=vmail argv=php /path/to/php-verifier.php
+check@xdexboard.com    unix - n n - - pipe
+  flags=F user=vmail argv=php /path/to/xboard-api/scripts/email-server/php-verifier.php
+

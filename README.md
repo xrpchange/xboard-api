@@ -252,6 +252,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **[Nginx + SSL Setup](NGINX_SSL_SETUP.md)** - XBoard deployment instructions
 - **[XRPChangeCore Setup](CORE_NGINX_SETUP.md)** - Core system deployment instructions
 - **[Cron Jobs Setup](CRON_SSL_SETUP.md)** - Automatic certificate renewal
+- **[Email Server Setup](docs/EMAIL_SERVER_SETUP.md)** - Email server for payment verification (DKIM checking)
 
 ### Developer Documentation
 - **Work Plan**: [docs/WORK_PLAN.md](docs/WORK_PLAN.md)

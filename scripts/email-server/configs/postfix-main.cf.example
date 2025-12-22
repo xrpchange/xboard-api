@@ -1,0 +1,59 @@
+# XBoard Postfix Main Configuration
+# Пример конфигурации для /etc/postfix/main.cf
+# Скопируйте этот файл и замените значения на ваши
+
+# Основные настройки
+myhostname = mail.xdexboard.com
+mydomain = xdexboard.com
+myorigin = $mydomain
+inet_interfaces = all
+inet_protocols = ipv4
+
+# Virtual domains and users
+virtual_mailbox_domains = hash:/etc/postfix/virtual-mailbox-domains
+virtual_mailbox_maps = hash:/etc/postfix/virtual-mailbox-maps
+virtual_alias_maps = hash:/etc/postfix/virtual-alias-maps
+virtual_minimum_uid = 100
+virtual_uid_maps = static:5000
+virtual_gid_maps = static:5000
+virtual_mailbox_base = /var/mail/vhosts
+
+# Transport maps для pipe в PHP
+transport_maps = hash:/etc/postfix/transport
+
+# Security
+smtpd_banner = $myhostname ESMTP
+smtpd_helo_required = yes
+smtpd_helo_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_invalid_helo_hostname, reject_non_fqdn_helo_hostname
+smtpd_recipient_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_non_fqdn_recipient, reject_unknown_recipient_domain, reject_unauth_destination, permit
+smtpd_sender_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_non_fqdn_sender, reject_unknown_sender_domain
+
+# TLS/SSL
+smtpd_tls_cert_file = /etc/letsencrypt/live/xdexboard.com/fullchain.pem
+smtpd_tls_key_file = /etc/letsencrypt/live/xdexboard.com/privkey.pem
+smtpd_tls_security_level = may
+smtpd_tls_auth_only = yes
+smtpd_tls_received_header = yes
+smtpd_tls_session_cache_timeout = 3600s
+smtpd_tls_protocols = !SSLv2, !SSLv3
+smtp_tls_security_level = may
+smtp_tls_note_starttls_offer = yes
+
+# DKIM
+milter_protocol = 2
+milter_default_action = accept
+smtpd_milters = inet:localhost:8891
+non_smtpd_milters = inet:localhost:8891
+
+# Message size limit (10MB)
+message_size_limit = 10485760
+
+# Mailbox settings
+home_mailbox = Maildir/
+
+# Network settings
+mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
+
+# Logging
+maillog_file = /var/log/mail.log
+

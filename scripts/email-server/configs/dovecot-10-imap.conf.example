@@ -1,0 +1,14 @@
+# XBoard Dovecot IMAP Configuration with IDLE
+# Файл: /etc/dovecot/conf.d/10-imap.conf
+
+protocol imap {
+    # IDLE support для реал-тайм уведомлений
+    mail_plugins = $mail_plugins imap_idle
+    
+    # Настройки IDLE
+    imap_idle_notify_interval = 29 mins
+    
+    # Дополнительные настройки
+    mail_max_userip_connections = 20
+}
+
