@@ -71,6 +71,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Web Application URL
+    |--------------------------------------------------------------------------
+    |
+    | This URL is used for OAuth redirects back to the web application
+    | after user authorization. Should point to the main web app domain.
+    |
+    */
+
+    'web_app_url' => env('APP_WEB_URL', 'https://xdexboard.com'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

@@ -32,6 +32,30 @@ use App\Http\Controllers\Api\Admin\NodeAdminController;
 //     return $request->user();
 // });
 
+// OAuth callbacks (public, no authentication required)
+// These endpoints receive OAuth callbacks from providers (Yandex, Gmail, Outlook)
+// and redirect users back to the web application
+// Note: Android uses SDK authentication with deep links, not these endpoints
+Route::prefix('oauth')->group(function () {
+    // Yandex OAuth callback for web
+    // Registered redirect URI: https://api.xdexboard.com/api/oauth/yandex/callback
+    Route::get('/yandex/callback', [\App\Http\Controllers\Api\OAuthController::class, 'yandexCallback']);
+    
+    // Gmail OAuth callback (for future implementation)
+    Route::get('/gmail/callback', [\App\Http\Controllers\Api\OAuthController::class, 'gmailCallback']);
+    
+    // Outlook OAuth callback (for future implementation)
+    Route::get('/outlook/callback', [\App\Http\Controllers\Api\OAuthController::class, 'outlookCallback']);
+});
+
+// OAuth token exchange endpoints (v1 API, public, no authentication required)
+// Mobile apps use these endpoints to exchange authorization codes for access tokens
+Route::prefix('v1/oauth')->group(function () {
+    // Yandex OAuth token exchange (server-side, uses client_secret from server)
+    // Mobile apps send authorization code here, server exchanges it for access token
+    Route::post('/yandex/exchange-token', [\App\Http\Controllers\Api\OAuthController::class, 'yandexExchangeToken']);
+});
+
 // Authentication (without middleware)
 Route::prefix('v1/auth')->group(function () {
     // NEW: Simple token validation - no Bearer tokens, just validate publicPart
@@ -125,6 +149,19 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
         Route::get('/{transaction}', [TransactionController::class, 'show']);
         Route::post('/', [TransactionController::class, 'store']);
         Route::put('/{transaction}', [TransactionController::class, 'update']);
+    });
+
+    // Payment verification (client shares .eml file)
+    Route::prefix('payments')->group(function () {
+        Route::post('/verify-email', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'verifyEmail']);
+        Route::post('/forward-email', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'forwardEmail']);
+    });
+
+    // Email accounts for IMAP monitoring (optional, less secure)
+    Route::prefix('email-accounts')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\EmailAccountController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\EmailAccountController::class, 'store']);
+        Route::delete('/{emailAccount}', [\App\Http\Controllers\Api\EmailAccountController::class, 'destroy']);
     });
 });
 

@@ -1,0 +1,259 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * OAuth Callback Controller
+ * 
+ * Handles OAuth callbacks from providers (Yandex, Gmail, Outlook) for web applications.
+ * 
+ * This endpoint receives authorization codes from OAuth providers after user authorization
+ * and redirects users back to the web application with the code.
+ * 
+ * Note: Android uses SDK authentication with deep links (xboard://yandex-oauth),
+ * so Android apps don't use this endpoint directly.
+ * 
+ * @package App\Http\Controllers\Api
+ */
+class OAuthController extends BaseApiController
+{
+    /**
+     * Handle Yandex OAuth callback for web applications
+     * 
+     * Yandex redirects here after user authorization with:
+     * - code: authorization code (on success)
+     * - error: error code (on failure)
+     * - error_description: error description (on failure)
+     * - state: optional state parameter for CSRF protection
+     * 
+     * This endpoint is registered as redirect URI in Yandex OAuth:
+     * https://api.xdexboard.com/api/oauth/yandex/callback
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\RedirectResponse|JsonResponse
+     */
+    public function yandexCallback(Request $request)
+    {
+        $code = $request->query('code');
+        $error = $request->query('error');
+        $errorDescription = $request->query('error_description');
+        $state = $request->query('state'); // Optional state parameter
+        
+        Log::info('Yandex OAuth callback received', [
+            'has_code' => !empty($code),
+            'has_error' => !empty($error),
+            'error' => $error,
+            'state' => $state
+        ]);
+        
+        // Build redirect URL back to application
+        // For web: redirect to web app URL
+        // For mobile: redirect to deep link (xboard://yandex-oauth)
+        $redirectUrl = $this->buildRedirectUrl($code, $error, $errorDescription);
+        
+        // Check if this is a direct API call (for testing) or OAuth callback from provider
+        // If request has Accept: application/json header or ?format=json parameter, return JSON
+        $returnJson = $request->wantsJson() 
+            || $request->expectsJson() 
+            || $request->query('format') === 'json'
+            || $request->header('Accept') === 'application/json';
+        
+        if ($returnJson) {
+            // Return JSON response for API calls or testing
+            if ($code) {
+                return response()->json([
+                    'success' => true,
+                    'code' => $code,
+                    'state' => $state,
+                    'redirect_url' => $redirectUrl,
+                    'message' => 'Authorization code received. Use this code to exchange for access token.'
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'error' => $error,
+                    'error_description' => $errorDescription,
+                    'message' => 'OAuth authorization failed'
+                ], 400);
+            }
+        }
+        
+        // For browser requests from OAuth provider, redirect to application
+        // This is the normal OAuth flow: provider redirects user here, we redirect back to app
+        return redirect($redirectUrl);
+    }
+    
+    /**
+     * Build redirect URL based on platform
+     * 
+     * @param string|null $code
+     * @param string|null $error
+     * @param string|null $errorDescription
+     * @return string
+     */
+    private function buildRedirectUrl(?string $code, ?string $error, ?string $errorDescription): string
+    {
+        // Get web app URL from config or use default
+        $webAppUrl = config('app.web_app_url', env('APP_WEB_URL', 'https://xdexboard.com'));
+        
+        // For mobile apps, we can check User-Agent or use state parameter
+        // For now, redirect to web app which will handle both web and mobile deep links
+        
+        if ($code) {
+            // Success: redirect with code
+            // Web app will handle redirecting to mobile deep link if needed
+            return $webAppUrl . '/oauth/callback?provider=yandex&code=' . urlencode($code);
+        } else {
+            // Error: redirect with error
+            $params = http_build_query([
+                'provider' => 'yandex',
+                'error' => $error,
+                'error_description' => $errorDescription
+            ]);
+            return $webAppUrl . '/oauth/callback?' . $params;
+        }
+    }
+    
+    /**
+     * Exchange Yandex OAuth authorization code for access token (server-side)
+     * 
+     * This endpoint is used by mobile apps to exchange authorization code for access token.
+     * The client_secret is stored on the server and never exposed to mobile apps.
+     * 
+     * Request:
+     * - code: Authorization code received from Yandex OAuth
+     * - redirect_uri: Redirect URI used in authorization request (must match)
+     * 
+     * Response:
+     * - access_token: Access token for Yandex API
+     * - refresh_token: Refresh token (if provided by Yandex)
+     * - expires_in: Token expiration time in seconds
+     * - token_type: Token type (usually "bearer")
+     * 
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function yandexExchangeToken(Request $request): JsonResponse
+    {
+        $code = $request->input('code');
+        $redirectUri = $request->input('redirect_uri', 'xboard://yandex-oauth'); // Default for mobile
+        
+        if (empty($code)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'missing_code',
+                'error_description' => 'Authorization code is required'
+            ], 400);
+        }
+        
+        $clientId = config('services.yandex_oauth.client_id');
+        $clientSecret = config('services.yandex_oauth.client_secret');
+        
+        if (empty($clientId) || empty($clientSecret)) {
+            Log::error('Yandex OAuth credentials not configured', [
+                'has_client_id' => !empty($clientId),
+                'has_client_secret' => !empty($clientSecret)
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'server_configuration_error',
+                'error_description' => 'OAuth server configuration is missing'
+            ], 500);
+        }
+        
+        // Exchange code for token via Yandex OAuth API
+        try {
+            $httpClient = new \GuzzleHttp\Client();
+            $response = $httpClient->post('https://oauth.yandex.ru/token', [
+                'form_params' => [
+                    'grant_type' => 'authorization_code',
+                    'code' => $code,
+                    'client_id' => $clientId,
+                    'client_secret' => $clientSecret,
+                    'redirect_uri' => $redirectUri,
+                ],
+                'headers' => [
+                    'Content-Type' => 'application/x-www-form-urlencoded',
+                ],
+            ]);
+            
+            $tokenData = json_decode($response->getBody()->getContents(), true);
+            
+            if (isset($tokenData['access_token'])) {
+                Log::info('Yandex OAuth token exchange successful', [
+                    'has_access_token' => true,
+                    'has_refresh_token' => isset($tokenData['refresh_token']),
+                    'expires_in' => $tokenData['expires_in'] ?? null,
+                ]);
+                
+                return response()->json([
+                    'success' => true,
+                    'access_token' => $tokenData['access_token'],
+                    'refresh_token' => $tokenData['refresh_token'] ?? null,
+                    'expires_in' => $tokenData['expires_in'] ?? 0,
+                    'token_type' => $tokenData['token_type'] ?? 'bearer',
+                ]);
+            } else {
+                Log::error('Yandex OAuth token exchange failed: invalid response', [
+                    'response' => $tokenData
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'error' => $tokenData['error'] ?? 'unknown_error',
+                    'error_description' => $tokenData['error_description'] ?? 'Token exchange failed'
+                ], 400);
+            }
+        } catch (\GuzzleHttp\Exception\ClientException $e) {
+            $errorBody = $e->getResponse()->getBody()->getContents();
+            $errorData = json_decode($errorBody, true);
+            
+            Log::error('Yandex OAuth token exchange failed', [
+                'status' => $e->getResponse()->getStatusCode(),
+                'error' => $errorData['error'] ?? 'unknown',
+                'error_description' => $errorData['error_description'] ?? $errorBody,
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => $errorData['error'] ?? 'token_exchange_failed',
+                'error_description' => $errorData['error_description'] ?? 'Failed to exchange authorization code for token'
+            ], $e->getResponse()->getStatusCode());
+        } catch (\Exception $e) {
+            Log::error('Yandex OAuth token exchange exception', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'server_error',
+                'error_description' => 'Internal server error during token exchange'
+            ], 500);
+        }
+    }
+    
+    /**
+     * Handle Gmail OAuth callback (for future implementation)
+     */
+    public function gmailCallback(Request $request)
+    {
+        // TODO: Implement Gmail OAuth callback
+        return response()->json(['message' => 'Gmail OAuth not implemented yet'], 501);
+    }
+    
+    /**
+     * Handle Outlook OAuth callback (for future implementation)
+     */
+    public function outlookCallback(Request $request)
+    {
+        // TODO: Implement Outlook OAuth callback
+        return response()->json(['message' => 'Outlook OAuth not implemented yet'], 501);
+    }
+}
+
