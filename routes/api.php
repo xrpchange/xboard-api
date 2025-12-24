@@ -56,6 +56,28 @@ Route::prefix('v1/oauth')->group(function () {
     Route::post('/yandex/exchange-token', [\App\Http\Controllers\Api\OAuthController::class, 'yandexExchangeToken']);
 });
 
+// Email access endpoints (v1 API, uses OAuth access token, no escrow token required)
+// These endpoints use OAuth access tokens from email providers (Yandex, Gmail, Outlook)
+// Access token is passed in request parameters/headers, not escrow token
+// Currently used for testing email verification and DKIM validation (no transaction required)
+Route::prefix('v1/payments')->group(function () {
+    // Get email list and raw email (OAuth token required)
+    Route::get('/emails', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'getEmailList']);
+    Route::get('/emails/{messageId}', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'getRawEmail']);
+    
+    // Email verification and forwarding (for testing DKIM validation only)
+    Route::post('/verify-email', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'verifyEmail']);
+    Route::post('/forward-email', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'forwardEmail']);
+});
+
+// Email accounts for IMAP monitoring (v1 API, no authentication required for now)
+// TODO: Add proper authentication (OAuth or user session)
+Route::prefix('v1/email-accounts')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\EmailAccountController::class, 'index']);
+    Route::post('/', [\App\Http\Controllers\Api\EmailAccountController::class, 'store']);
+    Route::delete('/{emailAccount}', [\App\Http\Controllers\Api\EmailAccountController::class, 'destroy']);
+});
+
 // Authentication (without middleware)
 Route::prefix('v1/auth')->group(function () {
     // NEW: Simple token validation - no Bearer tokens, just validate publicPart
@@ -151,18 +173,6 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
         Route::put('/{transaction}', [TransactionController::class, 'update']);
     });
 
-    // Payment verification (client shares .eml file)
-    Route::prefix('payments')->group(function () {
-        Route::post('/verify-email', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'verifyEmail']);
-        Route::post('/forward-email', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'forwardEmail']);
-    });
-
-    // Email accounts for IMAP monitoring (optional, less secure)
-    Route::prefix('email-accounts')->group(function () {
-        Route::get('/', [\App\Http\Controllers\Api\EmailAccountController::class, 'index']);
-        Route::post('/', [\App\Http\Controllers\Api\EmailAccountController::class, 'store']);
-        Route::delete('/{emailAccount}', [\App\Http\Controllers\Api\EmailAccountController::class, 'destroy']);
-    });
 });
 
 // Admin routes (require admin role)

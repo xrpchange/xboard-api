@@ -21,6 +21,10 @@ XBoard supports **multiple methods** for verifying payment emails, from fully au
 - ✅ Secure (minimal OAuth scope)
 - ✅ Works with Gmail/Outlook
 
+**Limitations:**
+- ⚠️ **Yandex personal accounts (@yandex.ru) are NOT supported** - Yandex does not allow IMAP access via OAuth for personal accounts. Use copy-paste method (Method 4) or .eml export (Method 2) instead.
+- ⚠️ Yandex 360 (business) accounts may work, but are not tested.
+
 **Implementation:**
 See `CLIENT_OAUTH_EMAIL_FORWARDING.md` for detailed guide.
 
@@ -53,65 +57,29 @@ See `CLIENT_OAUTH_EMAIL_FORWARDING.md` for detailed guide.
 
 ---
 
-### 3. ✅ Manual Email Forwarding (Manual - Preserves DKIM)
+### 3. ⚠️ Manual Email Forwarding (Manual - DKIM May Not Be Preserved)
 
-**Best for:** Users who want to forward emails manually from their email client
+**Best for:** Users who cannot use OAuth method (e.g., Yandex personal accounts)
 
 **How it works:**
 - User forwards email from their email client to `check@xdexboard.com`
-- Server receives and verifies DKIM
-- Server processes payment
+- Server receives email and attempts DKIM verification
+- If DKIM is broken, server falls back to pattern matching
 
 **Advantages:**
-- ✅ DKIM preserved (if forwarded correctly)
-- ✅ No app needed
+- ✅ No OAuth needed
 - ✅ Works with any email client
+- ✅ **Only available method for Yandex personal accounts** (@yandex.ru - OAuth IMAP not supported)
 
-**Instructions by Client:**
+**Limitations:**
+- ⚠️ **DKIM is usually NOT preserved** when forwarding from web interfaces
+- ⚠️ Server must rely on pattern matching instead of DKIM
+- ⚠️ Less secure, but acceptable for P2P with seller template verification
 
-#### Gmail (Web)
-
-**Method 1: Forward as Attachment (Best - Preserves DKIM)**
-1. Open email from bank
-2. Click three dots (⋮) → "Forward as attachment"
-3. Enter: `check@xdexboard.com`
-4. Click "Send"
-
-**Method 2: Regular Forward (May Break DKIM)**
-1. Open email from bank
-2. Click "Forward"
-3. **Important:** Do NOT add any text
-4. Enter: `check@xdexboard.com`
-5. Click "Send"
-
-#### Outlook (Web)
-
-**Method 1: Forward as Attachment**
-1. Open email from bank
-2. Click three dots (⋮) → "Forward as attachment"
-3. Enter: `check@xdexboard.com`
-4. Click "Send"
-
-**Method 2: Regular Forward**
-1. Open email from bank
-2. Click "Forward"
-3. **Important:** Do NOT add any text
-4. Enter: `check@xdexboard.com`
-5. Click "Send"
-
-#### Thunderbird
-
-**Forward as Attachment:**
-1. Right-click email → "Forward As" → "Attachment"
-2. Enter: `check@xdexboard.com`
-3. Click "Send"
-
-#### Apple Mail (macOS/iOS)
-
-**Forward as Attachment:**
-1. Right-click email → "Forward as Attachment"
-2. Enter: `check@xdexboard.com`
-3. Click "Send"
+**Instructions:**
+1. Open email from bank in your email client
+2. Forward email to: `check@xdexboard.com`
+3. **Note:** DKIM signature will likely be broken, but server will use pattern matching
 
 ---
 
@@ -191,20 +159,103 @@ Similar to OAuth method, but instead of forwarding raw email, app extracts conte
 
 ## API Endpoints
 
+### Get Email List (OAuth Access Token Required)
+
+**Note:** This endpoint uses OAuth access tokens from email providers (Yandex, Gmail, Outlook), **NOT escrow tokens**. The access token is passed as a query parameter.
+
+```http
+GET /api/v1/payments/emails?provider=yandex&email=user@yandex.ru&access_token={oauth_access_token}&limit=50&offset=0
+Content-Type: application/json
+```
+
+**Query Parameters:**
+- `provider` (required): Email provider - `yandex`, `gmail`, or `outlook`
+- `email` (required): User's email address
+- `access_token` (required): OAuth access token from the email provider
+- `limit` (optional): Maximum number of emails to return (default: 50, max: 100)
+- `offset` (optional): Offset for pagination (default: 0)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "emails": [
+      {
+        "message_id": "12345",
+        "email_num": 12345,
+        "subject": "Payment received",
+        "from": "noreply@sberbank.ru",
+        "date": "2025-12-24 12:00:00",
+        "read": false
+      }
+    ],
+    "count": 1,
+    "limit": 50,
+    "offset": 0
+  }
+}
+```
+
+**Authentication:**
+- ❌ **Escrow token NOT required** - this endpoint uses OAuth access token only
+- ✅ OAuth access token must be valid and have appropriate scopes
+- ⚠️ **Yandex Limitation:** Personal Yandex accounts (@yandex.ru) **do not support IMAP access via OAuth**. This endpoint will fail for Yandex personal accounts. Use copy-paste method (Method 4) or .eml export (Method 2) instead.
+
+---
+
+### Get Raw Email (OAuth Access Token Required)
+
+**Note:** This endpoint uses OAuth access tokens from email providers, **NOT escrow tokens**. The access token is passed as a query parameter.
+
+```http
+GET /api/v1/payments/emails/{messageId}?provider=yandex&email=user@yandex.ru&access_token={oauth_access_token}
+Content-Type: application/json
+```
+
+**URL Parameters:**
+- `messageId` (required): Email message ID or email number (from getEmailList response)
+
+**Query Parameters:**
+- `provider` (required): Email provider - `yandex`, `gmail`, or `outlook`
+- `email` (required): User's email address
+- `access_token` (required): OAuth access token from the email provider
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "message_id": "12345",
+    "email_raw": "base64_encoded_raw_email_with_full_headers_and_dkim"
+  }
+}
+```
+
+**Authentication:**
+- ❌ **Escrow token NOT required** - this endpoint uses OAuth access token only
+- ✅ OAuth access token must be valid and have appropriate scopes
+
+---
+
 ### Verify Email (Multiple Formats)
+
+**Note:** This endpoint is currently used for testing email verification and DKIM validation. `transaction_id` is optional.
 
 ```http
 POST /api/v1/payments/verify-email
-Authorization: Bearer {token}
 Content-Type: application/json
 
 {
   "email_data": "base64_encoded_email_or_plain_text",
-  "transaction_id": 123,
   "format": "raw|eml|plain",
   "from_address": "noreply@sberbank.ru"  // Required for "plain" format
 }
 ```
+
+**Authentication:**
+- ❌ **Escrow token NOT required** - currently used for testing DKIM validation only
+- Endpoint verifies DKIM signature and email structure
 
 **Formats:**
 - `raw`: OAuth raw email (base64 encoded)
@@ -226,18 +277,24 @@ Content-Type: application/json
 }
 ```
 
+---
+
 ### Forward Email (Client-Side Forwarding)
+
+**Note:** This endpoint is currently used for testing email forwarding. `transaction_id` is optional.
 
 ```http
 POST /api/v1/payments/forward-email
-Authorization: Bearer {token}
 Content-Type: application/json
 
 {
-  "email_raw": "base64_encoded_raw_email",
-  "transaction_id": 123
+  "email_raw": "base64_encoded_raw_email"
 }
 ```
+
+**Authentication:**
+- ❌ **Escrow token NOT required** - currently used for testing email forwarding only
+- Endpoint forwards email to `check@xdexboard.com` for DKIM verification
 
 **Response:**
 ```json
@@ -250,6 +307,23 @@ Content-Type: application/json
   }
 }
 ```
+
+---
+
+## Authentication Summary
+
+| Endpoint | Escrow Token Required? | OAuth Token Required? | Notes |
+|----------|----------------------|---------------------|-------|
+| `GET /api/v1/payments/emails` | ❌ No | ✅ Yes | Uses OAuth access token only |
+| `GET /api/v1/payments/emails/{messageId}` | ❌ No | ✅ Yes | Uses OAuth access token only |
+| `POST /api/v1/payments/verify-email` | ❌ No | ❌ No | Testing mode - verifies DKIM and email structure |
+| `POST /api/v1/payments/forward-email` | ❌ No | ❌ No | Testing mode - forwards email to check@xdexboard.com |
+
+**Authentication Summary:**
+- Email list/raw endpoints use OAuth because they access the user's email account directly (Yandex/Gmail/Outlook)
+- Verification/forwarding endpoints are currently in testing mode - no authentication required
+- All endpoints focus on testing email verification and DKIM validation functionality
+- No transaction-related data required - pure email verification and DKIM testing
 
 ---
 

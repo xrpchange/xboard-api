@@ -203,6 +203,24 @@ curl -X POST "http://localhost:8000/api/v1/exchange-lots" \
   }'
 ```
 
+## Payment Verification (Email) - Testing Mode
+
+Email verification endpoints for testing DKIM validation and email processing. See [EMAIL_VERIFICATION_METHODS.md](EMAIL_VERIFICATION_METHODS.md) for complete documentation.
+
+**Email List/Raw Email (OAuth token required):**
+- `GET /api/v1/payments/emails` - Get email list from OAuth-connected account
+- `GET /api/v1/payments/emails/{messageId}` - Get raw email by message ID
+
+**Email Verification/Forwarding (No authentication required - testing mode):**
+- `POST /api/v1/payments/verify-email` - Verify email and DKIM (multiple formats)
+- `POST /api/v1/payments/forward-email` - Forward email to verification server
+
+**Important:** 
+- Email list/raw endpoints use OAuth access tokens (Yandex/Gmail/Outlook)
+- Verification/forwarding endpoints are in testing mode - no authentication required
+- All endpoints focus on testing email verification and DKIM validation functionality
+- No transaction-related data required - pure email verification and DKIM testing
+
 ## Полная документация
 
 Для полной документации с примерами и схемами данных см. [api_swagger.yaml](api_swagger.yaml) 
