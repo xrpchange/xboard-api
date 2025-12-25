@@ -2,16 +2,66 @@
 
 XBoard API (PHP/Laravel).
 
-Начните с чтения:
+**IMPORTANT: Read this file first if you have memory issues or are unsure about the project structure!**
 
-- README.md — назначение сервиса, локальный запуск, деплой
-- папка `./docs/` — детали по эндпоинтам, схемам БД и интеграциям
+Start by reading:
 
-Ключевые моменты:
-- Бэкенд: PHP 8+, Laravel. Конфиги через `.env` и `config/*.php`, без хардкода `127.0.0.1`.
-- Таблица `nodes` — источник доступных узлов для клиентов; актуализировать миграции и схему (включая `weight`, `max_connections`, если применимо).
-- Интеграции:
-  - XBoard Core — бизнес-операции по токенам/эскроу
-  - Monero Balance Service — прокси для баланс‑чеков XMR (без «фейковых» данных)
-- Логи — без секретов.
-- Любые изменения API сопровождайте обновлением README и соответствующих документов в `docs/`.
+- README.md — service purpose, local setup, deployment
+- `./docs/` folder — detailed information about endpoints, database schemas, and integrations
+
+Key points:
+- Backend: PHP 8+, Laravel. Configuration via `.env` and `config/*.php`, no hardcoded `127.0.0.1`.
+- `nodes` table — source of available nodes for clients; keep migrations and schema up to date (including `weight`, `max_connections` if applicable).
+- Integrations:
+  - XBoard Core — business operations for tokens/escrow
+  - Monero Balance Service — proxy for XMR balance checks (no "fake" data)
+- Logs — no secrets.
+- Any API changes must be accompanied by updates to README and relevant documents in `docs/`.
+
+## Email Operations
+
+**CRITICAL: Use webklex/php-imap library for email operations!**
+
+- The project uses `webklex/php-imap` package from Composer for IMAP operations
+- **For sending emails:** Use email service API with token (Postmark, Mailgun, Resend, etc.) configured in `config/services.php` and `config/mail.php`
+- **DO NOT** use SMTP with password authentication - use API tokens instead
+- **DO NOT** implement custom SMTP socket connections - use Laravel Mail with configured mailer
+- Always check existing code and documentation before implementing new email functionality
+
+## Development Workflow
+
+1. **Before writing code:**
+   - Read relevant documentation in `./docs/`
+   - Check existing implementations in the codebase
+   - Review `AGENTS.md` for project-specific guidelines
+   - Test your approach in a test script before implementing
+
+2. **When implementing email features:**
+   - Use `webklex/php-imap` for IMAP operations (reading emails)
+   - Use Laravel Mail with configured mailer (Postmark/Mailgun/Resend) for sending emails
+   - Never hardcode email addresses - use `PAYMENT_VERIFICATION_EMAIL` from `.env`
+   - Preserve DKIM signatures when forwarding raw emails
+
+3. **After implementation:**
+   - Update documentation in `docs/` folder
+   - Update README.md if needed
+   - Test thoroughly before committing
+
+## Directory Structure
+
+**Test Scripts:**
+- `temp/` - Temporary test scripts for development and debugging
+  - Use for quick tests and experiments
+  - Scripts may be removed or modified at any time
+  - Example: `temp/test_get_message_by_uid.php`
+
+**Utility Scripts:**
+- `scripts/` - Useful utility scripts for the project
+  - Production-ready scripts for deployment and maintenance
+  - Example: `scripts/test_email_forwarding.php` - Test email forwarding via API
+  - Example: `scripts/email-server/` - Email server setup scripts
+
+**Important:** 
+- Do NOT create test scripts in project root
+- Use `temp/` for temporary test scripts
+- Use `scripts/` for useful utility scripts

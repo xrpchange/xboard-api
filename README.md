@@ -67,6 +67,20 @@ cp .env.example .env
 php artisan key:generate
 ```
 
+**Required environment variables:**
+- `PAYMENT_VERIFICATION_EMAIL` - Email address where payment verification emails are forwarded (e.g., `check@xdexboard.com`)
+  - This email receives forwarded payment emails for DKIM verification
+  - **Required:** Application will not start if this parameter is not set
+
+**Email service configuration:**
+- Email sending uses API token-based services (Postmark/Resend/Mailgun), not SMTP with password
+- Configure `MAIL_MAILER` in `.env` (e.g., `MAIL_MAILER=postmark`)
+- Configure API token in `.env`:
+  - For Postmark: `POSTMARK_TOKEN=your_token`
+  - For Resend: `RESEND_KEY=your_key`
+  - For Mailgun: Configure in `config/services.php`
+- **IMAP operations** use `webklex/php-imap` library (already in composer.json) for reading emails via OAuth
+
 4. **Database setup**
 ```bash
 # Edit .env file with your database settings
@@ -289,6 +303,21 @@ ENV example:
 CORE_URL=https://api.core.xdexboard.com
 CORE_KEY=your_api_key
 CORE_TIMEOUT=10
+PAYMENT_VERIFICATION_EMAIL=check@xdexboard.com
+```
+
+### Payment Verification Email Configuration
+
+**Required:** `PAYMENT_VERIFICATION_EMAIL` - Email address where payment verification emails are forwarded.
+
+- This email receives forwarded payment emails for DKIM verification
+- Must be configured in `.env` file
+- Application will not start if this parameter is not set
+- Used by `/api/v1/payments/forward-email` endpoint to forward emails for verification
+
+Example:
+```env
+PAYMENT_VERIFICATION_EMAIL=check@xdexboard.com
 ```
 
 ### Usage Examples

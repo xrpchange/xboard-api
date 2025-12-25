@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
+use PHPMailer\DKIMValidator\Validator as DKIMValidator;
+use PHPMailer\DKIMValidator\DKIMException;
 
 /**
  * @OA\Tag(
@@ -166,7 +169,67 @@ class PaymentVerificationController extends Controller
     }
 
     /**
-     * Verify email sender
+     * Extract sender information from email (without validation)
+     */
+    private function extractSenderInfo(string $rawEmail): array
+    {
+        $result = [
+            'email' => null,
+            'domain' => null,
+            'from' => null,
+        ];
+
+        // Normalize line endings (email uses \r\n, but may come as \n)
+        $rawEmail = str_replace("\r\n", "\n", $rawEmail);
+        $rawEmail = str_replace("\r", "\n", $rawEmail);
+        
+        // Extract From header (may be multiline)
+        $lines = explode("\n", $rawEmail);
+        $inFromHeader = false;
+        $fromLines = [];
+        
+        foreach ($lines as $line) {
+            // Check if this is the start of From header
+            if (preg_match('/^From:\s*(.+)$/i', $line, $matches)) {
+                $inFromHeader = true;
+                $fromLines[] = trim($matches[1]);
+            } elseif ($inFromHeader) {
+                // Check if this is a continuation line (starts with space/tab)
+                if (preg_match('/^\s+(.+)$/', $line, $matches)) {
+                    $fromLines[] = trim($matches[1]);
+                } else {
+                    // End of From header (empty line or next header)
+                    if (trim($line) === '' || preg_match('/^[A-Za-z-]+:/', $line)) {
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if (!empty($fromLines)) {
+            $from = implode(' ', $fromLines);
+            $result['from'] = $from;
+            
+            // Extract email address from From header
+            if (preg_match('/<([^>]+)>/', $from, $emailMatch)) {
+                $result['email'] = trim($emailMatch[1]);
+            } elseif (preg_match('/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/', $from, $emailMatch)) {
+                $result['email'] = trim($emailMatch[1]);
+            }
+            
+            // Extract domain
+            if ($result['email']) {
+                $result['domain'] = strtolower(substr(strrchr($result['email'], "@"), 1));
+            } elseif (preg_match('/@([^\s>;]+)/', $from, $domainMatch)) {
+                $result['domain'] = strtolower(trim($domainMatch[1]));
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Verify email sender (checks if domain is in allowed banks)
      */
     private function verifySender(string $rawEmail): array
     {
@@ -177,31 +240,33 @@ class PaymentVerificationController extends Controller
             'error' => null,
         ];
 
-        if (preg_match('/^From:\s*(.+)$/mi', $rawEmail, $matches)) {
-            $from = $matches[1];
+        // Use extractSenderInfo to get domain
+        $senderInfo = $this->extractSenderInfo($rawEmail);
+        
+        if ($senderInfo['domain']) {
+            $result['domain'] = $senderInfo['domain'];
+            $result['from'] = $senderInfo['from'];
             
-            if (preg_match('/@([^\s>]+)/', $from, $domainMatch)) {
-                $domain = strtolower(trim($domainMatch[1]));
-                $result['domain'] = $domain;
-                $result['from'] = $from;
-                
-                foreach ($this->allowedBanks as $bankDomain) {
-                    if ($domain === $bankDomain || 
-                        substr($domain, -strlen($bankDomain) - 1) === '.' . $bankDomain) {
-                        $result['valid'] = true;
-                        return $result;
-                    }
+            // Check if domain is in allowed banks
+            foreach ($this->allowedBanks as $bankDomain) {
+                if ($senderInfo['domain'] === $bankDomain || 
+                    substr($senderInfo['domain'], -strlen($bankDomain) - 1) === '.' . $bankDomain) {
+                    $result['valid'] = true;
+                    return $result;
                 }
-                
-                $result['error'] = "Domain '{$domain}' not in allowed banks";
             }
+            
+            $result['error'] = "Domain '{$senderInfo['domain']}' not in allowed banks";
+        } else {
+            $result['error'] = 'Could not extract sender domain from email';
         }
 
         return $result;
     }
 
     /**
-     * Verify DKIM signature
+     * Verify DKIM signature using PHPMailer DKIMValidator library
+     * Performs full cryptographic verification: DNS lookup, canonicalization, hashing, and RSA signature verification
      */
     private function verifyDKIM(string $rawEmail): array
     {
@@ -212,33 +277,97 @@ class PaymentVerificationController extends Controller
             'error' => null,
         ];
 
-        // Extract DKIM signature
-        if (preg_match('/^DKIM-Signature:\s*(.+)$/mi', $rawEmail, $matches)) {
-            $result['signature'] = $matches[1];
+        try {
+            // Use PHPMailer DKIMValidator for full cryptographic verification
+            $dkimValidator = new DKIMValidator($rawEmail);
             
-            if (preg_match('/d=([^;]+)/', $matches[1], $domainMatch)) {
+            // Perform full validation (DNS lookup, canonicalization, hashing, RSA verification)
+            // validate() returns array of results for each DKIM signature found
+            $validationResults = $dkimValidator->validate();
+            
+            // Check if at least one signature is valid
+            // validate() returns array of arrays, each containing status and reason
+            $hasValidSignature = false;
+            $validDomain = null;
+            $errorMessages = [];
+            
+            // Process all validation results
+            foreach ($validationResults as $signatureResults) {
+                // Each signature can have multiple results (different public keys tried)
+                foreach ($signatureResults as $sigResult) {
+                    if (isset($sigResult['status']) && $sigResult['status'] === 'SUCCESS') {
+                        $hasValidSignature = true;
+                        // Extract domain from the first valid signature
+                        if (!$validDomain && preg_match('/DKIM-Signature:.*?d=([^;\s]+)/is', $rawEmail, $domainMatch)) {
+                            $validDomain = trim($domainMatch[1]);
+                        }
+                        break 2; // Found valid signature, no need to check others
+                    } elseif (isset($sigResult['reason'])) {
+                        $errorMessages[] = $sigResult['reason'];
+                    }
+                }
+            }
+            
+            if ($hasValidSignature) {
+                $result['valid'] = true;
+                $result['domain'] = $validDomain;
+                
+                Log::info("DKIM signature verified successfully via PHPMailer DKIMValidator", [
+                    'domain' => $result['domain'],
+                    'total_signatures' => count($validationResults),
+                    'validation_results' => $validationResults
+                ]);
+            } else {
+                $result['valid'] = false;
+                
+                // Extract domain from email even if validation failed
+                if (preg_match('/DKIM-Signature:.*?d=([^;\s]+)/is', $rawEmail, $domainMatch)) {
+                    $result['domain'] = trim($domainMatch[1]);
+                }
+                
+                // Combine error messages
+                $result['error'] = !empty($errorMessages) 
+                    ? implode('; ', array_unique($errorMessages))
+                    : 'DKIM signature verification failed';
+                
+                Log::warning("DKIM signature verification failed", [
+                    'domain' => $result['domain'] ?? null,
+                    'error' => $result['error'],
+                    'total_signatures' => count($validationResults),
+                    'validation_results' => $validationResults
+                ]);
+            }
+            
+        } catch (DKIMException $e) {
+            // DKIMException is thrown when signature is not found or other parsing errors
+            $result['valid'] = false;
+            $result['error'] = $e->getMessage();
+            
+            // Try to extract domain from email even if exception occurred
+            if (preg_match('/DKIM-Signature:.*?d=([^;\s]+)/is', $rawEmail, $domainMatch)) {
                 $result['domain'] = trim($domainMatch[1]);
             }
-        } else {
-            $result['error'] = 'DKIM-Signature header not found';
-            return $result;
-        }
-
-        // Verify using opendkim-testmsg
-        $tempFile = tempnam(sys_get_temp_dir(), 'dkim_');
-        file_put_contents($tempFile, $rawEmail);
-        
-        $command = "opendkim-testmsg -f {$tempFile} 2>&1";
-        $output = [];
-        $returnCode = 0;
-        exec($command, $output, $returnCode);
-        
-        unlink($tempFile);
-        
-        if ($returnCode === 0) {
-            $result['valid'] = true;
-        } else {
-            $result['error'] = implode("\n", $output);
+            
+            Log::warning("DKIM validation error", [
+                'error' => $e->getMessage(),
+                'domain' => $result['domain'] ?? null,
+                'has_dkim_in_email' => strpos($rawEmail, 'DKIM-Signature') !== false
+            ]);
+        } catch (\Exception $e) {
+            // Catch any other exceptions
+            $result['valid'] = false;
+            $result['error'] = 'DKIM verification error: ' . $e->getMessage();
+            
+            // Try to extract domain from email even if exception occurred
+            if (preg_match('/DKIM-Signature:.*?d=([^;\s]+)/is', $rawEmail, $domainMatch)) {
+                $result['domain'] = trim($domainMatch[1]);
+            }
+            
+            Log::error("DKIM verification exception", [
+                'error' => $e->getMessage(),
+                'domain' => $result['domain'] ?? null,
+                'trace' => $e->getTraceAsString()
+            ]);
         }
 
         return $result;
@@ -320,8 +449,119 @@ class PaymentVerificationController extends Controller
 
     /**
      * @OA\Post(
+     *     path="/api/v1/payments/verify-email-content",
+     *     summary="Verify email content (DKIM and sender domain) without forwarding",
+     *     tags={"Payment Verification"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"email_raw"},
+     *             @OA\Property(property="email_raw", type="string", description="Base64 encoded raw email (from OAuth or .eml)"),
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Email verification result",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean"),
+     *             @OA\Property(property="message", type="string"),
+     *             @OA\Property(
+     *                 property="data",
+     *                 type="object",
+     *                 @OA\Property(property="dkim_valid", type="boolean", description="Whether DKIM signature is valid"),
+     *                 @OA\Property(property="dkim_domain", type="string", nullable=true, description="Domain from DKIM signature"),
+     *                 @OA\Property(property="sender_domain", type="string", nullable=true, description="Domain from From header"),
+     *                 @OA\Property(property="sender_email", type="string", nullable=true, description="Email address from From header"),
+     *                 @OA\Property(property="dkim_error", type="string", nullable=true, description="DKIM verification error if any"),
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
+     */
+    public function verifyEmailContent(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'email_raw' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            // Decode raw email
+            $rawEmail = base64_decode($request->email_raw);
+            
+            if (!$rawEmail) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid email format'
+                ], 422);
+            }
+
+            // Log what we received
+            Log::info("verifyEmailContent: received decoded email", [
+                'decoded_length' => strlen($rawEmail),
+                'starts_with' => substr($rawEmail, 0, 100),
+                'has_from' => strpos($rawEmail, 'From:') !== false,
+                'has_dkim' => strpos($rawEmail, 'DKIM-Signature') !== false,
+            ]);
+
+            // Extract sender domain and email
+            $senderInfo = $this->extractSenderInfo($rawEmail);
+            
+            // Verify DKIM signature
+            $dkimResult = $this->verifyDKIM($rawEmail);
+
+            Log::info("Email content verification", [
+                'raw_email_length' => strlen($rawEmail),
+                'raw_email_starts_with' => substr($rawEmail, 0, 50),
+                'has_from_in_email' => strpos($rawEmail, 'From:') !== false,
+                'has_dkim_in_email' => strpos($rawEmail, 'DKIM-Signature') !== false,
+                'sender_domain' => $senderInfo['domain'],
+                'sender_email' => $senderInfo['email'],
+                'sender_from' => $senderInfo['from'],
+                'dkim_valid' => $dkimResult['valid'],
+                'dkim_domain' => $dkimResult['domain'],
+                'dkim_error' => $dkimResult['error'],
+            ]);
+
+            // Ensure all strings are valid UTF-8 before JSON encoding
+            $responseData = [
+                'success' => true,
+                'message' => $dkimResult['valid'] 
+                    ? 'Email verified: DKIM signature is valid' 
+                    : 'Email verified: DKIM signature not found or invalid',
+                'data' => [
+                    'dkim_valid' => $dkimResult['valid'],
+                    'dkim_domain' => $dkimResult['domain'] ? $this->cleanUtf8String($dkimResult['domain']) : null,
+                    'sender_domain' => $senderInfo['domain'] ? $this->cleanUtf8String($senderInfo['domain']) : null,
+                    'sender_email' => $senderInfo['email'] ? $this->cleanUtf8String($senderInfo['email']) : null,
+                    'dkim_error' => $dkimResult['error'] ? $this->cleanUtf8String($dkimResult['error']) : null,
+                ]
+            ];
+            
+            return response()->json($responseData);
+
+        } catch (\Exception $e) {
+            Log::error("Email content verification error: " . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error verifying email content: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * @OA\Post(
      *     path="/api/v1/payments/forward-email",
-     *     summary="Forward email to check@xdexboard.com (client-side forwarding)",
+     *     summary="Forward email to verification email address (client-side forwarding)",
      *     tags={"Payment Verification"},
      *     security={{"bearerAuth":{}}},
      *     @OA\RequestBody(
@@ -359,11 +599,12 @@ class PaymentVerificationController extends Controller
                 ], 422);
             }
 
-            // Send email to check@xdexboard.com via SMTP
+            // Send email to verification email via email service API
             // This will trigger php-verifier.php automatically
             $this->sendEmailToVerifier($rawEmail);
 
-            Log::info("Email forwarded to check@xdexboard.com");
+            $verificationEmail = config('mail.verification_email');
+            Log::info("Email forwarded to verification email", ['email' => $verificationEmail]);
 
             return response()->json([
                 'success' => true,
@@ -384,32 +625,164 @@ class PaymentVerificationController extends Controller
     }
 
     /**
-     * Send email to check@xdexboard.com via SMTP
+     * Send email to verification email address via email service API (Postmark/Resend/Mailgun)
+     * Uses HTTP API with token authentication
+     * Sends raw email as-is to preserve DKIM signature
+     * 
+     * Note: Uses email service API configured in config/services.php (Postmark/Resend/Mailgun)
+     * with API token authentication
      */
     private function sendEmailToVerifier(string $rawEmail): void
     {
-        // Use Laravel Mail or direct SMTP
-        // For now, we'll use mail() function or queue job
-        // TODO: Implement proper SMTP sending
+        $to = config('mail.verification_email');
         
-        $to = 'check@xdexboard.com';
-        $subject = 'Payment Verification Request';
+        if (!$to) {
+            Log::error("PAYMENT_VERIFICATION_EMAIL is not set in .env file");
+            throw new \Exception('Payment verification email is not configured. Please set PAYMENT_VERIFICATION_EMAIL in .env file.');
+        }
         
-        // Parse raw email to extract headers
-        $headers = [];
-        $bodyStart = strpos($rawEmail, "\r\n\r\n");
-        if ($bodyStart !== false) {
-            $headerSection = substr($rawEmail, 0, $bodyStart);
-            $body = substr($rawEmail, $bodyStart + 4);
+        $mailer = config('mail.default');
+        
+        try {
+            // Replace To: header in raw email to ensure it goes to verification email
+            $lines = explode("\r\n", $rawEmail);
+            $newLines = [];
+            $toReplaced = false;
             
-            // Extract From header
-            if (preg_match('/^From:\s*(.+)$/mi', $headerSection, $matches)) {
-                $headers[] = 'From: ' . $matches[1];
+            foreach ($lines as $line) {
+                if (preg_match('/^To:\s*/i', $line) && !$toReplaced) {
+                    $newLines[] = "To: $to";
+                    $toReplaced = true;
+                } else {
+                    $newLines[] = $line;
+                }
             }
             
-            // Send email (this will be processed by php-verifier.php)
-            mail($to, $subject, $body, implode("\r\n", $headers));
+            $modifiedRawEmail = implode("\r\n", $newLines);
+            
+            // Send via email service API based on configured mailer
+            if ($mailer === 'postmark') {
+                $this->sendViaPostmark($to, $modifiedRawEmail);
+            } elseif ($mailer === 'resend') {
+                $this->sendViaResend($to, $modifiedRawEmail);
+            } elseif ($mailer === 'mailgun') {
+                $this->sendViaMailgun($to, $modifiedRawEmail);
+            } else {
+                // Fallback: use Laravel Mail (may not preserve raw email perfectly)
+                $this->sendViaLaravelMail($to, $modifiedRawEmail);
+            }
+            
+            Log::info("Raw email sent to verification email via email service API", [
+                'recipient' => $to,
+                'raw_email_length' => strlen($rawEmail),
+                'mailer' => $mailer
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error("Error sending email to verifier via email service API: " . $e->getMessage());
+            throw $e;
         }
+    }
+    
+    /**
+     * Send raw email via Postmark API
+     */
+    private function sendViaPostmark(string $to, string $rawEmail): void
+    {
+        $token = config('services.postmark.token');
+        if (!$token) {
+            throw new \Exception('POSTMARK_TOKEN is not configured in .env file');
+        }
+        
+        // Postmark API: Send raw email
+        $response = Http::withHeaders([
+            'X-Postmark-Server-Token' => $token,
+            'Content-Type' => 'application/json',
+        ])->post('https://api.postmarkapp.com/email/raw', [
+            'RawEmail' => base64_encode($rawEmail),
+            'To' => $to,
+        ]);
+        
+        if (!$response->successful()) {
+            throw new \Exception('Postmark API error: ' . $response->body());
+        }
+    }
+    
+    /**
+     * Send raw email via Resend API
+     */
+    private function sendViaResend(string $to, string $rawEmail): void
+    {
+        $apiKey = config('services.resend.key');
+        if (!$apiKey) {
+            throw new \Exception('RESEND_KEY is not configured in .env file');
+        }
+        
+        // Resend API: Send raw email
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $apiKey,
+            'Content-Type' => 'application/json',
+        ])->post('https://api.resend.com/emails', [
+            'to' => $to,
+            'raw' => base64_encode($rawEmail),
+        ]);
+        
+        if (!$response->successful()) {
+            throw new \Exception('Resend API error: ' . $response->body());
+        }
+    }
+    
+    /**
+     * Send raw email via Mailgun API
+     */
+    private function sendViaMailgun(string $to, string $rawEmail): void
+    {
+        $apiKey = config('services.mailgun.secret');
+        $domain = config('services.mailgun.domain');
+        if (!$apiKey || !$domain) {
+            throw new \Exception('Mailgun API key or domain is not configured in .env file');
+        }
+        
+        // Mailgun API: Send raw email
+        $response = Http::asMultipart()->post("https://api.mailgun.net/v3/{$domain}/messages.mime", [
+            'to' => $to,
+            'message' => base64_encode($rawEmail),
+        ])->withBasicAuth('api', $apiKey);
+        
+        if (!$response->successful()) {
+            throw new \Exception('Mailgun API error: ' . $response->body());
+        }
+    }
+    
+    /**
+     * Fallback: Send via Laravel Mail (may not preserve raw email perfectly)
+     */
+    private function sendViaLaravelMail(string $to, string $rawEmail): void
+    {
+        // Extract From email
+        $fromEmail = 'noreply@xdexboard.com';
+        $fromName = 'XBoard Payment Verification';
+        if (preg_match('/^From:\s*(.+)$/mi', $rawEmail, $matches)) {
+            $fromHeader = trim($matches[1]);
+            if (preg_match('/<([^>]+)>/', $fromHeader, $emailMatch)) {
+                $fromEmail = $emailMatch[1];
+                $fromName = trim(str_replace('<' . $fromEmail . '>', '', $fromHeader), ' "');
+            } elseif (preg_match('/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/', $fromHeader, $emailMatch)) {
+                $fromEmail = $emailMatch[1];
+            }
+        }
+        
+        Mail::raw('', function ($message) use ($to, $fromEmail, $fromName, $rawEmail) {
+            $message->to($to)
+                ->from($fromEmail, $fromName)
+                ->subject('Payment Verification Request');
+            
+            // Try to set raw email body
+            $swiftMessage = $message->getSwiftMessage();
+            if ($swiftMessage) {
+                $swiftMessage->setBody($rawEmail, 'message/rfc822');
+            }
+        });
     }
 
     /**
@@ -707,6 +1080,29 @@ class PaymentVerificationController extends Controller
         ];
 
         return $settings[$provider] ?? null;
+    }
+
+    /**
+     * Clean UTF-8 string to prevent JSON encoding errors
+     */
+    private function cleanUtf8String(?string $str): ?string
+    {
+        if ($str === null) {
+            return null;
+        }
+        
+        // Remove invalid UTF-8 characters
+        $str = mb_convert_encoding($str, 'UTF-8', 'UTF-8');
+        
+        // Remove any remaining invalid characters using regex (FILTER_SANITIZE_STRING is deprecated in PHP 8.1+)
+        $str = preg_replace('/[\x00-\x1F\x7F-\x9F]/u', '', $str);
+        
+        // Ensure valid UTF-8
+        if (!mb_check_encoding($str, 'UTF-8')) {
+            $str = mb_convert_encoding($str, 'UTF-8', 'UTF-8');
+        }
+        
+        return $str;
     }
 }
 

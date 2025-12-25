@@ -21,6 +21,23 @@ class AppServiceProvider extends ServiceProvider
     {
         // Create necessary cache directories on first startup
         $this->ensureCacheDirectoriesExist();
+        
+        // Validate required configuration
+        $this->validateRequiredConfig();
+    }
+    
+    /**
+     * Validate required configuration parameters
+     */
+    private function validateRequiredConfig(): void
+    {
+        $verificationEmail = config('mail.verification_email');
+        if (!$verificationEmail) {
+            throw new \RuntimeException(
+                'PAYMENT_VERIFICATION_EMAIL is not set in .env file. ' .
+                'This parameter is required. Please add PAYMENT_VERIFICATION_EMAIL=check@xdexboard.com to your .env file.'
+            );
+        }
     }
 
     private function ensureCacheDirectoriesExist(): void

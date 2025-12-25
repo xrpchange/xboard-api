@@ -294,7 +294,19 @@ Content-Type: application/json
 
 **Authentication:**
 - ❌ **Escrow token NOT required** - currently used for testing email forwarding only
-- Endpoint forwards email to `check@xdexboard.com` for DKIM verification
+- Endpoint forwards email to the verification email address configured in `PAYMENT_VERIFICATION_EMAIL` environment variable (default: `check@xdexboard.com`) for DKIM verification
+
+**Configuration:**
+- The verification email address must be set in `.env` file as `PAYMENT_VERIFICATION_EMAIL`
+- This parameter is **required** - the application will not start if it's not configured
+- Example: `PAYMENT_VERIFICATION_EMAIL=check@xdexboard.com`
+
+**Email Sending:**
+- The endpoint uses email service API (Postmark/Resend/Mailgun) with API token authentication
+- Configured in `config/services.php` and `config/mail.php`
+- Uses `MAIL_MAILER` environment variable to select mailer (postmark, resend, mailgun)
+- **DO NOT** use SMTP with password - use API tokens instead
+- Raw email is sent as-is to preserve DKIM signature
 
 **Response:**
 ```json

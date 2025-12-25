@@ -203,30 +203,58 @@ class ImapMonitorService
     public function getRawEmailById(string $messageId): ?string
     {
         if (!$this->folder) {
+            Log::warning("getRawEmailById: folder is null");
             return null;
         }
         
         try {
-            // Try to find message by Message-ID header
+            Log::info("getRawEmailById: searching for messageId={$messageId}, is_numeric=" . (is_numeric($messageId) ? 'yes' : 'no'));
+            
+            // First, try by UID if messageId is numeric (more reliable)
+            if (is_numeric($messageId)) {
+                $uid = (int)$messageId;
+                Log::info("getRawEmailById: trying to get message by UID={$uid}");
+                // Use messages()->where('uid', $uid) to get message by UID
+                $messages = $this->folder->messages()
+                    ->where('uid', $uid)
+                    ->limit(1)
+                    ->get();
+                
+                if ($messages->isNotEmpty()) {
+                    $message = $messages->first();
+                    /** @var Message $message */
+                    Log::info("getRawEmailById: found message by UID={$uid}");
+                    return $this->getFullRawEmail($message);
+                } else {
+                    Log::warning("getRawEmailById: message not found by UID={$uid}");
+                }
+            }
+            
+            // If not found by UID or messageId is not numeric, try by Message-ID header
+            // Search through messages to find by Message-ID (where() may not work reliably)
+            Log::info("getRawEmailById: searching by Message-ID header");
             $messages = $this->folder->messages()
-                ->where('message_id', $messageId)
-                ->limit(1)
+                ->all()
+                ->limit(100) // Limit search to avoid performance issues
                 ->get();
             
-            if ($messages->isEmpty() && is_numeric($messageId)) {
-                // If not found by Message-ID and messageId is numeric, try by UID
-                $message = $this->folder->getMessage((int)$messageId);
-            } else {
-                $message = $messages->first();
+            Log::info("getRawEmailById: found " . $messages->count() . " messages to search");
+            
+            foreach ($messages as $message) {
+                /** @var Message $message */
+                $msgId = $message->getMessageId();
+                // Compare Message-ID (may include angle brackets, so normalize)
+                $normalizedMsgId = trim($msgId, '<>');
+                $normalizedSearchId = trim($messageId, '<>');
+                
+                if ($normalizedMsgId === $normalizedSearchId || $msgId === $messageId) {
+                    Log::info("getRawEmailById: found message by Message-ID={$msgId}");
+                    return $this->getFullRawEmail($message);
+                }
             }
             
-            if (!$message) {
-                return null;
-            }
-            
-            /** @var Message $message */
-            // Get raw RFC822 content (all headers + body, preserves DKIM-Signature)
-            return $message->getRawBody();
+            Log::warning("getRawEmailById: message not found by Message-ID={$messageId}");
+            return null;
             
         } catch (\Exception $e) {
             Log::error("Error getting raw email by ID {$messageId}: " . $e->getMessage());
@@ -244,19 +272,92 @@ class ImapMonitorService
         }
         
         try {
-            $message = $this->folder->getMessage($emailNum);
+            // Use messages()->where('uid', $emailNum) to get message by UID
+            $messages = $this->folder->messages()
+                ->where('uid', $emailNum)
+                ->limit(1)
+                ->get();
             
-            if (!$message) {
+            if ($messages->isEmpty()) {
                 return null;
             }
             
+            $message = $messages->first();
             /** @var Message $message */
-            // Get raw RFC822 content (all headers + body, preserves DKIM-Signature)
-            return $message->getRawBody();
+            return $this->getFullRawEmail($message);
             
         } catch (\Exception $e) {
             Log::error("Error getting raw email #{$emailNum}: " . $e->getMessage());
             return null;
+        }
+    }
+    
+    /**
+     * Get full raw email with headers and body
+     * Reconstructs full RFC822 format from message headers and body
+     */
+    private function getFullRawEmail(Message $message): ?string
+    {
+        try {
+            $rawBody = $message->getRawBody();
+            $header = $message->getHeader();
+            
+            if ($header && $rawBody) {
+                // Try different ways to get raw headers
+                $rawHeaders = null;
+                
+                // Method 1: Check if header has raw property
+                if (property_exists($header, 'raw')) {
+                    $rawHeaders = $header->raw;
+                }
+                // Method 2: Check if header is a Header object with toString
+                elseif (method_exists($header, 'toString')) {
+                    $rawHeaders = $header->toString();
+                }
+                // Method 3: Try to get raw headers via reflection
+                elseif (is_object($header)) {
+                    try {
+                        $reflection = new \ReflectionClass($header);
+                        if ($reflection->hasProperty('raw')) {
+                            $prop = $reflection->getProperty('raw');
+                            $prop->setAccessible(true);
+                            $rawHeaders = $prop->getValue($header);
+                        }
+                    } catch (\Exception $refEx) {
+                        // Ignore reflection errors
+                    }
+                }
+                
+                if ($rawHeaders) {
+                    $fullRawEmail = $rawHeaders . "\r\n\r\n" . $rawBody;
+                    Log::info("getFullRawEmail: reconstructed from header+body", [
+                        'headers_length' => strlen($rawHeaders),
+                        'body_length' => strlen($rawBody),
+                        'full_length' => strlen($fullRawEmail),
+                        'has_dkim_in_headers' => strpos($rawHeaders, 'DKIM-Signature') !== false,
+                        'headers_preview' => substr($rawHeaders, 0, 200)
+                    ]);
+                    return $fullRawEmail;
+                }
+            }
+            
+            // Last resort: just body
+            Log::warning("getFullRawEmail: could not get headers, using body only", [
+                'has_header' => $header !== null,
+                'has_body' => $rawBody !== null,
+                'body_preview' => substr($rawBody ?? '', 0, 200)
+            ]);
+            return $rawBody;
+            
+        } catch (\Exception $e) {
+            Log::error("Error getting full raw email: " . $e->getMessage());
+            // Fallback to just body
+            try {
+                return $message->getRawBody();
+            } catch (\Exception $e2) {
+                Log::error("Error getting raw body as fallback: " . $e2->getMessage());
+                return null;
+            }
         }
     }
     
@@ -295,7 +396,7 @@ class ImapMonitorService
                 try {
                     /** @var Message $message */
                     // Get raw email (preserves DKIM signature)
-                    $rawEmail = $message->getRawBody();
+                    $rawEmail = $this->getFullRawEmail($message);
                     
                     if ($rawEmail) {
                         // Process email
@@ -418,8 +519,14 @@ class ImapMonitorService
         }
         
         try {
-            $message = $this->folder->getMessage($emailNum);
-            if ($message) {
+            // Use messages()->where('uid', $emailNum) to get message by UID
+            $messages = $this->folder->messages()
+                ->where('uid', $emailNum)
+                ->limit(1)
+                ->get();
+            
+            if ($messages->isNotEmpty()) {
+                $message = $messages->first();
                 $message->setFlag('\\Seen');
             }
         } catch (\Exception $e) {

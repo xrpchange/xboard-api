@@ -65,8 +65,12 @@ Route::prefix('v1/payments')->group(function () {
     Route::get('/emails', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'getEmailList']);
     Route::get('/emails/{messageId}', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'getRawEmail']);
     
+    // DKIM verification (OAuth token required, no forwarding)
+    Route::get('/verify-dkim/{messageId}', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'verifyDkim']);
+    
     // Email verification and forwarding (for testing DKIM validation only)
     Route::post('/verify-email', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'verifyEmail']);
+    Route::post('/verify-email-content', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'verifyEmailContent']);
     Route::post('/forward-email', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'forwardEmail']);
 });
 
