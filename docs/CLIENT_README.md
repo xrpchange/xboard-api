@@ -150,13 +150,10 @@ object NetworkModule {
 ```kotlin
 interface XBoardApi {
     
-    @POST("v1/auth/bearer-token")
-    suspend fun getBearerToken(
-        @Body request: BearerTokenRequest
-    ): Response<BearerTokenResponse>
-    
-    @GET("v1/auth/validate")
-    suspend fun validateToken(): Response<ValidateTokenResponse>
+    @POST("v1/auth/validate-token")
+    suspend fun validateEscrowToken(
+        @Body request: EscrowTokenValidationRequest
+    ): Response<EscrowTokenValidationResponse>
     
     @GET("v1/countries")
     suspend fun getCountries(): Response<List<Country>>
@@ -198,25 +195,29 @@ interface XBoardApi {
 
 ```kotlin
 @Serializable
-data class BearerTokenRequest(
+data class EscrowTokenValidationRequest(
     @SerialName("escrow_token")
-    val escrowToken: String
+    val escrowToken: String, // publicPart JSON string
+    @SerialName("device_id")
+    val deviceId: String? = null
 )
 
 @Serializable
-data class BearerTokenResponse(
+data class EscrowTokenValidationResponse(
     val success: Boolean,
-    val data: BearerTokenData
+    val data: EscrowTokenValidationData?
 )
 
 @Serializable
-data class BearerTokenData(
-    @SerialName("bearer_token")
-    val bearerToken: String,
+data class EscrowTokenValidationData(
+    val valid: Boolean,
     @SerialName("wallet_address")
     val walletAddress: String,
     @SerialName("crypto_currency")
-    val cryptoCurrency: String
+    val cryptoCurrency: String,
+    @SerialName("node_domain")
+    val nodeDomain: String,
+    val environment: String
 )
 
 @Serializable
@@ -261,30 +262,30 @@ class AuthManager @Inject constructor(
 ) {
     
     companion object {
-        private val BEARER_TOKEN = stringPreferencesKey("bearer_token")
+        private val ESCROW_TOKEN_PUBLIC_PART = stringPreferencesKey("escrow_token_public_part")
         private val WALLET_ADDRESS = stringPreferencesKey("wallet_address")
         private val CRYPTO_CURRENCY = stringPreferencesKey("crypto_currency")
     }
     
     suspend fun saveAuthData(
-        bearerToken: String,
+        escrowTokenPublicPart: String,
         walletAddress: String,
         cryptoCurrency: String
     ) {
         dataStore.edit { preferences ->
-            preferences[BEARER_TOKEN] = bearerToken
+            preferences[ESCROW_TOKEN_PUBLIC_PART] = escrowTokenPublicPart
             preferences[WALLET_ADDRESS] = walletAddress
             preferences[CRYPTO_CURRENCY] = cryptoCurrency
         }
     }
     
-    suspend fun getBearerToken(): String? {
-        return dataStore.data.first()[BEARER_TOKEN]
+    suspend fun getEscrowTokenPublicPart(): String? {
+        return dataStore.data.first()[ESCROW_TOKEN_PUBLIC_PART]
     }
     
     suspend fun clearAuthData() {
         dataStore.edit { preferences ->
-            preferences.remove(BEARER_TOKEN)
+            preferences.remove(ESCROW_TOKEN_PUBLIC_PART)
             preferences.remove(WALLET_ADDRESS)
             preferences.remove(CRYPTO_CURRENCY)
         }
@@ -307,11 +308,11 @@ class AuthInterceptor @Inject constructor(
             return chain.proceed(request)
         }
         
-        val bearerToken = runBlocking { authManager.getBearerToken() }
+        val escrowTokenPublicPart = runBlocking { authManager.getEscrowTokenPublicPart() }
         
-        return if (bearerToken != null) {
+        return if (escrowTokenPublicPart != null) {
             val authenticatedRequest = request.newBuilder()
-                .addHeader("Authorization", "Bearer $bearerToken")
+                .addHeader("X-Escrow-Token", escrowTokenPublicPart)
                 .build()
             chain.proceed(authenticatedRequest)
         } else {
@@ -321,7 +322,7 @@ class AuthInterceptor @Inject constructor(
     
     private fun isPublicEndpoint(path: String): Boolean {
         val publicEndpoints = listOf(
-            "/v1/auth/bearer-token",
+            "/v1/auth/validate-token",
             "/v1/countries",
             "/v1/currencies/fiat",
             "/v1/currencies/crypto",
@@ -360,8 +361,8 @@ fun MainScreen(
         when {
             !uiState.isAuthenticated -> {
                 AuthScreen(
-                    onAuthSuccess = { bearerToken, walletAddress, cryptoCurrency ->
-                        viewModel.saveAuthData(bearerToken, walletAddress, cryptoCurrency)
+                    onAuthSuccess = { escrowTokenPublicPart, walletAddress, cryptoCurrency ->
+                        viewModel.saveAuthData(escrowTokenPublicPart, walletAddress, cryptoCurrency)
                     }
                 )
             }
@@ -427,7 +428,7 @@ fun AuthScreen(
             onClick = {
                 if (escrowToken.isNotBlank()) {
                     isLoading = true
-                    // Вызов API для получения Bearer токена
+                    // Использование escrow token publicPart в заголовке X-Escrow-Token
                 }
             },
             modifier = Modifier
@@ -459,16 +460,16 @@ class AuthManagerTest {
     fun `saveAuthData should store data correctly`() = runTest {
         // Given
         val authManager = AuthManager(testDataStore)
-        val bearerToken = "test_token"
+        val escrowTokenPublicPart = "{\"version\":\"1.0\",\"wallet_address\":\"r123...\",\"currency\":\"XRP\"}"
         val walletAddress = "test_wallet"
         val cryptoCurrency = "XRP"
         
         // When
-        authManager.saveAuthData(bearerToken, walletAddress, cryptoCurrency)
+        authManager.saveAuthData(escrowTokenPublicPart, walletAddress, cryptoCurrency)
         
         // Then
-        val savedToken = authManager.getBearerToken()
-        assertEquals(bearerToken, savedToken)
+        val savedPublicPart = authManager.getEscrowTokenPublicPart()
+        assertEquals(escrowTokenPublicPart, savedPublicPart)
     }
 }
 ```

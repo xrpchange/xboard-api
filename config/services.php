@@ -65,4 +65,11 @@ return [
         // Never include Client Secret in client-side code (mobile apps, web frontend)
     ],
 
+    'gmail_oauth' => [
+        'client_id' => env('GMAIL_OAUTH_CLIENT_ID', ''),
+        'client_secret' => env('GMAIL_OAUTH_CLIENT_SECRET', ''),
+        // Note: Client Secret should ONLY be stored in .env file on the server
+        // Never include Client Secret in client-side code (mobile apps, web frontend)
+    ],
+
 ];

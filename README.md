@@ -133,8 +133,8 @@ After starting the server, documentation is available at:
 ### Main Endpoints
 
 #### Authentication
-- `POST /api/v1/auth/bearer-token` - Get Bearer token
-- `GET /api/v1/auth/validate` - Validate token
+- Escrow token authentication (X-Escrow-Token header)
+- `GET /api/v1/auth/validate` - Validate escrow token
 
 #### Reference Data (public)
 - `GET /api/v1/countries` - List of countries
@@ -165,7 +165,7 @@ After starting the server, documentation is available at:
 ### Backend
 - **Framework**: Laravel 10.x
 - **Database**: MySQL 8.0+
-- **API**: REST API with Bearer tokens
+- **API**: REST API with Escrow token authentication
 - **Documentation**: Swagger/OpenAPI 3.0
 
 ### Frontend
@@ -217,7 +217,7 @@ In test mode, all requests must contain `test_group` for data isolation.
 - Stored only in core system
 
 ### API Security
-- Bearer tokens for authentication
+- Escrow token authentication (X-Escrow-Token header)
 - Validation of all input data
 - DDoS attack protection
 

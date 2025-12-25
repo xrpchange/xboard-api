@@ -2,7 +2,7 @@
 
 ## Overview
 
-XBoard API provides REST API for P2P cryptocurrency exchange with collateral guarantee. The API uses Bearer tokens for authentication and supports test mode.
+XBoard API provides REST API for P2P cryptocurrency exchange with collateral guarantee. The API uses Escrow token authentication (X-Escrow-Token header) and supports test mode.
 
 ## Base URL
 
@@ -11,21 +11,23 @@ XBoard API provides REST API for P2P cryptocurrency exchange with collateral gua
 
 ## Authentication
 
-### Get Bearer token
-```http
-POST /auth/bearer-token
-Content-Type: application/json
+### Escrow Token Authentication
 
-{
-  "escrow_token": "your_escrow_token_here",
-  "test_group": "optional_test_group"
-}
+All protected endpoints require `X-Escrow-Token` header with the public part (publicPart) of escrow token:
+
+```http
+X-Escrow-Token: {"version":"1.0","wallet_address":"r123...","currency":"XRP","node_domain":"xdexboard.com"}
 ```
 
 ### Validate token
 ```http
-GET /auth/validate
-Authorization: Bearer your_bearer_token_here
+POST /api/v1/auth/validate-token
+Content-Type: application/json
+
+{
+  "escrow_token": "{\"version\":\"1.0\",\"wallet_address\":\"r123...\",\"currency\":\"XRP\"}",
+  "device_id": "optional-device-id"
+}
 ```
 
 ## Reference Data (public)
@@ -56,7 +58,7 @@ GET /banks/country/{country_code}
 ### Get lots
 ```http
 GET /exchange-lots
-Authorization: Bearer your_token
+X-Escrow-Token: {"version":"1.0","wallet_address":"r123...","currency":"XRP"}
 ```
 
 **Parameters:**
@@ -70,7 +72,7 @@ Authorization: Bearer your_token
 ### Create lot
 ```http
 POST /exchange-lots
-Authorization: Bearer your_token
+X-Escrow-Token: {"version":"1.0","wallet_address":"r123...","currency":"XRP"}
 Content-Type: application/json
 
 {
@@ -97,13 +99,13 @@ Content-Type: application/json
 ### Get triggers
 ```http
 GET /buy-triggers
-Authorization: Bearer your_token
+X-Escrow-Token: {"version":"1.0","wallet_address":"r123...","currency":"XRP"}
 ```
 
 ### Create trigger
 ```http
 POST /buy-triggers
-Authorization: Bearer your_token
+X-Escrow-Token: {"version":"1.0","wallet_address":"r123...","currency":"XRP"}
 Content-Type: application/json
 
 {
@@ -128,19 +130,19 @@ Content-Type: application/json
 ### Get transactions
 ```http
 GET /transactions
-Authorization: Bearer your_token
+X-Escrow-Token: {"version":"1.0","wallet_address":"r123...","currency":"XRP"}
 ```
 
 ### Transaction statistics
 ```http
 GET /transactions/stats
-Authorization: Bearer your_token
+X-Escrow-Token: {"version":"1.0","wallet_address":"r123...","currency":"XRP"}
 ```
 
 ### Create transaction
 ```http
 POST /transactions
-Authorization: Bearer your_token
+X-Escrow-Token: {"version":"1.0","wallet_address":"r123...","currency":"XRP"}
 Content-Type: application/json
 
 {
@@ -185,7 +187,7 @@ curl -X GET "http://localhost:8000/api/v1/currencies/all"
 ### Create lot (with authentication)
 ```bash
 curl -X POST "http://localhost:8000/api/v1/exchange-lots" \
-  -H "Authorization: Bearer your_token" \
+  -H "X-Escrow-Token: {"version":"1.0","wallet_address":"r123...","currency":"XRP"}" \
   -H "Content-Type: application/json" \
   -d '{
     "sell_currency_type": "fiat",

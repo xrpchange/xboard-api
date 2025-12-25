@@ -78,29 +78,53 @@ class ImapMonitorService
             
             $this->client = $cm->make($config);
             
-            // Verify token validity with Yandex API before attempting IMAP connection
+            // Verify token validity based on IMAP host
+            // For Yandex: verify with Yandex API
+            // For Gmail: verify with Google API
+            // For other providers: skip verification
             try {
                 $httpClient = new \GuzzleHttp\Client();
-                $verifyResponse = $httpClient->get('https://login.yandex.ru/info', [
-                    'headers' => [
-                        'Authorization' => 'OAuth ' . $accessToken,
-                    ],
-                    'timeout' => 10,
-                ]);
                 
-                $userInfo = json_decode($verifyResponse->getBody()->getContents(), true);
-                Log::info("Yandex token verification successful", [
-                    'email' => $userInfo['default_email'] ?? 'unknown',
-                    'login' => $userInfo['login'] ?? 'unknown',
-                    'scopes' => $userInfo['scopes'] ?? 'unknown'
-                ]);
-                
-                // For Yandex IMAP XOAUTH2, use full email address (not login)
-                // According to RFC 7628 and Yandex documentation, username should be full email
-                // Ensure we use the email from OAuth (which is the full email address)
-                $config['username'] = $this->email;
+                if (strpos($imapHost, 'yandex') !== false) {
+                    // Yandex token verification
+                    $verifyResponse = $httpClient->get('https://login.yandex.ru/info', [
+                        'headers' => [
+                            'Authorization' => 'OAuth ' . $accessToken,
+                        ],
+                        'timeout' => 10,
+                    ]);
+                    
+                    $userInfo = json_decode($verifyResponse->getBody()->getContents(), true);
+                    Log::info("Yandex token verification successful", [
+                        'email' => $userInfo['default_email'] ?? 'unknown',
+                        'login' => $userInfo['login'] ?? 'unknown',
+                        'scopes' => $userInfo['scopes'] ?? 'unknown'
+                    ]);
+                    
+                    // For Yandex IMAP XOAUTH2, use full email address (not login)
+                    $config['username'] = $this->email;
+                } elseif (strpos($imapHost, 'gmail') !== false) {
+                    // Gmail token verification
+                    $verifyResponse = $httpClient->get('https://www.googleapis.com/oauth2/v2/userinfo', [
+                        'headers' => [
+                            'Authorization' => 'Bearer ' . $accessToken,
+                        ],
+                        'timeout' => 10,
+                    ]);
+                    
+                    $userInfo = json_decode($verifyResponse->getBody()->getContents(), true);
+                    Log::info("Gmail token verification successful", [
+                        'email' => $userInfo['email'] ?? 'unknown',
+                        'verified_email' => $userInfo['verified_email'] ?? false,
+                    ]);
+                    
+                    // For Gmail IMAP XOAUTH2, use full email address
+                    $config['username'] = $this->email;
+                }
             } catch (\Exception $verifyError) {
-                Log::warning("Yandex token verification failed, but proceeding with IMAP connection", [
+                $providerName = strpos($imapHost, 'yandex') !== false ? 'Yandex' : 
+                               (strpos($imapHost, 'gmail') !== false ? 'Gmail' : 'Unknown');
+                Log::warning("{$providerName} token verification failed, but proceeding with IMAP connection", [
                     'error' => $verifyError->getMessage()
                 ]);
             }

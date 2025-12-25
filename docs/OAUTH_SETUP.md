@@ -209,10 +209,12 @@ APP_WEB_URL=https://xdexboard.com
 - Verify Client ID is correctly set in `OAuthConfig`
 - Ensure OAuth scopes include `mail:imap_ro` (entered manually in "Дополнительные" field)
 
+## Gmail OAuth Setup
+
+See [GMAIL_OAUTH_SETUP.md](./GMAIL_OAUTH_SETUP.md) for detailed instructions on setting up Gmail OAuth.
+
 ## Future Implementations
 
-- Gmail OAuth integration
 - Outlook OAuth integration
 - Token refresh mechanism
-- Client Secret support for web (if required)
 

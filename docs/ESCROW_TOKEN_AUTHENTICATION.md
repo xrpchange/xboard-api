@@ -2,7 +2,7 @@
 
 ## Concept
 
-Simple authentication system based on the open part (publicPart) of escrow tokens. **No Bearer tokens and expiration time** - this is a relic from the pre-HTTPS era.
+Simple authentication system based on the open part (publicPart) of escrow tokens. **No expiration time** - tokens are valid as long as the escrow token is valid in Core API.
 
 ## Core Paradigm: Account-Based, Not User-Based
 
@@ -128,7 +128,7 @@ Route::middleware(['escrow.token'])->group(function () {
 
 ### For Development
 
-1. **Less code**: Removed Bearer token management, refresh logic, expiration checks
+1. **Less code**: No token management, refresh logic, or expiration checks
 2. **Easier debugging**: Token is just a JSON string, easy to inspect
 3. **Fewer states**: No "token expired", "needs refresh", "token not found" states
 4. **Direct connection**: Client uses the same token as for other operations (Core API)
@@ -136,7 +136,7 @@ Route::middleware(['escrow.token'])->group(function () {
 ### For Migrations
 
 1. **No token versioning**: Token is always in one format (publicPart JSON)
-2. **Easier updates**: Changes in token format are visible immediately, no Bearer token migration needed
+2. **Easier updates**: Changes in token format are visible immediately
 3. **Backward compatibility**: Old tokens continue to work if publicPart format doesn't change
 4. **Fewer dependencies**: No need to synchronize token expiration between client and server
 
@@ -147,22 +147,9 @@ Route::middleware(['escrow.token'])->group(function () {
 3. **No refresh attacks**: No refresh tokens that can be stolen and used indefinitely
 4. **Transparency**: Token is the open part of escrow token that client already has
 
-## Migration from Bearer Tokens
-
-### On Server:
-1. Create `escrow_token_cache` table (migration already created)
-2. Update routes: `/auth/validate-token` instead of `/auth/bearer-token`
-3. Use middleware `escrow.token` instead of Bearer token middleware
-
-### On Client:
-1. Remove all Bearer token management code
-2. Send `publicPart` in `X-Escrow-Token` header in every request
-3. Remove refresh token logic, token storage, expiration checks
-
 ## Client Usage Example
 
 ```kotlin
-// Instead of Bearer token
 val publicPart = escrowToken.publicPart
 
 // In every API request

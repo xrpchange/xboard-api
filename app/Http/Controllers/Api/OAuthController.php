@@ -239,12 +239,186 @@ class OAuthController extends BaseApiController
     }
     
     /**
-     * Handle Gmail OAuth callback (for future implementation)
+     * Handle Gmail OAuth callback for web applications
+     * 
+     * Google redirects here after user authorization with:
+     * - code: authorization code (on success)
+     * - error: error code (on failure)
+     * - state: optional state parameter for CSRF protection
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\RedirectResponse|JsonResponse
      */
     public function gmailCallback(Request $request)
     {
-        // TODO: Implement Gmail OAuth callback
-        return response()->json(['message' => 'Gmail OAuth not implemented yet'], 501);
+        $code = $request->query('code');
+        $error = $request->query('error');
+        $errorDescription = $request->query('error_description');
+        $state = $request->query('state');
+        
+        Log::info('Gmail OAuth callback received', [
+            'has_code' => !empty($code),
+            'has_error' => !empty($error),
+            'error' => $error,
+            'state' => $state
+        ]);
+        
+        $redirectUrl = $this->buildGmailRedirectUrl($code, $error, $errorDescription);
+        
+        $returnJson = $request->wantsJson() 
+            || $request->expectsJson() 
+            || $request->query('format') === 'json'
+            || $request->header('Accept') === 'application/json';
+        
+        if ($returnJson) {
+            if ($code) {
+                return response()->json([
+                    'success' => true,
+                    'code' => $code,
+                    'state' => $state,
+                    'redirect_url' => $redirectUrl,
+                    'message' => 'Authorization code received. Use this code to exchange for access token.'
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'error' => $error,
+                    'error_description' => $errorDescription,
+                    'message' => 'OAuth authorization failed'
+                ], 400);
+            }
+        }
+        
+        return redirect($redirectUrl);
+    }
+    
+    /**
+     * Build redirect URL for Gmail OAuth
+     */
+    private function buildGmailRedirectUrl(?string $code, ?string $error, ?string $errorDescription): string
+    {
+        $webAppUrl = config('app.web_app_url', env('APP_WEB_URL', 'https://xdexboard.com'));
+        
+        if ($code) {
+            return $webAppUrl . '/oauth/callback?provider=gmail&code=' . urlencode($code);
+        } else {
+            $params = http_build_query([
+                'provider' => 'gmail',
+                'error' => $error,
+                'error_description' => $errorDescription
+            ]);
+            return $webAppUrl . '/oauth/callback?' . $params;
+        }
+    }
+    
+    /**
+     * Exchange Gmail OAuth authorization code for access token (server-side)
+     * 
+     * This endpoint is used by mobile apps to exchange authorization code for access token.
+     * The client_secret is stored on the server and never exposed to mobile apps.
+     * 
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function gmailExchangeToken(Request $request): JsonResponse
+    {
+        $code = $request->input('code');
+        $redirectUri = $request->input('redirect_uri', 'xboard://gmail-oauth'); // Default for mobile
+        
+        if (empty($code)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'missing_code',
+                'error_description' => 'Authorization code is required'
+            ], 400);
+        }
+        
+        $clientId = config('services.gmail_oauth.client_id');
+        $clientSecret = config('services.gmail_oauth.client_secret');
+        
+        if (empty($clientId) || empty($clientSecret)) {
+            Log::error('Gmail OAuth credentials not configured', [
+                'has_client_id' => !empty($clientId),
+                'has_client_secret' => !empty($clientSecret)
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'server_configuration_error',
+                'error_description' => 'OAuth server configuration is missing'
+            ], 500);
+        }
+        
+        // Exchange code for token via Google OAuth API
+        try {
+            $httpClient = new \GuzzleHttp\Client();
+            $response = $httpClient->post('https://oauth2.googleapis.com/token', [
+                'form_params' => [
+                    'grant_type' => 'authorization_code',
+                    'code' => $code,
+                    'client_id' => $clientId,
+                    'client_secret' => $clientSecret,
+                    'redirect_uri' => $redirectUri,
+                ],
+                'headers' => [
+                    'Content-Type' => 'application/x-www-form-urlencoded',
+                ],
+            ]);
+            
+            $tokenData = json_decode($response->getBody()->getContents(), true);
+            
+            if (isset($tokenData['access_token'])) {
+                Log::info('Gmail OAuth token exchange successful', [
+                    'has_access_token' => true,
+                    'has_refresh_token' => isset($tokenData['refresh_token']),
+                    'expires_in' => $tokenData['expires_in'] ?? null,
+                ]);
+                
+                return response()->json([
+                    'success' => true,
+                    'access_token' => $tokenData['access_token'],
+                    'refresh_token' => $tokenData['refresh_token'] ?? null,
+                    'expires_in' => $tokenData['expires_in'] ?? 0,
+                    'token_type' => $tokenData['token_type'] ?? 'bearer',
+                ]);
+            } else {
+                Log::error('Gmail OAuth token exchange failed: invalid response', [
+                    'response' => $tokenData
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'error' => $tokenData['error'] ?? 'unknown_error',
+                    'error_description' => $tokenData['error_description'] ?? 'Token exchange failed'
+                ], 400);
+            }
+        } catch (\GuzzleHttp\Exception\ClientException $e) {
+            $errorBody = $e->getResponse()->getBody()->getContents();
+            $errorData = json_decode($errorBody, true);
+            
+            Log::error('Gmail OAuth token exchange failed', [
+                'status' => $e->getResponse()->getStatusCode(),
+                'error' => $errorData['error'] ?? 'unknown',
+                'error_description' => $errorData['error_description'] ?? $errorBody,
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => $errorData['error'] ?? 'token_exchange_failed',
+                'error_description' => $errorData['error_description'] ?? 'Failed to exchange authorization code for token'
+            ], $e->getResponse()->getStatusCode());
+        } catch (\Exception $e) {
+            Log::error('Gmail OAuth token exchange exception', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'server_error',
+                'error_description' => 'Internal server error during token exchange'
+            ], 500);
+        }
     }
     
     /**

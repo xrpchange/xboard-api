@@ -889,8 +889,16 @@ class PaymentVerificationController extends Controller
                     $imapSettings['host'],
                     $imapSettings['port']
                 );
+            } elseif ($provider === 'gmail') {
+                // Gmail also uses XOAUTH2, same approach as Yandex
+                $connected = $imapService->connectWithOAuth(
+                    $email, // Email from OAuth (obtained during authorization)
+                    $accessToken,
+                    $imapSettings['host'],
+                    $imapSettings['port']
+                );
             } else {
-                // For Gmail/Outlook, might need different approach
+                // For Outlook, might need different approach
                 // For now, return error
                 return response()->json([
                     'success' => false,

@@ -1,6 +1,0 @@
-*/5 * * * * /usr/local/bin/monitor_monero.sh
-
-# SSL Certificate Auto-renewal
-0 2 * * * /usr/bin/certbot renew --quiet --nginx
-0 3 * * * /usr/bin/systemctl reload nginx
-0 4 * * 0 /usr/bin/certbot certificates

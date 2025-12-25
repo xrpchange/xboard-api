@@ -54,6 +54,9 @@ Route::prefix('v1/oauth')->group(function () {
     // Yandex OAuth token exchange (server-side, uses client_secret from server)
     // Mobile apps send authorization code here, server exchanges it for access token
     Route::post('/yandex/exchange-token', [\App\Http\Controllers\Api\OAuthController::class, 'yandexExchangeToken']);
+    
+    // Gmail OAuth token exchange (server-side, uses client_secret from server)
+    Route::post('/gmail/exchange-token', [\App\Http\Controllers\Api\OAuthController::class, 'gmailExchangeToken']);
 });
 
 // Email access endpoints (v1 API, uses OAuth access token, no escrow token required)
