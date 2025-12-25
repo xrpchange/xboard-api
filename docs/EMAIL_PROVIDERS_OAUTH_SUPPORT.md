@@ -219,9 +219,10 @@ This document lists email providers that support OAuth 2.0 for IMAP access, with
 1. ✅ **Yandex** - Already done and working (Russian users)
 2. ⚠️ **Mail.ru** - Next to implement (Russian users, with app password fallback)
 3. ⚠️ **Yahoo** - To implement (International users, no verification)
-4. ❌ **Gmail** - Not implementing (verification required)
-5. ❌ **Outlook** - Not implementing (admin consent required)
-6. ❌ **Other providers** - Not implementing (not needed)
+4. ⚠️ **Outlook China** - To implement (Chinese users, no verification, user consent only)
+5. ❌ **Gmail** - Not implementing (verification required)
+6. ❌ **Outlook Global** - Not implementing (admin consent required since Nov 2025)
+7. ❌ **Other providers** - Not implementing (not needed)
 
 ## Next Steps (Implementation Plan)
 
@@ -243,7 +244,18 @@ This document lists email providers that support OAuth 2.0 for IMAP access, with
 - Add to SettingsScreen
 - Test with Yahoo accounts
 
-### 3. Testing
+### 3. Outlook China Implementation (Chinese Users)
+- Register app in Azure China Portal (portal.azure.cn)
+- Scope: `https://partner.outlook.cn/IMAP.AccessAsUser.All`
+- Authorization endpoint: `https://login.partner.microsoftonline.cn/oauth2/v2.0/authorize`
+- Token endpoint: `https://login.partner.microsoftonline.cn/oauth2/v2.0/token`
+- Implement OAuth flow (similar to Yandex/Mail.ru, but Azure China endpoints)
+- IMAP server: `imap.partner.outlook.cn:993`
+- Add to OAuthController
+- Add to SettingsScreen
+- Test with Outlook China accounts (@outlook.cn, @hotmail.cn)
+
+### 4. Testing
 - Test Mail.ru OAuth with various account types
 - Test Mail.ru app password fallback mechanism
 - Test Yahoo OAuth flow
@@ -259,6 +271,8 @@ This document lists email providers that support OAuth 2.0 for IMAP access, with
 - FastMail Developer: https://developer.fastmail.com/
 - Yahoo Developer: https://developer.yahoo.com/
 - Microsoft Identity Platform: https://learn.microsoft.com/en-us/azure/active-directory/develop/
+- Azure China Portal: https://portal.azure.cn/
+- Outlook China (21Vianet): https://partner.outlook.cn/
 - Google OAuth: https://developers.google.com/identity/protocols/oauth2
 
 ## Key Findings from Research
@@ -269,13 +283,64 @@ This document lists email providers that support OAuth 2.0 for IMAP access, with
 3. **Rambler** ⚠️ - Possible, but no public documentation
 
 ### International Providers
-1. **Zoho** ⚠️ - Requires review (simpler than Google)
-2. **FastMail** ⚠️ - Requires registration, paid service
-3. **Yahoo** ⚠️ - No verification, but less popular
+1. **Yahoo** ⚠️ - No verification, simple implementation
+2. **Zoho** ⚠️ - Requires review (simpler than Google)
+3. **FastMail** ⚠️ - Requires registration, paid service
+
+### Chinese Providers
+
+#### 1. Outlook China (partner.outlook.cn) ⚠️ **RECOMMENDED**
+
+- **Status:** ⚠️ Not yet implemented, best option for Chinese users
+- **OAuth Support:** Yes, full OAuth 2.0 + XOAUTH2 for IMAP
+- **IMAP Access:** Yes, via `imap.partner.outlook.cn:993`
+- **Scopes Required:** `https://partner.outlook.cn/IMAP.AccessAsUser.All` or similar
+- **User Consent:** ✅ Yes, user consent only (no admin consent for personal accounts)
+- **Verification Required:** ❌ **No** - No application verification required
+- **Business Accounts:** Available (Exchange Online China)
+- **Personal Accounts:** Available (@outlook.cn, @hotmail.cn)
+- **Documentation:** Azure China Portal (portal.azure.cn)
+- **Registration:** Register app in Azure China Portal (portal.azure.cn)
+- **OAuth Endpoints:**
+  - Authorization: `https://login.partner.microsoftonline.cn/oauth2/v2.0/authorize`
+  - Token: `https://login.partner.microsoftonline.cn/oauth2/v2.0/token`
+  - User Info: `https://graph.chinacloudapi.cn/v1.0/me` (or similar)
+- **Important Notes:**
+  - Chinese version of Outlook/Exchange Online, operated by 21Vianet
+  - Data stored in China (complies with local laws)
+  - No admin consent required for personal accounts
+  - No publisher verification required for delegated permissions
+  - **Best option for Chinese users** - minimal barriers, full OAuth support
+  - Similar to global Outlook, but without admin consent requirement
+
+#### 2. NetEase (163.com / 126.com) ⚠️ **PARTIAL**
+
+- **Status:** ⚠️ Partial OAuth support, less reliable
+- **OAuth Support:** Partial (OAuth 2.0 introduced in 2024-2025)
+- **IMAP Access:** Via API or special clients, not full XOAUTH2
+- **User Consent:** ✅ Yes
+- **Verification Required:** ❌ No
+- **Notes:**
+  - OAuth mainly for Graph-like API, not classic IMAP + XOAUTH2
+  - Often requires authorization code (manual input) instead of full OAuth flow
+  - Less documented and reliable than Outlook China
+  - **Recommendation:** Use Outlook China instead
+
+#### 3. QQ Mail (qq.com) ⚠️ **NOT SUITABLE**
+
+- **Status:** ⚠️ No full OAuth for IMAP
+- **OAuth Support:** Limited (mainly for API, not IMAP)
+- **IMAP Access:** Via authorization code or app-specific password, not XOAUTH2
+- **User Consent:** ✅ Yes
+- **Verification Required:** ❌ No
+- **Notes:**
+  - No full OAuth flow for IMAP in 2025
+  - Requires authorization code from account settings
+  - **Recommendation:** Use Outlook China instead
 
 ### Not Recommended
 1. **Gmail** ❌ - Complex verification required
-2. **Outlook** ❌ - Admin consent required (since Nov 2025)
+2. **Outlook Global** ❌ - Admin consent required (since Nov 2025)
 
 ## Decision: Final Implementation Plan
 
@@ -283,18 +348,26 @@ This document lists email providers that support OAuth 2.0 for IMAP access, with
 1. **Yandex** ✅ - Already implemented (for Russian users)
 2. **Mail.ru** ⚠️ - To implement (for Russian users, with app password fallback)
 3. **Yahoo** ⚠️ - To implement (for international users, no verification required)
+4. **Outlook China** ⚠️ - To implement (for Chinese users, no verification required, user consent only)
 
 **Why This Solution:**
 - **Mail.ru** covers second largest user base in Russia (after Yandex)
 - **Yahoo** is available internationally, no verification required, simple implementation
+- **Outlook China** (partner.outlook.cn) is the best option for Chinese users:
+  - Full OAuth 2.0 + XOAUTH2 support for IMAP
+  - No application verification required
+  - User consent only (no admin consent for personal accounts)
+  - Data stored in China (complies with local laws)
+  - IMAP server: imap.partner.outlook.cn:993
 - **User security:** Users should create separate email for exchange/banking operations, not give access to personal email
 - **Sufficient coverage:** These providers cover the target use case without unnecessary complexity
 
 **Not Implementing:**
 - Gmail (verification required)
-- Outlook (admin consent required)
+- Outlook Global (admin consent required since Nov 2025)
 - Zoho/FastMail (require review/registration)
 - Rambler (no public documentation)
+- NetEase/QQ Mail (partial or no OAuth support for IMAP)
 
 This solution balances coverage, simplicity, and user security.
 

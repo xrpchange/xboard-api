@@ -245,9 +245,29 @@ Yahoo supports OAuth 2.0 for IMAP access. No verification required, simple imple
 
 See [EMAIL_PROVIDERS_OAUTH_SUPPORT.md](./EMAIL_PROVIDERS_OAUTH_SUPPORT.md) for details.
 
+## Outlook China OAuth Setup
+
+**Status:** ⚠️ Planned for implementation (Chinese users)
+
+Outlook China (partner.outlook.cn) is the best option for Chinese users:
+- Full OAuth 2.0 + XOAUTH2 support for IMAP
+- No application verification required
+- User consent only (no admin consent for personal accounts)
+- Data stored in China (complies with local laws)
+- IMAP server: `imap.partner.outlook.cn:993`
+
+**Next Steps:**
+1. Register application in Azure China Portal (portal.azure.cn)
+2. Scope: `https://partner.outlook.cn/IMAP.AccessAsUser.All` or similar
+3. Implement OAuth flow (similar to Yandex/Mail.ru)
+4. Add Outlook China support to ImapMonitorService
+
+See [EMAIL_PROVIDERS_OAUTH_SUPPORT.md](./EMAIL_PROVIDERS_OAUTH_SUPPORT.md) for details.
+
 ## Future Implementations
 
 - Mail.ru OAuth integration (priority - Russian users)
 - Yahoo OAuth integration (priority - International users)
+- Outlook China OAuth integration (priority - Chinese users)
 - Token refresh mechanism
 

@@ -44,8 +44,8 @@ Route::prefix('oauth')->group(function () {
     // Gmail OAuth callback (for future implementation)
     Route::get('/gmail/callback', [\App\Http\Controllers\Api\OAuthController::class, 'gmailCallback']);
     
-    // Outlook OAuth callback (for future implementation)
-    Route::get('/outlook/callback', [\App\Http\Controllers\Api\OAuthController::class, 'outlookCallback']);
+    // Mail.ru OAuth callback
+    Route::get('/mailru/callback', [\App\Http\Controllers\Api\OAuthController::class, 'mailruCallback']);
 });
 
 // OAuth token exchange endpoints (v1 API, public, no authentication required)
@@ -57,6 +57,9 @@ Route::prefix('v1/oauth')->group(function () {
     
     // Gmail OAuth token exchange (server-side, uses client_secret from server)
     Route::post('/gmail/exchange-token', [\App\Http\Controllers\Api\OAuthController::class, 'gmailExchangeToken']);
+    
+    // Mail.ru OAuth token exchange (server-side, uses client_secret from server)
+    Route::post('/mailru/exchange-token', [\App\Http\Controllers\Api\OAuthController::class, 'mailruExchangeToken']);
 });
 
 // Email access endpoints (v1 API, uses OAuth access token, no escrow token required)

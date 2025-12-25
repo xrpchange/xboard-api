@@ -15,7 +15,7 @@ use Webklex\PHPIMAP\Message;
  * with preserved DKIM signatures for payment verification.
  * 
  * Uses webklex/php-imap library which supports XOAUTH2 authentication
- * for OAuth tokens (Yandex, Gmail, Outlook).
+ * for OAuth tokens (Yandex, Gmail, Mail.ru, Yahoo).
  */
 class ImapMonitorService
 {
@@ -81,6 +81,7 @@ class ImapMonitorService
             // Verify token validity based on IMAP host
             // For Yandex: verify with Yandex API
             // For Gmail: verify with Google API
+            // For Mail.ru: verify with Mail.ru API
             // For other providers: skip verification
             try {
                 $httpClient = new \GuzzleHttp\Client();
@@ -120,10 +121,29 @@ class ImapMonitorService
                     
                     // For Gmail IMAP XOAUTH2, use full email address
                     $config['username'] = $this->email;
+                } elseif (strpos($imapHost, 'mail.ru') !== false || strpos($imapHost, 'mailru') !== false) {
+                    // Mail.ru token verification
+                    $clientId = config('services.mailru_oauth.client_id');
+                    $verifyResponse = $httpClient->get('https://api.mail.ru/userinfo', [
+                        'query' => [
+                            'access_token' => $accessToken,
+                        ],
+                        'timeout' => 10,
+                    ]);
+                    
+                    $userInfo = json_decode($verifyResponse->getBody()->getContents(), true);
+                    Log::info("Mail.ru token verification successful", [
+                        'email' => $userInfo['email'] ?? 'unknown',
+                        'uid' => $userInfo['uid'] ?? 'unknown',
+                    ]);
+                    
+                    // For Mail.ru IMAP XOAUTH2, use full email address
+                    $config['username'] = $this->email;
                 }
             } catch (\Exception $verifyError) {
                 $providerName = strpos($imapHost, 'yandex') !== false ? 'Yandex' : 
-                               (strpos($imapHost, 'gmail') !== false ? 'Gmail' : 'Unknown');
+                               (strpos($imapHost, 'gmail') !== false ? 'Gmail' :
+                               (strpos($imapHost, 'mail.ru') !== false || strpos($imapHost, 'mailru') !== false ? 'Mail.ru' : 'Unknown'));
                 Log::warning("{$providerName} token verification failed, but proceeding with IMAP connection", [
                     'error' => $verifyError->getMessage()
                 ]);

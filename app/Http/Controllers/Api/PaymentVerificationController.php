@@ -796,7 +796,7 @@ class PaymentVerificationController extends Controller
      *         in="query",
      *         required=true,
      *         description="Email provider",
-     *         @OA\Schema(type="string", enum={"yandex", "gmail", "outlook"})
+     *         @OA\Schema(type="string", enum={"yandex", "gmail", "mailru", "yahoo"})
      *     ),
      *     @OA\Parameter(
      *         name="email",
@@ -833,7 +833,7 @@ class PaymentVerificationController extends Controller
     public function getEmailList(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'provider' => 'required|in:yandex,gmail,outlook',
+            'provider' => 'required|in:yandex,gmail,mailru,yahoo',
             'email' => 'required|string', // Email from OAuth (already known on client)
             'access_token' => 'required|string',
             'limit' => 'nullable|integer|min:1|max:100',
@@ -881,16 +881,8 @@ class PaymentVerificationController extends Controller
             // Connect via IMAP using OAuth token
             $imapService = new ImapMonitorService();
             
-            if ($provider === 'yandex') {
-                // Use webklex/php-imap library which supports XOAUTH2
-                $connected = $imapService->connectWithOAuth(
-                    $email, // Email from OAuth (obtained during authorization)
-                    $accessToken,
-                    $imapSettings['host'],
-                    $imapSettings['port']
-                );
-            } elseif ($provider === 'gmail') {
-                // Gmail also uses XOAUTH2, same approach as Yandex
+            if (in_array($provider, ['yandex', 'gmail', 'mailru', 'yahoo'])) {
+                // All these providers use XOAUTH2 for IMAP
                 $connected = $imapService->connectWithOAuth(
                     $email, // Email from OAuth (obtained during authorization)
                     $accessToken,
@@ -898,8 +890,6 @@ class PaymentVerificationController extends Controller
                     $imapSettings['port']
                 );
             } else {
-                // For Outlook, might need different approach
-                // For now, return error
                 return response()->json([
                     'success' => false,
                     'message' => "OAuth IMAP not yet implemented for {$provider}"
@@ -956,7 +946,7 @@ class PaymentVerificationController extends Controller
      *         in="query",
      *         required=true,
      *         description="Email provider",
-     *         @OA\Schema(type="string", enum={"yandex", "gmail", "outlook"})
+     *         @OA\Schema(type="string", enum={"yandex", "gmail", "mailru", "yahoo"})
      *     ),
      *     @OA\Parameter(
      *         name="email",
@@ -979,7 +969,7 @@ class PaymentVerificationController extends Controller
     public function getRawEmail(Request $request, string $messageId): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'provider' => 'required|in:yandex,gmail,outlook',
+            'provider' => 'required|in:yandex,gmail,mailru,yahoo',
             'email' => 'required|string', // Email from OAuth (already known on client)
             'access_token' => 'required|string',
         ]);
@@ -1009,8 +999,8 @@ class PaymentVerificationController extends Controller
             // Connect via IMAP using OAuth token
             $imapService = new ImapMonitorService();
             
-            if ($provider === 'yandex') {
-                // Use webklex/php-imap library which supports XOAUTH2
+            if (in_array($provider, ['yandex', 'gmail', 'mailru', 'yahoo'])) {
+                // All these providers use XOAUTH2 for IMAP
                 $connected = $imapService->connectWithOAuth(
                     $email, // Email from OAuth (obtained during authorization)
                     $accessToken,
@@ -1074,15 +1064,19 @@ class PaymentVerificationController extends Controller
     {
         $settings = [
             'yandex' => [
-                'host' => 'imap.yandex.com', // Use imap.yandex.com instead of imap.yandex.ru
+                'host' => 'imap.yandex.com',
                 'port' => 993,
             ],
             'gmail' => [
                 'host' => 'imap.gmail.com',
                 'port' => 993,
             ],
-            'outlook' => [
-                'host' => 'outlook.office365.com',
+            'mailru' => [
+                'host' => 'imap.mail.ru',
+                'port' => 993,
+            ],
+            'yahoo' => [
+                'host' => 'imap.mail.yahoo.com',
                 'port' => 993,
             ],
         ];
