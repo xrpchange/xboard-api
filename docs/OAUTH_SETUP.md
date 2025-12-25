@@ -213,8 +213,41 @@ APP_WEB_URL=https://xdexboard.com
 
 See [GMAIL_OAUTH_SETUP.md](./GMAIL_OAUTH_SETUP.md) for detailed instructions on setting up Gmail OAuth.
 
+## Mail.ru OAuth Setup
+
+**Status:** ⚠️ Planned for implementation (Russian users)
+
+Mail.ru supports OAuth 2.0 for IMAP access, similar to Yandex. Implementation should be straightforward.
+
+**Important:** OAuth may not work for all applications - implement app password fallback mechanism.
+
+**Next Steps:**
+1. Register application at https://o2.mail.ru/app/
+2. Scope: `mail.imap`
+3. Implement OAuth flow (similar to Yandex)
+4. **Critical:** Implement app password fallback for cases where OAuth doesn't work
+5. Add Mail.ru support to ImapMonitorService
+
+See [EMAIL_PROVIDERS_OAUTH_SUPPORT.md](./EMAIL_PROVIDERS_OAUTH_SUPPORT.md) and [APP_PASSWORD_FALLBACK_EXPLANATION.md](./APP_PASSWORD_FALLBACK_EXPLANATION.md) for details.
+
+## Yahoo OAuth Setup
+
+**Status:** ⚠️ Planned for implementation (International users)
+
+Yahoo supports OAuth 2.0 for IMAP access. No verification required, simple implementation.
+
+**Next Steps:**
+1. Register application at https://developer.yahoo.com/
+2. Scopes: `mail-r` (read mail), `offline_access`
+3. Implement OAuth flow (similar to Yandex/Mail.ru)
+4. IMAP server: `imap.mail.yahoo.com:993`
+5. Add Yahoo support to ImapMonitorService
+
+See [EMAIL_PROVIDERS_OAUTH_SUPPORT.md](./EMAIL_PROVIDERS_OAUTH_SUPPORT.md) for details.
+
 ## Future Implementations
 
-- Outlook OAuth integration
+- Mail.ru OAuth integration (priority - Russian users)
+- Yahoo OAuth integration (priority - International users)
 - Token refresh mechanism
 
