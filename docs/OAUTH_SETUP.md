@@ -46,11 +46,11 @@ You need to register BOTH redirect URIs in Yandex OAuth:
    - Without this registration, you'll get error: "400 redirect_uri не совпадает с Callback URL"
 
 #### OAuth Scopes
-- In "Дополнительные" (Additional) section, manually enter: `mail:imap_full`
-  - **Required scope:** `mail:imap_full` - Full access to mail via IMAP (read, flags, delete)
-    - This scope provides full access to mail via IMAP protocol
+- In "Дополнительные" (Additional) section, manually enter: `mail:imap_ro`
+  - **Required scope:** `mail:imap_ro` - Read-only access to mail via IMAP (read only)
+    - This scope provides read-only access to mail via IMAP protocol
     - **Important:** This scope may not appear in the dropdown list. You must enter it manually in the "Дополнительные" field
-    - The scope `mail:imap_ro` (read-only) is not sufficient - Yandex requires `mail:imap_full` for IMAP access
+    - The scope `mail:imap_ro` is sufficient for reading emails and monitoring incoming messages
   - **Additional scope:** `login:email` - To retrieve user's email address
   - Alternative scopes (if needed):
     - `mail:smtp` - Send emails via SMTP
@@ -115,7 +115,7 @@ The configuration is already set up to read from environment variables:
 ### Android Flow
 
 1. User clicks "Connect Yandex" in the app
-2. App opens Yandex OAuth page in Custom Tabs with scope `mail:imap_full login:email`
+2. App opens Yandex OAuth page in Custom Tabs with scope `mail:imap_ro login:email`
 3. User authorizes the application
 4. Yandex redirects to deep link: `xboard://yandex-oauth?code=...`
 5. `MainActivity` receives the deep link and extracts authorization code
@@ -207,7 +207,7 @@ APP_WEB_URL=https://xdexboard.com
 ### Authorization code not received
 - Check logs in `OAuthController::yandexCallback()` for incoming requests
 - Verify Client ID is correctly set in `OAuthConfig`
-- Ensure OAuth scopes include `mail:imap_full` (entered manually in "Дополнительные" field)
+- Ensure OAuth scopes include `mail:imap_ro` (entered manually in "Дополнительные" field)
 
 ## Future Implementations
 

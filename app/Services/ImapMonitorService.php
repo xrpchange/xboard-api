@@ -26,7 +26,7 @@ class ImapMonitorService
     /**
      * Connect to IMAP server using OAuth token
      * 
-     * For Yandex: requires email address and OAuth access_token with mail:imap_ro or mail:imap_full scope
+     * For Yandex: requires email address and OAuth access_token with mail:imap_ro scope
      * 
      * @param string $email User email address (required, should be obtained from OAuth)
      * @param string $accessToken OAuth access token
