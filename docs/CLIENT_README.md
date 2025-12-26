@@ -78,7 +78,7 @@ android {
 
 ```
 app/
-├── src/main/java/com/xrpchange/xboard/
+├── src/main/java/com/xdexboard/xboard/
 │   ├── data/
 │   │   ├── api/           # Retrofit API interfaces
 │   │   ├── models/        # Data classes

@@ -93,6 +93,51 @@ Get all active nodes with filtered endpoints based on user role.
 **Headers:**
 - `X-User-Role` (optional): `public`, `developer`, `admin` (default: `public`)
 
+**Response includes `meta.default_environment`:**
+The response includes a `meta` field with `default_environment` that suggests the preferred mode to client applications:
+
+```json
+{
+  "success": true,
+  "data": [...],
+  "meta": {
+    "default_environment": "sandbox"  // or "production"
+  }
+}
+```
+
+**Purpose and Use Case:**
+This is a "suggested mode" feature designed for project lifecycle management:
+
+1. **Initial Launch (Testing Phase):**
+   - Set `APP_DEFAULT_ENVIRONMENT=sandbox` in `.env` or `config/app.php`
+   - Server returns `default_environment: "sandbox"` in response
+   - Client app automatically enables Developer Mode and switches to Sandbox API
+   - **Target:** Testers who won't manually configure settings - app configures itself automatically
+
+2. **After Testing Phase (Production):**
+   - Change `APP_DEFAULT_ENVIRONMENT=production` in `.env` or `config/app.php`
+   - Server returns `default_environment: "production"` in response
+   - Users who haven't manually configured settings will automatically switch to Production mode
+   - **Target:** Regular users who won't explore settings - seamless transition to production
+
+3. **Server Management vs User Control:**
+   - **If user hasn't configured settings:** Server fully manages app mode (Developer Mode and API endpoint)
+     - Server can switch from `sandbox` to `production` after testing phase - app will automatically follow
+   - **If user has configured settings:** User's settings have priority, server suggestions are ignored
+     - User manually enabled/disabled Developer Mode → server can't change it
+     - User manually selected API endpoint → server can't change it
+     - Once user configures any setting, server loses control over that setting
+
+**Configuration:**
+- Set `APP_DEFAULT_ENVIRONMENT` in `.env` file: `APP_DEFAULT_ENVIRONMENT=production` or `APP_DEFAULT_ENVIRONMENT=sandbox`
+- Default value: `sandbox` (configured in `config/app.php`) - for initial testing phase
+- **Migration:** After testing phase, change to `production` - users without manual settings will automatically switch
+
+**How it works:**
+- If `sandbox`: Client app automatically enables Developer Mode and switches to Sandbox API endpoint (only if user hasn't configured settings)
+- If `production`: Client app uses Production mode by default (Developer Mode disabled, only if user hasn't configured settings)
+
 **Response:**
 ```json
 {

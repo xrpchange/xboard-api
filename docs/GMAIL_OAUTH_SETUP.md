@@ -20,7 +20,7 @@ Gmail OAuth functionality has been completely removed from xboard-client. This d
 
 ### Android Package Name
 ```
-com.xrpchange.xboard
+com.xdexboard.xboard
 ```
 
 ### SHA-1 Fingerprint
@@ -170,7 +170,7 @@ xboard://gmail-oauth
 2. In **"Application type"** dropdown, select **"Android"**
 3. Fill in the form:
    - **Name** (Имя): Enter **XDexBoard Android**
-   - **Package name** (Имя пакета): Enter `com.xrpchange.xboard`
+   - **Package name** (Имя пакета): Enter `com.xdexboard.xboard`
    - **SHA-1 certificate fingerprint** (Отпечаток сертификата SHA-1): Enter your SHA-1 fingerprint obtained from debug keystore (see instructions above)
      - **Format:** Must be in format with colons: `XX:XX:XX:XX:...` (20 pairs of hex digits separated by colons)
      - **How to get:** Run `keytool -keystore %USERPROFILE%\.android\debug.keystore -list -v` (Windows) or `keytool -keystore ~/.android/debug.keystore -list -v` (Linux/Mac), then enter password `android` when prompted

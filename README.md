@@ -72,6 +72,25 @@ php artisan key:generate
   - This email receives forwarded payment emails for DKIM verification
   - **Required:** Application will not start if this parameter is not set
 
+**Client mode configuration:**
+- `APP_DEFAULT_ENVIRONMENT` - Default environment mode suggested to client applications (default: `sandbox`)
+  - Values: `production` or `sandbox`
+  - This setting is sent in `/api/v1/nodes` endpoint response as `meta.default_environment`
+  - **Purpose:** This is a "suggested mode" feature for first-time project launch and user onboarding
+  - **Use case:**
+    - **Initial launch (testing phase):** Set to `sandbox` to automatically enable Developer Mode and switch to Sandbox API for testers who won't configure settings manually
+    - **After testing phase (production):** Switch to `production` - users who haven't manually configured settings will automatically switch to Production mode
+    - **Target users:** Non-technical users who won't explore settings - the app configures itself based on server suggestion
+  - **How it works:**
+    - If set to `sandbox`: Client app automatically enables Developer Mode and switches to Sandbox API endpoint (only if user hasn't configured settings)
+    - If set to `production`: Client app uses Production mode by default (Developer Mode disabled, only if user hasn't configured settings)
+  - **Server management:** Server fully manages app mode (Developer Mode and API endpoint) **only if user hasn't configured settings**
+  - **User priority:** Once user manually configures Developer Mode or API endpoint, server suggestions are ignored for that setting
+  - **Migration:** After testing phase, change to `production` - users who haven't configured settings will automatically switch to Production
+  - **Configuration:** Set in `.env` file: `APP_DEFAULT_ENVIRONMENT=production` or `APP_DEFAULT_ENVIRONMENT=sandbox`
+  - **Default value:** `sandbox` (configured in `config/app.php`) - for initial testing phase
+  - **Migration path:** After testing phase, change to `production` in `.env` or `config/app.php` - users who haven't configured settings will automatically switch to Production
+
 **Email service configuration:**
 - Email sending uses API token-based services (Postmark/Resend/Mailgun), not SMTP with password
 - Configure `MAIL_MAILER` in `.env` (e.g., `MAIL_MAILER=postmark`)

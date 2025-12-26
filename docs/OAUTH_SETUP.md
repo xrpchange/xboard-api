@@ -26,7 +26,7 @@ The OAuth flow works differently for Android and Web platforms:
 - **Description:** P2P exchange platform for payment verification
 
 #### Android Configuration
-- **Android package name:** `com.xrpchange.xboard`
+- **Android package name:** `com.xdexboard.xboard`
 - **SHA-256 fingerprint:** `66:00:A9:9E:3A:E4:6E:0F:E1:7F:07:59:89:6A:76:7D:81:CE:E5:44:EC:29:27:F2:AD:55:99:F3:DC:06:B2:08`
   - Note: This is the debug keystore fingerprint. For production, use release keystore fingerprint.
 
