@@ -215,20 +215,107 @@ See [GMAIL_OAUTH_SETUP.md](./GMAIL_OAUTH_SETUP.md) for detailed instructions on 
 
 ## Mail.ru OAuth Setup
 
-**Status:** ⚠️ Planned for implementation (Russian users)
+**Status:** ✅ Implemented (testing without moderation)
 
-Mail.ru supports OAuth 2.0 for IMAP access, similar to Yandex. Implementation should be straightforward.
+### Step 1: Register Application at Mail.ru OAuth
 
-**Important:** OAuth may not work for all applications - implement app password fallback mechanism.
+1. Go to https://o2.mail.ru/app/
+2. Create new application
+3. Fill in application details:
+   - **Application name:** XDexBoard
+   - **Description:** P2P exchange platform for payment verification
+   - **Image:** 96x96 PNG icon
 
-**Next Steps:**
-1. Register application at https://o2.mail.ru/app/
-2. Scope: `mail.imap`
-3. Implement OAuth flow (similar to Yandex)
-4. **Critical:** Implement app password fallback for cases where OAuth doesn't work
-5. Add Mail.ru support to ImapMonitorService
+#### Android Configuration (CRITICAL)
 
-See [EMAIL_PROVIDERS_OAUTH_SUPPORT.md](./EMAIL_PROVIDERS_OAUTH_SUPPORT.md) and [APP_PASSWORD_FALLBACK_EXPLANATION.md](./APP_PASSWORD_FALLBACK_EXPLANATION.md) for details.
+**IMPORTANT:** Mail.ru requires Android package name and SHA256 fingerprint for custom scheme redirect_uri to work!
+
+1. **Android package name:** `com.xdexboard.xboard`
+
+2. **SHA256 fingerprint:** Get it from your keystore:
+   ```bash
+   # For debug keystore (default location on Windows):
+   keytool -list -v -keystore %USERPROFILE%\.android\debug.keystore -alias androiddebugkey -storepass android
+   
+   # For release keystore:
+   keytool -list -v -keystore <path-to-keystore> -alias <your-alias> -storepass <password>
+   ```
+   Look for "SHA256" in the output and copy the fingerprint (format: `XX:XX:XX:...`)
+   
+   **Current debug keystore SHA256:** `66:00:A9:9E:3A:E4:6E:0F:E1:7F:07:59:89:6A:76:7D:81:CE:E5:44:EC:29:27:F2:AD:55:99:F3:DC:06:B2:08`
+
+3. **Enter in Mail.ru app settings:**
+   - Android package name: `com.xdexboard.xboard`
+   - SHA256 fingerprint: (paste the fingerprint from step 2)
+
+#### Redirect URIs
+
+Enter redirect URIs (one per line):
+```
+xboard://mailru-oauth
+https://api.xdexboard.com/api/oauth/mailru/callback
+```
+
+**IMPORTANT:** 
+- Custom scheme `xboard://mailru-oauth` will only work if Android package name and SHA256 fingerprint are registered
+- Without package name/fingerprint, Mail.ru will reject custom scheme and show error: "Обязательный параметр 'redirect_uri' не передан или имеет неправильное значение"
+- Web URL `https://api.xdexboard.com/api/oauth/mailru/callback` works as fallback
+
+#### OAuth Scopes
+
+- **Scope:** `mail.imap` (for IMAP access)
+- **Note:** Mail.ru may require moderation for IMAP/POP/SMTP access. We're testing without moderation first.
+
+4. Save and copy the **Client ID** and **Client Secret**
+
+### Step 2: Configure Client ID (Client App)
+
+**File:** `xboard-client/shared/src/commonMain/kotlin/com/xdexboard/xboard/config/OAuthConfig.kt`
+
+```kotlin
+const val MAILRU_CLIENT_ID = "019b592ab14c7769847171b75fa7cf16"
+```
+
+**Status:** ✅ Already configured
+
+### Step 3: Configure Mail.ru OAuth Credentials (Server-Side)
+
+**IMPORTANT:** Client Secret should ONLY be stored on the server, never in client-side code!
+
+**File:** `xboard-api/.env`
+
+```env
+MAILRU_OAUTH_CLIENT_ID=019b592ab14c7769847171b75fa7cf16
+MAILRU_OAUTH_CLIENT_SECRET=019b592ab14c7774b43644c9b70d0cba
+```
+
+**File:** `xboard-api/config/services.php`
+
+The configuration is already set up to read from environment variables:
+
+```php
+'mailru_oauth' => [
+    'client_id' => env('MAILRU_OAUTH_CLIENT_ID', ''),
+    'client_secret' => env('MAILRU_OAUTH_CLIENT_SECRET', ''),
+],
+```
+
+### Step 4: Test OAuth Flow
+
+1. Build and install the client app
+2. Go to Settings → Email Access Settings
+3. Click "Mail.ru" button
+4. Complete OAuth authorization
+5. Check if IMAP access works
+
+**Note:** If OAuth doesn't work without moderation, we'll implement App Password fallback (see [APP_PASSWORD_FALLBACK_EXPLANATION.md](./APP_PASSWORD_FALLBACK_EXPLANATION.md)).
+
+### API Endpoints
+
+**OAuth Callback:** `GET /api/oauth/mailru/callback`  
+**Token Exchange:** `POST /api/oauth/mailru/exchange-token`
+
+See [EMAIL_PROVIDERS_OAUTH_SUPPORT.md](./EMAIL_PROVIDERS_OAUTH_SUPPORT.md) for more details.
 
 ## Yahoo OAuth Setup
 
@@ -266,7 +353,6 @@ See [EMAIL_PROVIDERS_OAUTH_SUPPORT.md](./EMAIL_PROVIDERS_OAUTH_SUPPORT.md) for d
 
 ## Future Implementations
 
-- Mail.ru OAuth integration (priority - Russian users)
 - Yahoo OAuth integration (priority - International users)
 - Outlook China OAuth integration (priority - Chinese users)
 - Token refresh mechanism

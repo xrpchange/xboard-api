@@ -477,20 +477,26 @@ class OAuthController extends BaseApiController
     
     /**
      * Build redirect URL for Mail.ru OAuth
+     * 
+     * IMPORTANT: Since Mail.ru doesn't accept custom scheme in redirect_uri,
+     * we use web URL for authorization, then redirect to deep link for mobile apps.
+     * 
+     * For mobile apps: redirect to deep link (xboard://mailru-oauth)
+     * For web apps: redirect to web app URL
      */
     private function buildMailruRedirectUrl(?string $code, ?string $error, ?string $errorDescription): string
     {
-        $webAppUrl = config('app.web_app_url', env('APP_WEB_URL', 'https://xdexboard.com'));
-        
+        // Always redirect to deep link for mobile apps
+        // Mail.ru redirects to web URL (https://api.xdexboard.com/api/oauth/mailru/callback),
+        // and we redirect from there to deep link
         if ($code) {
-            return $webAppUrl . '/oauth/callback?provider=mailru&code=' . urlencode($code);
+            return 'xboard://mailru-oauth?code=' . urlencode($code);
         } else {
             $params = http_build_query([
-                'provider' => 'mailru',
                 'error' => $error,
                 'error_description' => $errorDescription
             ]);
-            return $webAppUrl . '/oauth/callback?' . $params;
+            return 'xboard://mailru-oauth?' . $params;
         }
     }
     
@@ -503,7 +509,16 @@ class OAuthController extends BaseApiController
     public function mailruExchangeToken(Request $request): JsonResponse
     {
         $code = $request->input('code');
-        $redirectUri = $request->input('redirect_uri', 'xboard://mailru-oauth');
+        // IMPORTANT: redirect_uri must exactly match the one used in authorization request
+        // Since we use web URL (https://api.xdexboard.com/api/oauth/mailru/callback) for authorization,
+        // we must use the same web URL here, not the deep link
+        $redirectUri = $request->input('redirect_uri', 'https://api.xdexboard.com/api/oauth/mailru/callback');
+        
+        Log::info('Mail.ru OAuth token exchange request', [
+            'has_code' => !empty($code),
+            'redirect_uri' => $redirectUri,
+            'code_preview' => $code ? substr($code, 0, 20) . '...' : null,
+        ]);
         
         if (empty($code)) {
             return response()->json([
@@ -530,22 +545,43 @@ class OAuthController extends BaseApiController
         }
         
         // Exchange code for token via Mail.ru OAuth API
+        // IMPORTANT: redirect_uri must exactly match the one used in authorization request
         try {
             $httpClient = new \GuzzleHttp\Client();
+            
+            $tokenRequestParams = [
+                'grant_type' => 'authorization_code',
+                'code' => $code,
+                'client_id' => $clientId,
+                'client_secret' => $clientSecret,
+                'redirect_uri' => $redirectUri,
+            ];
+            
+            Log::info('Mail.ru OAuth token exchange request params', [
+                'grant_type' => $tokenRequestParams['grant_type'],
+                'has_code' => !empty($tokenRequestParams['code']),
+                'has_client_id' => !empty($tokenRequestParams['client_id']),
+                'has_client_secret' => !empty($tokenRequestParams['client_secret']),
+                'redirect_uri' => $tokenRequestParams['redirect_uri'],
+            ]);
+            
             $response = $httpClient->post('https://connect.mail.ru/oauth/token', [
-                'form_params' => [
-                    'grant_type' => 'authorization_code',
-                    'code' => $code,
-                    'client_id' => $clientId,
-                    'client_secret' => $clientSecret,
-                    'redirect_uri' => $redirectUri,
-                ],
+                'form_params' => $tokenRequestParams,
                 'headers' => [
                     'Content-Type' => 'application/x-www-form-urlencoded',
                 ],
             ]);
             
-            $tokenData = json_decode($response->getBody()->getContents(), true);
+            $responseBody = $response->getBody()->getContents();
+            $tokenData = json_decode($responseBody, true);
+            
+            Log::info('Mail.ru OAuth token exchange response', [
+                'status' => $response->getStatusCode(),
+                'response_body' => $responseBody,
+                'has_access_token' => isset($tokenData['access_token']),
+                'error' => $tokenData['error'] ?? null,
+                'error_description' => $tokenData['error_description'] ?? null,
+            ]);
             
             if (isset($tokenData['access_token'])) {
                 Log::info('Mail.ru OAuth token exchange successful', [
