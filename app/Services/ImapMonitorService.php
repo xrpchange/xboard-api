@@ -14,8 +14,8 @@ use Webklex\PHPIMAP\Message;
  * Monitors user's email inbox via IMAP to read original emails
  * with preserved DKIM signatures for payment verification.
  * 
- * Uses webklex/php-imap library which supports XOAUTH2 authentication
- * for OAuth tokens (Yandex, Gmail, Mail.ru, Yahoo).
+ * Uses webklex/php-imap library for IMAP/POP3 connections
+ * with username/password authentication.
  */
 class ImapMonitorService
 {
@@ -24,152 +24,178 @@ class ImapMonitorService
     private string $email = '';
     
     /**
-     * Connect to IMAP server using OAuth token
+     * Connect to IMAP/POP3 server using username and password
      * 
-     * For Yandex: requires email address and OAuth access_token with mail:imap_ro scope
-     * 
-     * @param string $email User email address (required, should be obtained from OAuth)
-     * @param string $accessToken OAuth access token
-     * @param string $imapHost IMAP server hostname (e.g., imap.yandex.com for Yandex)
-     * @param int $port IMAP server port (default: 993 for SSL)
+     * @param string $email User email address
+     * @param string $password User password or app password
+     * @param string $imapHost IMAP/POP3 server hostname
+     * @param int $port IMAP/POP3 server port (default: 993 for IMAP SSL, 995 for POP3 SSL)
+     * @param string $protocol Protocol: 'imap' or 'pop3' (default: 'imap')
+     * @param bool $useSsl Use SSL/TLS encryption (default: true)
      * @return bool True if connection successful
      */
-    public function connectWithOAuth(string $email, string $accessToken, string $imapHost, int $port = 993): bool
+    public function connect(string $email, string $password, string $imapHost, int $port = 993, string $protocol = 'imap', bool $useSsl = true): bool
     {
         try {
-            if (empty($email)) {
-                Log::error("Email address is required for IMAP connection");
-                return false;
+            if (empty($email) || empty($password)) {
+                $errorMsg = 'Email address and password are required for IMAP connection';
+                Log::error($errorMsg);
+                throw new \RuntimeException($errorMsg);
             }
             
             $this->email = $email;
             
-            Log::info("Attempting IMAP OAuth connection", [
+            Log::info("Attempting IMAP/POP3 connection", [
                 'email' => $this->email,
                 'host' => $imapHost,
                 'port' => $port,
-                'has_token' => !empty($accessToken),
-                'token_preview' => !empty($accessToken) ? substr($accessToken, 0, 20) . '...' : 'empty',
-                'full_token' => $accessToken // TEMPORARY for testing
+                'protocol' => $protocol,
+                'use_ssl' => $useSsl,
+                'has_password' => !empty($password)
             ]);
             
             $cm = new ClientManager();
             
-            // Create IMAP client with XOAUTH2 authentication
-            // For Yandex: use 'oauth' authentication method with access_token as password
+            // Create IMAP/POP3 client with username/password authentication
             $config = [
                 'host'          => $imapHost,
                 'port'          => $port,
-                'encryption'    => 'ssl',
-                'validate_cert' => true,
-                'protocol'      => 'imap',
+                'encryption'    => $useSsl ? 'ssl' : 'none',
+                'validate_cert' => $useSsl,
+                'protocol'      => $protocol,
                 'username'      => $this->email,
-                'password'      => $accessToken, // OAuth access_token (without "Bearer " prefix)
-                'authentication' => 'oauth',      // XOAUTH2 authentication
+                'password'      => $password,
             ];
             
-            Log::info("IMAP client configuration", [
+            Log::info("IMAP/POP3 client configuration", [
                 'host' => $config['host'],
                 'port' => $config['port'],
+                'protocol' => $config['protocol'],
+                'encryption' => $config['encryption'],
                 'username' => $config['username'],
-                'authentication' => $config['authentication'],
                 'has_password' => !empty($config['password'])
             ]);
             
             $this->client = $cm->make($config);
             
-            // Verify token validity based on IMAP host
-            // For Yandex: verify with Yandex API
-            // For Gmail: verify with Google API
-            // For Mail.ru: verify with Mail.ru API
-            // For other providers: skip verification
-            try {
-                $httpClient = new \GuzzleHttp\Client();
-                
-                if (strpos($imapHost, 'yandex') !== false) {
-                    // Yandex token verification
-                    $verifyResponse = $httpClient->get('https://login.yandex.ru/info', [
-                        'headers' => [
-                            'Authorization' => 'OAuth ' . $accessToken,
-                        ],
-                        'timeout' => 10,
-                    ]);
-                    
-                    $userInfo = json_decode($verifyResponse->getBody()->getContents(), true);
-                    Log::info("Yandex token verification successful", [
-                        'email' => $userInfo['default_email'] ?? 'unknown',
-                        'login' => $userInfo['login'] ?? 'unknown',
-                        'scopes' => $userInfo['scopes'] ?? 'unknown'
-                    ]);
-                    
-                    // For Yandex IMAP XOAUTH2, use full email address (not login)
-                    $config['username'] = $this->email;
-                } elseif (strpos($imapHost, 'gmail') !== false) {
-                    // Gmail token verification
-                    $verifyResponse = $httpClient->get('https://www.googleapis.com/oauth2/v2/userinfo', [
-                        'headers' => [
-                            'Authorization' => 'Bearer ' . $accessToken,
-                        ],
-                        'timeout' => 10,
-                    ]);
-                    
-                    $userInfo = json_decode($verifyResponse->getBody()->getContents(), true);
-                    Log::info("Gmail token verification successful", [
-                        'email' => $userInfo['email'] ?? 'unknown',
-                        'verified_email' => $userInfo['verified_email'] ?? false,
-                    ]);
-                    
-                    // For Gmail IMAP XOAUTH2, use full email address
-                    $config['username'] = $this->email;
-                } elseif (strpos($imapHost, 'mail.ru') !== false || strpos($imapHost, 'mailru') !== false) {
-                    // Mail.ru token verification
-                    $clientId = config('services.mailru_oauth.client_id');
-                    $verifyResponse = $httpClient->get('https://api.mail.ru/userinfo', [
-                        'query' => [
-                            'access_token' => $accessToken,
-                        ],
-                        'timeout' => 10,
-                    ]);
-                    
-                    $userInfo = json_decode($verifyResponse->getBody()->getContents(), true);
-                    Log::info("Mail.ru token verification successful", [
-                        'email' => $userInfo['email'] ?? 'unknown',
-                        'uid' => $userInfo['uid'] ?? 'unknown',
-                    ]);
-                    
-                    // For Mail.ru IMAP XOAUTH2, use full email address
-                    $config['username'] = $this->email;
-                }
-            } catch (\Exception $verifyError) {
-                $providerName = strpos($imapHost, 'yandex') !== false ? 'Yandex' : 
-                               (strpos($imapHost, 'gmail') !== false ? 'Gmail' :
-                               (strpos($imapHost, 'mail.ru') !== false || strpos($imapHost, 'mailru') !== false ? 'Mail.ru' : 'Unknown'));
-                Log::warning("{$providerName} token verification failed, but proceeding with IMAP connection", [
-                    'error' => $verifyError->getMessage()
-                ]);
-            }
-            
-            // Connect to IMAP server
-            Log::info("Calling client->connect() for IMAP OAuth", [
+            // Connect to IMAP/POP3 server
+            Log::info("Calling client->connect() for IMAP/POP3", [
                 'username' => $config['username']
             ]);
             $this->client->connect();
             Log::info("client->connect() completed successfully");
             
-            // Get INBOX folder
-            $this->folder = $this->client->getFolder('INBOX');
+            // Get INBOX folder (for IMAP) or default folder (for POP3)
+            if ($protocol === 'imap') {
+                $this->folder = $this->client->getFolder('INBOX');
+            } else {
+                // POP3 doesn't have folders, use default
+                $folders = $this->client->getFolders();
+                $this->folder = $folders->first();
+            }
             
-            Log::info("IMAP OAuth connected successfully for {$this->email}");
+            Log::info("IMAP/POP3 connected successfully for {$this->email}");
             return true;
             
         } catch (\Exception $e) {
-            Log::error("IMAP OAuth connection error: " . $e->getMessage(), [
+            $errorMessage = $e->getMessage();
+            
+            // Build detailed error information
+            $errorDetails = [
+                'original_error' => $errorMessage,
                 'email' => $this->email,
                 'host' => $imapHost,
-                'exception' => $e->getTraceAsString()
-            ]);
-            return false;
+                'port' => $port,
+                'protocol' => $protocol ?? 'imap',
+                'use_ssl' => $useSsl,
+            ];
+            
+            // Provide more helpful error messages based on error type
+            $userFriendlyError = $errorMessage;
+            $suggestions = [];
+            
+            if (stripos($errorMessage, 'AUTHENTICATIONFAILED') !== false) {
+                if (stripos($errorMessage, 'IMAP is disabled') !== false || stripos($errorMessage, 'disabled') !== false) {
+                    $userFriendlyError = 'IMAP access is disabled for this account.';
+                    $suggestions[] = 'Enable IMAP access in your email account settings.';
+                    
+                    // Provider-specific instructions
+                    if (stripos($imapHost, 'yandex') !== false) {
+                        $suggestions[] = 'For Yandex: Go to Settings → Mail programs → Enable "Access via IMAP protocol"';
+                        $suggestions[] = 'For Yandex: You may also need to create an app password in Security settings';
+                    } elseif (stripos($imapHost, 'gmail') !== false) {
+                        $suggestions[] = 'For Gmail: Go to Settings → Forwarding and POP/IMAP → Enable IMAP';
+                        $suggestions[] = 'For Gmail: Enable 2-Step Verification and create an App Password';
+                    }
+                } else {
+                    $userFriendlyError = 'Authentication failed: Invalid email or password.';
+                    $suggestions[] = 'Check that your email address and password are correct.';
+                    
+                    // Provider-specific instructions
+                    if (stripos($imapHost, 'yandex') !== false) {
+                        $suggestions[] = 'For Yandex: You must use an app password, not your regular account password.';
+                        $suggestions[] = 'For Yandex: Create app password at https://id.yandex.ru/security/app-passwords';
+                        $suggestions[] = 'For Yandex: IMAP access must be enabled in account settings';
+                        $errorDetails['yandex_note'] = 'Yandex requires app password for IMAP access. Regular password will not work.';
+                    } elseif (stripos($imapHost, 'gmail') !== false) {
+                        $suggestions[] = 'For Gmail: Use App Password, not your regular password.';
+                        $suggestions[] = 'For Gmail: Enable 2-Step Verification first, then create App Password';
+                    }
+                }
+            } elseif (stripos($errorMessage, 'Connection refused') !== false || stripos($errorMessage, 'Connection timed out') !== false) {
+                $userFriendlyError = 'Cannot connect to email server.';
+                $suggestions[] = "Check server host: {$imapHost}";
+                $suggestions[] = "Check server port: {$port}";
+                $suggestions[] = 'Verify your internet connection';
+                $suggestions[] = 'Check if firewall is blocking the connection';
+                
+                // Check common misconfigurations
+                if ($protocol === 'imap' && $port === 993 && !$useSsl) {
+                    $suggestions[] = 'Port 993 requires SSL/TLS. Enable SSL.';
+                } elseif ($protocol === 'imap' && $port === 143 && $useSsl) {
+                    $suggestions[] = 'Port 143 usually does not use SSL. Try disabling SSL or use port 993 with SSL.';
+                }
+            } elseif (stripos($errorMessage, 'SSL') !== false || stripos($errorMessage, 'certificate') !== false || stripos($errorMessage, 'TLS') !== false) {
+                $userFriendlyError = 'SSL/TLS connection error.';
+                $suggestions[] = "Check SSL/TLS settings. Current: " . ($useSsl ? 'SSL enabled' : 'SSL disabled');
+                $suggestions[] = "For port {$port}, SSL should be " . ($port === 993 || $port === 995 ? 'enabled' : 'disabled');
+                if (stripos($errorMessage, 'certificate') !== false) {
+                    $suggestions[] = 'Certificate validation failed. Check server certificate.';
+                }
+            }
+            
+            // Add full error details
+            $errorDetails['user_message'] = $userFriendlyError;
+            $errorDetails['suggestions'] = $suggestions;
+            $errorDetails['full_error'] = $errorMessage;
+            
+            Log::error("IMAP/POP3 connection error", $errorDetails);
+            
+            // Build comprehensive error message for user
+            $fullErrorMsg = $userFriendlyError;
+            if (!empty($suggestions)) {
+                $fullErrorMsg .= "\n\nSuggestions:\n" . implode("\n", array_map(fn($s) => "• " . $s, $suggestions));
+            }
+            $fullErrorMsg .= "\n\nTechnical details:\n";
+            $fullErrorMsg .= "Server: {$imapHost}:{$port}\n";
+            $fullErrorMsg .= "Protocol: " . strtoupper($protocol ?? 'imap') . "\n";
+            $fullErrorMsg .= "SSL: " . ($useSsl ? 'Yes' : 'No') . "\n";
+            $fullErrorMsg .= "Error: {$errorMessage}";
+            
+            // Store comprehensive error message in exception
+            $e->userMessage = $fullErrorMsg;
+            $e->errorDetails = $errorDetails;
+            throw $e;
         }
+    }
+    
+    /**
+     * @deprecated Use connect() method instead. This method is kept for backward compatibility.
+     */
+    public function connectWithOAuth(string $email, string $accessToken, string $imapHost, int $port = 993): bool
+    {
+        // For backward compatibility, treat accessToken as password
+        return $this->connect($email, $accessToken, $imapHost, $port, 'imap', true);
     }
     
     /**

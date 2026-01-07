@@ -209,17 +209,18 @@ class GmailApiService
 ## Security Considerations
 
 ### IMAP Credentials Storage
-```php
-// Encrypt credentials before storage
-$encrypted = encrypt($password, config('app.key'));
+**Note:** Email accounts are stored only on the client side. The server does not store IMAP credentials.
 
-// Store in database
-EmailAccount::create([
-    'user_id' => $userId,
-    'email' => $email,
-    'password_encrypted' => $encrypted,
-    'imap_host' => $imapHost,
-]);
+```kotlin
+// Client-side: Encrypt credentials before storage (example)
+val encrypted = encrypt(password, encryptionKey)
+
+// Store in client-side encrypted storage
+emailAccountStorage.save(
+    email = email,
+    passwordEncrypted = encrypted,
+    imapHost = imapHost
+)
 ```
 
 ### OAuth Token Storage

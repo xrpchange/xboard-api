@@ -35,32 +35,14 @@ sudo systemctl restart php8.3-fpm  # If using FPM
 php -m | grep imap
 ```
 
-### 1. Database Migration
+### 1. Add Email Account via Client
 
-```bash
-php artisan migrate
-```
-
-This creates `email_accounts` table for storing encrypted IMAP credentials.
-
-### 2. Add Email Account via API
-
-**Endpoint:** `POST /api/v1/email-accounts`
-
-**Request:**
-```json
-{
-  "email": "user@gmail.com",
-  "password": "app_password_or_imap_password",
-  "imap_host": "imap.gmail.com",
-  "imap_port": 993
-}
-```
+Email accounts are stored only on the client side. The server does not store IMAP credentials.
 
 **Common IMAP Hosts:**
 - Gmail: `imap.gmail.com` (port 993, requires App Password)
 - Outlook: `outlook.office365.com` (port 993)
-- Yandex: `imap.yandex.ru` (port 993)
+- Yandex: `imap.yandex.com` (port 993, requires app password, IMAP must be enabled)
 - Custom: user's IMAP server
 
 ### 3. Gmail App Password Setup
@@ -72,18 +54,6 @@ For Gmail, users need to create App Password:
 3. Generate App Password
 4. Use App Password (not regular password) in API
 
-### 4. Run Monitoring Command
-
-**One-time check:**
-```bash
-php artisan email:monitor --once
-```
-
-**Continuous monitoring (cron):**
-```bash
-# Add to crontab
-* * * * * cd /path/to/xboard-api && php artisan email:monitor --once
-```
 
 ## How It Works
 
@@ -135,49 +105,6 @@ After successful verification:
 - Connections closed after use
 - Error handling prevents credential leaks
 
-## API Endpoints
-
-### Add Email Account
-
-```http
-POST /api/v1/email-accounts
-Authorization: Bearer {token}
-Content-Type: application/json
-
-{
-  "email": "user@gmail.com",
-  "password": "app_password",
-  "imap_host": "imap.gmail.com",
-  "imap_port": 993
-}
-```
-
-### List Email Accounts
-
-```http
-GET /api/v1/email-accounts
-Authorization: Bearer {token}
-```
-
-### Remove Email Account
-
-```http
-DELETE /api/v1/email-accounts/{id}
-Authorization: Bearer {token}
-```
-
-## Monitoring
-
-### Check Status
-
-```bash
-# View active accounts
-php artisan tinker
->>> App\Models\EmailAccount::active()->get(['email', 'last_checked_at']);
-
-# Check logs
-tail -f storage/logs/laravel.log | grep "Email monitoring"
-```
 
 ### Troubleshooting
 
@@ -197,16 +124,8 @@ tail -f storage/logs/laravel.log | grep "Email monitoring"
 | Aspect | Forwarding | IMAP Monitoring |
 |--------|-----------|-----------------|
 | **DKIM Preservation** | ❌ Broken | ✅ Preserved |
-| **User Action** | Required each time | Automatic |
+| **User Action** | Required each time | Automatic (client-side) |
 | **Pattern Filtering** | Manual | Automatic |
-| **Real-time** | No | Yes (IDLE) |
-| **Security** | Good | Better (encrypted) |
-
-## Next Steps
-
-1. Test with real email account
-2. Add more bank patterns
-3. Implement transaction update API
-4. Add email proof storage
-5. Set up cron job for monitoring
+| **Real-time** | No | Yes (client-side) |
+| **Security** | Good | Better (credentials on client only) |
 

@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
             BankSeeder::class,
             NodeSeeder::class,
             ExchangeLotSeeder::class,
+            EmailProviderSeeder::class,
         ]);
     }
 }

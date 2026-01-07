@@ -32,39 +32,8 @@ use App\Http\Controllers\Api\Admin\NodeAdminController;
 //     return $request->user();
 // });
 
-// OAuth callbacks (public, no authentication required)
-// These endpoints receive OAuth callbacks from providers (Yandex, Gmail, Outlook)
-// and redirect users back to the web application
-// Note: Android uses SDK authentication with deep links, not these endpoints
-Route::prefix('oauth')->group(function () {
-    // Yandex OAuth callback for web
-    // Registered redirect URI: https://api.xdexboard.com/api/oauth/yandex/callback
-    Route::get('/yandex/callback', [\App\Http\Controllers\Api\OAuthController::class, 'yandexCallback']);
-    
-    // Gmail OAuth callback (for future implementation)
-    Route::get('/gmail/callback', [\App\Http\Controllers\Api\OAuthController::class, 'gmailCallback']);
-    
-    // Mail.ru OAuth callback
-    Route::get('/mailru/callback', [\App\Http\Controllers\Api\OAuthController::class, 'mailruCallback']);
-});
-
-// OAuth token exchange endpoints (v1 API, public, no authentication required)
-// Mobile apps use these endpoints to exchange authorization codes for access tokens
-Route::prefix('v1/oauth')->group(function () {
-    // Yandex OAuth token exchange (server-side, uses client_secret from server)
-    // Mobile apps send authorization code here, server exchanges it for access token
-    Route::post('/yandex/exchange-token', [\App\Http\Controllers\Api\OAuthController::class, 'yandexExchangeToken']);
-    
-    // Gmail OAuth token exchange (server-side, uses client_secret from server)
-    Route::post('/gmail/exchange-token', [\App\Http\Controllers\Api\OAuthController::class, 'gmailExchangeToken']);
-    
-    // Mail.ru OAuth token exchange (server-side, uses client_secret from server)
-    Route::post('/mailru/exchange-token', [\App\Http\Controllers\Api\OAuthController::class, 'mailruExchangeToken']);
-});
-
-// Email access endpoints (v1 API, uses OAuth access token, no escrow token required)
-// These endpoints use OAuth access tokens from email providers (Yandex, Gmail, Outlook)
-// Access token is passed in request parameters/headers, not escrow token
+// Email access endpoints (v1 API, uses IMAP/POP3 credentials, no escrow token required)
+// These endpoints use IMAP/POP3 username/password for email access
 // Currently used for testing email verification and DKIM validation (no transaction required)
 Route::prefix('v1/payments')->group(function () {
     // Get email list and raw email (OAuth token required)
@@ -80,12 +49,9 @@ Route::prefix('v1/payments')->group(function () {
     Route::post('/forward-email', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'forwardEmail']);
 });
 
-// Email accounts for IMAP monitoring (v1 API, no authentication required for now)
-// TODO: Add proper authentication (OAuth or user session)
-Route::prefix('v1/email-accounts')->group(function () {
-    Route::get('/', [\App\Http\Controllers\Api\EmailAccountController::class, 'index']);
-    Route::post('/', [\App\Http\Controllers\Api\EmailAccountController::class, 'store']);
-    Route::delete('/{emailAccount}', [\App\Http\Controllers\Api\EmailAccountController::class, 'destroy']);
+// Email providers (v1 API, public, no authentication required)
+Route::prefix('v1/email-providers')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\EmailProviderController::class, 'index']);
 });
 
 // Authentication (without middleware)

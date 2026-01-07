@@ -176,31 +176,31 @@ For Mail.ru users:
    - Try OAuth first, fallback to app password
    - Handle both authentication methods
 
-3. **Database Schema:**
-   - Add `app_password` field to email accounts table (encrypted)
-   - Add `auth_method` field (oauth/app_password)
+3. **Client-side Storage:**
+   - Store `app_password` in client-side encrypted storage
+   - Store `auth_method` field (oauth/app_password)
+   - Note: Email accounts are stored only on the client, not on the server
 
-### Example Implementation
+### Example Implementation (Client-side)
 
-```php
-// EmailAccount model
-class EmailAccount {
-    public $email;
-    public $provider; // 'yandex', 'mailru'
-    public $oauth_token; // OAuth access token
-    public $app_password; // Encrypted app password (fallback)
-    public $auth_method; // 'oauth' or 'app_password'
-}
+```kotlin
+// EmailAccount data class (client-side)
+data class EmailAccount(
+    val email: String,
+    val provider: String, // 'yandex', 'mailru'
+    val oauthToken: String?, // OAuth access token
+    val appPassword: String?, // Encrypted app password (fallback)
+    val authMethod: String // 'oauth' or 'app_password'
+)
 
-// Connection logic
-public function connect(EmailAccount $account): bool
-{
-    if ($account->auth_method === 'oauth' && !empty($account->oauth_token)) {
+// Connection logic (client-side)
+fun connect(account: EmailAccount): Boolean {
+    if (account.authMethod == "oauth" && !account.oauthToken.isNullOrEmpty()) {
         // Try OAuth
-        $connected = $this->connectWithOAuth(
-            $account->email, 
-            $account->oauth_token, 
-            $this->getImapHost($account->provider)
+        val connected = connectWithOAuth(
+            account.email, 
+            account.oauthToken, 
+            getImapHost(account.provider)
         );
         
         if ($connected) {

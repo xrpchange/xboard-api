@@ -50,7 +50,7 @@ class PaymentVerificationController extends Controller
      *         @OA\JsonContent(
      *             required={"email_data", "format"},
      *             @OA\Property(property="email_data", type="string", description="Email content: base64 raw email, .eml file, or plain text copy-paste"),
-     *             @OA\Property(property="format", type="string", enum={"raw", "eml", "plain"}, description="Format: raw (OAuth), eml (file), plain (copy-paste)"),
+     *             @OA\Property(property="format", type="string", enum={"raw", "eml", "plain"}, description="Format: raw (IMAP/POP3), eml (file), plain (copy-paste)"),
      *             @OA\Property(property="from_address", type="string", description="Required for plain format: sender email address"),
      *         )
      *     ),
@@ -80,7 +80,7 @@ class PaymentVerificationController extends Controller
             // Process based on format
             switch ($format) {
                 case 'raw':
-                    // OAuth raw email (base64 encoded)
+                    // IMAP/POP3 raw email (base64 encoded)
                     $rawEmail = base64_decode($emailData);
                     break;
                     
@@ -127,7 +127,7 @@ class PaymentVerificationController extends Controller
                         'success' => false,
                         'message' => 'DKIM verification failed',
                         'error' => $dkimResult['error'],
-                        'hint' => 'Try forwarding email as attachment or use OAuth method'
+                        'hint' => 'Try forwarding email as attachment or use IMAP/POP3 method'
                     ], 422);
                 }
             } else {
@@ -457,7 +457,7 @@ class PaymentVerificationController extends Controller
      *         required=true,
      *         @OA\JsonContent(
      *             required={"email_raw"},
-     *             @OA\Property(property="email_raw", type="string", description="Base64 encoded raw email (from OAuth or .eml)"),
+     *             @OA\Property(property="email_raw", type="string", description="Base64 encoded raw email (from IMAP/POP3 or .eml)"),
      *         )
      *     ),
      *     @OA\Response(
@@ -568,7 +568,7 @@ class PaymentVerificationController extends Controller
      *         required=true,
      *         @OA\JsonContent(
      *             required={"email_raw"},
-     *             @OA\Property(property="email_raw", type="string", description="Base64 encoded raw email (from OAuth or .eml)"),
+     *             @OA\Property(property="email_raw", type="string", description="Base64 encoded raw email (from IMAP/POP3 or .eml)"),
      *         )
      *     ),
      *     @OA\Response(response=200, description="Email forwarded to server"),
@@ -788,7 +788,7 @@ class PaymentVerificationController extends Controller
     /**
      * @OA\Get(
      *     path="/api/v1/payments/emails",
-     *     summary="Get email list from OAuth-connected account",
+     *     summary="Get email list from IMAP/POP3 account",
      *     tags={"Payment Verification"},
      *     security={{"bearerAuth":{}}},
      *     @OA\Parameter(
@@ -796,7 +796,7 @@ class PaymentVerificationController extends Controller
      *         in="query",
      *         required=true,
      *         description="Email provider",
-     *         @OA\Schema(type="string", enum={"yandex", "gmail", "mailru", "yahoo"})
+     *         @OA\Schema(type="string", enum={"gmail", "yahoo"})
      *     ),
      *     @OA\Parameter(
      *         name="email",
@@ -806,11 +806,32 @@ class PaymentVerificationController extends Controller
      *         @OA\Schema(type="string")
      *     ),
      *     @OA\Parameter(
-     *         name="access_token",
+     *         name="password",
      *         in="query",
      *         required=true,
-     *         description="OAuth access token",
+     *         description="Email password or app password",
      *         @OA\Schema(type="string")
+     *     ),
+     *     @OA\Parameter(
+     *         name="protocol",
+     *         in="query",
+     *         required=false,
+     *         description="Protocol: imap or pop3 (default: imap)",
+     *         @OA\Schema(type="string", enum={"imap", "pop3"}, default="imap")
+     *     ),
+     *     @OA\Parameter(
+     *         name="server_host",
+     *         in="query",
+     *         required=false,
+     *         description="IMAP/POP3 server hostname (auto-detected if not provided)",
+     *         @OA\Schema(type="string")
+     *     ),
+     *     @OA\Parameter(
+     *         name="server_port",
+     *         in="query",
+     *         required=false,
+     *         description="IMAP/POP3 server port (auto-detected if not provided)",
+     *         @OA\Schema(type="integer")
      *     ),
      *     @OA\Parameter(
      *         name="limit",
@@ -833,9 +854,12 @@ class PaymentVerificationController extends Controller
     public function getEmailList(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'provider' => 'required|in:yandex,gmail,mailru,yahoo',
-            'email' => 'required|string', // Email from OAuth (already known on client)
-            'access_token' => 'required|string',
+            'provider' => 'nullable|string', // Provider name is only for reference, not used by server
+            'email' => 'required|string|email',
+            'password' => 'required|string',
+            'protocol' => 'nullable|in:imap,pop3',
+            'server_host' => 'required|string',
+            'server_port' => 'required|integer|min:1|max:65535',
             'limit' => 'nullable|integer|min:1|max:100',
             'offset' => 'nullable|integer|min:0',
         ]);
@@ -855,52 +879,83 @@ class PaymentVerificationController extends Controller
 
         try {
             $provider = $request->provider;
-            $email = $request->email; // Email from OAuth (already known on client)
-            $accessToken = $request->access_token;
+            $email = $request->email;
+            $password = $request->password;
+            $protocol = $request->protocol ?? 'imap';
+            $serverHost = $request->server_host;
+            $serverPort = $request->server_port;
             $limit = $request->limit ?? 50;
             $offset = $request->offset ?? 0;
             
             Log::info("getEmailList request data", [
                 'provider' => $provider,
                 'email' => $email,
-                'has_access_token' => !empty($accessToken),
+                'protocol' => $protocol,
+                'has_password' => !empty($password),
+                'server_host' => $serverHost,
+                'server_port' => $serverPort,
                 'limit' => $limit,
                 'offset' => $offset
             ]);
 
-            // Get IMAP settings for provider
-            $imapSettings = $this->getImapSettings($provider);
-            
-            if (!$imapSettings) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "Provider '{$provider}' not supported"
-                ], 422);
-            }
+            // Server settings are required (validated above)
+            $host = $serverHost;
+            $port = $serverPort;
+            $useSsl = true; // Always use SSL for security
 
-            // Connect via IMAP using OAuth token
+            // Connect via IMAP/POP3 using username and password
             $imapService = new ImapMonitorService();
             
-            if (in_array($provider, ['yandex', 'gmail', 'mailru', 'yahoo'])) {
-                // All these providers use XOAUTH2 for IMAP
-                $connected = $imapService->connectWithOAuth(
-                    $email, // Email from OAuth (obtained during authorization)
-                    $accessToken,
-                    $imapSettings['host'],
-                    $imapSettings['port']
+            try {
+                $connected = $imapService->connect(
+                    $email,
+                    $password,
+                    $host,
+                    $port,
+                    $protocol,
+                    $useSsl
                 );
-            } else {
-                return response()->json([
-                    'success' => false,
-                    'message' => "OAuth IMAP not yet implemented for {$provider}"
-                ], 422);
-            }
 
-            if (!$connected) {
-                return response()->json([
+                if (!$connected) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Failed to connect to email server. Please check your credentials and server settings.'
+                    ], 422);
+                }
+            } catch (\Exception $e) {
+                Log::error("IMAP connection exception in getEmailList", [
+                    'email' => $email,
+                    'host' => $host,
+                    'port' => $port,
+                    'protocol' => $protocol,
+                    'error' => $e->getMessage(),
+                    'error_details' => $e->errorDetails ?? null,
+                    'trace' => $e->getTraceAsString()
+                ]);
+                
+                // Use comprehensive error message if available
+                $errorMessage = isset($e->userMessage) ? $e->userMessage : 'Connection error: ' . $e->getMessage();
+                
+                $response = [
                     'success' => false,
-                    'message' => 'Failed to connect to email server'
-                ], 422);
+                    'message' => $errorMessage,
+                    'error_code' => 'IMAP_CONNECTION_FAILED',
+                    'connection_details' => [
+                        'email' => $email,
+                        'host' => $host,
+                        'port' => $port,
+                        'protocol' => $protocol,
+                        'use_ssl' => true,
+                    ]
+                ];
+                
+                // Add error details if available
+                if (isset($e->errorDetails)) {
+                    $response['suggestions'] = $e->errorDetails['suggestions'] ?? [];
+                    $response['original_error'] = $e->errorDetails['original_error'] ?? $e->getMessage();
+                }
+                
+                return response()->json($response, 422);
             }
 
             // Get email list
@@ -946,7 +1001,7 @@ class PaymentVerificationController extends Controller
      *         in="query",
      *         required=true,
      *         description="Email provider",
-     *         @OA\Schema(type="string", enum={"yandex", "gmail", "mailru", "yahoo"})
+     *         @OA\Schema(type="string", enum={"gmail", "yahoo"})
      *     ),
      *     @OA\Parameter(
      *         name="email",
@@ -956,11 +1011,32 @@ class PaymentVerificationController extends Controller
      *         @OA\Schema(type="string")
      *     ),
      *     @OA\Parameter(
-     *         name="access_token",
+     *         name="password",
      *         in="query",
      *         required=true,
-     *         description="OAuth access token",
+     *         description="Email password or app password",
      *         @OA\Schema(type="string")
+     *     ),
+     *     @OA\Parameter(
+     *         name="protocol",
+     *         in="query",
+     *         required=false,
+     *         description="Protocol: imap or pop3 (default: imap)",
+     *         @OA\Schema(type="string", enum={"imap", "pop3"}, default="imap")
+     *     ),
+     *     @OA\Parameter(
+     *         name="server_host",
+     *         in="query",
+     *         required=false,
+     *         description="IMAP/POP3 server hostname (auto-detected if not provided)",
+     *         @OA\Schema(type="string")
+     *     ),
+     *     @OA\Parameter(
+     *         name="server_port",
+     *         in="query",
+     *         required=false,
+     *         description="IMAP/POP3 server port (auto-detected if not provided)",
+     *         @OA\Schema(type="integer")
      *     ),
      *     @OA\Response(response=200, description="Raw email retrieved"),
      *     @OA\Response(response=422, description="Validation error")
@@ -969,9 +1045,12 @@ class PaymentVerificationController extends Controller
     public function getRawEmail(Request $request, string $messageId): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'provider' => 'required|in:yandex,gmail,mailru,yahoo',
-            'email' => 'required|string', // Email from OAuth (already known on client)
-            'access_token' => 'required|string',
+            'provider' => 'nullable|string', // Provider name is only for reference, not used by server
+            'email' => 'required|string|email',
+            'password' => 'required|string',
+            'protocol' => 'nullable|in:imap,pop3',
+            'server_host' => 'required|string',
+            'server_port' => 'required|integer|min:1|max:65535',
         ]);
 
         if ($validator->fails()) {
@@ -983,41 +1062,48 @@ class PaymentVerificationController extends Controller
 
         try {
             $provider = $request->provider;
-            $email = $request->email; // Email from OAuth (already known on client)
-            $accessToken = $request->access_token;
+            $email = $request->email;
+            $password = $request->password;
+            $protocol = $request->protocol ?? 'imap';
+            $serverHost = $request->server_host;
+            $serverPort = $request->server_port;
 
-            // Get IMAP settings for provider
-            $imapSettings = $this->getImapSettings($provider);
-            
-            if (!$imapSettings) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "Provider '{$provider}' not supported"
-                ], 422);
-            }
+            // Server settings are required (validated above)
+            $host = $serverHost;
+            $port = $serverPort;
+            $useSsl = true; // Always use SSL for security
 
-            // Connect via IMAP using OAuth token
+            // Connect via IMAP/POP3 using username and password
             $imapService = new ImapMonitorService();
             
-            if (in_array($provider, ['yandex', 'gmail', 'mailru', 'yahoo'])) {
-                // All these providers use XOAUTH2 for IMAP
-                $connected = $imapService->connectWithOAuth(
-                    $email, // Email from OAuth (obtained during authorization)
-                    $accessToken,
-                    $imapSettings['host'],
-                    $imapSettings['port']
+            try {
+                $connected = $imapService->connect(
+                    $email,
+                    $password,
+                    $host,
+                    $port,
+                    $protocol,
+                    $useSsl
                 );
-            } else {
-                return response()->json([
-                    'success' => false,
-                    'message' => "OAuth IMAP not yet implemented for {$provider}"
-                ], 422);
-            }
 
-            if (!$connected) {
+                if (!$connected) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Failed to connect to email server. Please check your credentials and server settings.'
+                    ], 422);
+                }
+            } catch (\Exception $e) {
+                Log::error("IMAP connection exception in getRawEmail", [
+                    'email' => $email,
+                    'host' => $host,
+                    'port' => $port,
+                    'protocol' => $protocol,
+                    'error' => $e->getMessage()
+                ]);
+                
                 return response()->json([
                     'success' => false,
-                    'message' => 'Failed to connect to email server'
+                    'message' => 'Connection error: ' . $e->getMessage()
                 ], 422);
             }
 
@@ -1055,33 +1141,6 @@ class PaymentVerificationController extends Controller
                 'message' => 'Error getting raw email: ' . $e->getMessage()
             ], 500);
         }
-    }
-
-    /**
-     * Get IMAP settings for email provider
-     */
-    private function getImapSettings(string $provider): ?array
-    {
-        $settings = [
-            'yandex' => [
-                'host' => 'imap.yandex.com',
-                'port' => 993,
-            ],
-            'gmail' => [
-                'host' => 'imap.gmail.com',
-                'port' => 993,
-            ],
-            'mailru' => [
-                'host' => 'imap.mail.ru',
-                'port' => 993,
-            ],
-            'yahoo' => [
-                'host' => 'imap.mail.yahoo.com',
-                'port' => 993,
-            ],
-        ];
-
-        return $settings[$provider] ?? null;
     }
 
     /**

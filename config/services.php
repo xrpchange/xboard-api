@@ -58,40 +58,5 @@ return [
         'mode' => env('DEV_MODE', 'sandbox'), // 'sandbox' or 'production'
     ],
 
-    'yandex_oauth' => [
-        'client_id' => env('YANDEX_OAUTH_CLIENT_ID', ''),
-        'client_secret' => env('YANDEX_OAUTH_CLIENT_SECRET', ''),
-        // Note: Client Secret should ONLY be stored in .env file on the server
-        // Never include Client Secret in client-side code (mobile apps, web frontend)
-    ],
-
-    'gmail_oauth' => [
-        'client_id' => env('GMAIL_OAUTH_CLIENT_ID', ''),
-        'client_secret' => env('GMAIL_OAUTH_CLIENT_SECRET', ''),
-        // Note: Client Secret should ONLY be stored in .env file on the server
-        // Never include Client Secret in client-side code (mobile apps, web frontend)
-    ],
-
-    'mailru_oauth' => [
-        'client_id' => env('MAILRU_OAUTH_CLIENT_ID', ''),
-        'client_secret' => env('MAILRU_OAUTH_CLIENT_SECRET', ''),
-        // Note: Client Secret should ONLY be stored in .env file on the server
-        // Never include Client Secret in client-side code (mobile apps, web frontend)
-    ],
-
-    'yahoo_oauth' => [
-        'client_id' => env('YAHOO_OAUTH_CLIENT_ID', ''),
-        'client_secret' => env('YAHOO_OAUTH_CLIENT_SECRET', ''),
-        // Note: Client Secret should ONLY be stored in .env file on the server
-        // Never include Client Secret in client-side code (mobile apps, web frontend)
-    ],
-
-    'outlook_china_oauth' => [
-        'client_id' => env('OUTLOOK_CHINA_OAUTH_CLIENT_ID', ''),
-        'client_secret' => env('OUTLOOK_CHINA_OAUTH_CLIENT_SECRET', ''),
-        // Note: Client Secret should ONLY be stored in .env file on the server
-        // Never include Client Secret in client-side code (mobile apps, web frontend)
-        // Azure China Portal: portal.azure.cn
-    ],
 
 ];
