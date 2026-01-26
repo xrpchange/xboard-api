@@ -111,3 +111,10 @@ jspm_packages/
 
 # TernJS port file
 .tern-port
+
+# OpenAPI MCP temporary directory
+openapi-mcp/
+
+# Generated OpenAPI bundled files
+*.bundled.yaml
+*.generated.*

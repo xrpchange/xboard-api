@@ -1,17 +1,25 @@
 {
-    "$schema": "https://json.schemastore.org/package.json",
-    "private": true,
-    "type": "module",
-    "scripts": {
-        "build": "vite build",
-        "dev": "vite"
-    },
-    "devDependencies": {
-        "@tailwindcss/vite": "^4.0.0",
-        "axios": "^1.8.2",
-        "concurrently": "^9.0.1",
-        "laravel-vite-plugin": "^2.0.0",
-        "tailwindcss": "^4.0.0",
-        "vite": "^7.0.4"
-    }
+  "name": "xboard-api",
+  "version": "1.0.0",
+  "description": "XBoard API - P2P Cryptocurrency Exchange (Laravel)",
+  "scripts": {
+    "mcp:start": "npx @modelcontextprotocol/server-openapi --dir ./docs --port 8766",
+    "openapi:validate": "npx @redocly/cli lint docs/api_swagger.yaml",
+    "openapi:preview": "npx @redocly/cli preview-docs docs/api_swagger.yaml",
+    "openapi:bundle": "npx @redocly/cli bundle docs/api_swagger.yaml -o docs/api_swagger.bundled.yaml",
+    "openapi:generate": "php artisan l5-swagger:generate"
+  },
+  "keywords": [
+    "openapi",
+    "api",
+    "laravel",
+    "l5-swagger",
+    "cursor-ai"
+  ],
+  "author": "XBoard Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@modelcontextprotocol/server-openapi": "^0.1.0",
+    "@redocly/cli": "^1.10.0"
+  }
 }
