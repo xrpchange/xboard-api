@@ -176,15 +176,43 @@ class ExchangeLotController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $validator = Validator::make($request->all(), [
+        $data = $request->all();
+
+        // Optional: accept from_currency / to_currency (codes) instead of sell_* / buy_* IDs
+        if (!empty($data['from_currency']) && !empty($data['to_currency'])) {
+            $fromCode = strtoupper((string) $data['from_currency']);
+            $toCode = strtoupper((string) $data['to_currency']);
+            $fromFiat = \App\Models\FiatCurrency::where('code', $fromCode)->first();
+            $fromCrypto = \App\Models\CryptoCurrency::where('code', $fromCode)->first();
+            $toFiat = \App\Models\FiatCurrency::where('code', $toCode)->first();
+            $toCrypto = \App\Models\CryptoCurrency::where('code', $toCode)->first();
+            if ($fromFiat) {
+                $data['sell_currency_type'] = 'fiat';
+                $data['sell_currency_id'] = $fromFiat->id;
+            } elseif ($fromCrypto) {
+                $data['sell_currency_type'] = 'crypto';
+                $data['sell_currency_id'] = $fromCrypto->id;
+            }
+            if ($toFiat) {
+                $data['buy_currency_type'] = 'fiat';
+                $data['buy_currency_id'] = $toFiat->id;
+            } elseif ($toCrypto) {
+                $data['buy_currency_type'] = 'crypto';
+                $data['buy_currency_id'] = $toCrypto->id;
+            }
+        }
+
+        $validator = Validator::make($data, [
             'crypto_currency_id' => 'required|exists:crypto_currencies,id',
-            'wallet_address' => 'required|string|max:50',
+            'wallet_address' => 'required|string|max:255',
             'sell_currency_type' => 'required|in:fiat,crypto',
             'sell_currency_id' => 'required|integer',
             'sell_amount' => 'required|numeric|min:0',
             'buy_currency_type' => 'required|in:fiat,crypto',
             'buy_currency_id' => 'required|integer',
             'buy_amount' => 'required|numeric|min:0',
+            'from_currency' => 'nullable|string|max:20',
+            'to_currency' => 'nullable|string|max:20',
             'country_id' => 'nullable|exists:countries,id',
             'bank_id' => 'nullable|exists:banks,id',
             'bank_account' => 'nullable|string|max:100',
@@ -204,11 +232,13 @@ class ExchangeLotController extends Controller
             ], 422);
         }
 
-        $lot = ExchangeLot::create($validator->validated());
+        $validated = $validator->validated();
+        unset($validated['from_currency'], $validated['to_currency']);
+        $lot = ExchangeLot::create($validated);
 
         return response()->json([
             'success' => true,
-            'data' => $lot->load(['cryptoCurrency', 'country', 'bank'])
+            'data' => \App\Http\Resources\ExchangeLotResource::make($lot->load(['cryptoCurrency', 'country', 'bank', 'sellCurrency', 'sellCryptoCurrency', 'buyCurrency', 'buyCryptoCurrency']))
         ], 201);
     }
 
