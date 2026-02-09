@@ -52,7 +52,7 @@ class ExchangeLotController extends Controller
             $fromCurrencySymbol = strtoupper($request->from_currency);
             $fromCurrency = \App\Models\FiatCurrency::where('code', $fromCurrencySymbol)->first();
             if (!$fromCurrency) {
-                $fromCurrency = \App\Models\CryptoCurrency::where('code', $fromCurrencySymbol)->first();
+                $fromCurrency = \App\Models\CryptoCurrency::byCode($request->from_currency)->first();
                 if ($fromCurrency) {
                     $query->where('sell_currency_type', 'crypto')
                           ->where('sell_currency_id', $fromCurrency->id);
@@ -74,7 +74,7 @@ class ExchangeLotController extends Controller
             $toCurrencySymbol = strtoupper($request->to_currency);
             $toCurrency = \App\Models\FiatCurrency::where('code', $toCurrencySymbol)->first();
             if (!$toCurrency) {
-                $toCurrency = \App\Models\CryptoCurrency::where('code', $toCurrencySymbol)->first();
+                $toCurrency = \App\Models\CryptoCurrency::byCode($request->to_currency)->first();
                 if ($toCurrency) {
                     $query->where('buy_currency_type', 'crypto')
                           ->where('buy_currency_id', $toCurrency->id);
@@ -183,9 +183,9 @@ class ExchangeLotController extends Controller
             $fromCode = strtoupper((string) $data['from_currency']);
             $toCode = strtoupper((string) $data['to_currency']);
             $fromFiat = \App\Models\FiatCurrency::where('code', $fromCode)->first();
-            $fromCrypto = \App\Models\CryptoCurrency::where('code', $fromCode)->first();
+            $fromCrypto = \App\Models\CryptoCurrency::byCode($data['from_currency'])->first();
             $toFiat = \App\Models\FiatCurrency::where('code', $toCode)->first();
-            $toCrypto = \App\Models\CryptoCurrency::where('code', $toCode)->first();
+            $toCrypto = \App\Models\CryptoCurrency::byCode($data['to_currency'])->first();
             if ($fromFiat) {
                 $data['sell_currency_type'] = 'fiat';
                 $data['sell_currency_id'] = $fromFiat->id;

@@ -19,24 +19,27 @@ class CryptoCurrency extends Model
     use HasFactory;
 
     protected $fillable = [
+        'id',
         'code',
         'name',
-        'is_stablecoin',
+        'is_native',
+        'network',
         'is_active',
     ];
 
     /**
      * @OA\Property(property="id", type="integer", example=1)
-     * @OA\Property(property="code", type="string", example="BTC")
-     * @OA\Property(property="name", type="string", example="Bitcoin")
-     * @OA\Property(property="is_stablecoin", type="boolean", example=false)
+     * @OA\Property(property="code", type="string", example="xrp")
+     * @OA\Property(property="name", type="string", example="XRP (Ripple)")
+     * @OA\Property(property="is_native", type="boolean", example=true)
+     * @OA\Property(property="network", type="string", example="native")
      * @OA\Property(property="is_active", type="boolean", example=true)
      * @OA\Property(property="created_at", type="string", format="date-time")
      * @OA\Property(property="updated_at", type="string", format="date-time")
      */
 
     protected $casts = [
-        'is_stablecoin' => 'boolean',
+        'is_native' => 'boolean',
         'is_active' => 'boolean',
     ];
 
@@ -65,10 +68,26 @@ class CryptoCurrency extends Model
     }
 
     /**
-     * Get only stablecoins
+     * Find by code (case-insensitive). Core and client may send XRP or xrp, usdt_stellar etc.
+     */
+    public function scopeByCode($query, string $code)
+    {
+        return $query->whereRaw('LOWER(code) = ?', [strtolower($code)]);
+    }
+
+    /**
+     * Get native chain coins (xrp, btc, xmr)
+     */
+    public function scopeNative($query)
+    {
+        return $query->where('is_native', true);
+    }
+
+    /**
+     * Get only stablecoins (tokens on networks: !is_native)
      */
     public function scopeStablecoins($query)
     {
-        return $query->where('is_stablecoin', true);
+        return $query->where('is_native', false);
     }
 } 

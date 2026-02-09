@@ -2,19 +2,26 @@
 
 namespace Database\Seeders;
 
+use App\Models\CryptoCurrency;
+use App\Models\FiatCurrency;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
-use App\Models\FiatCurrency;
-use App\Models\CryptoCurrency;
+use Illuminate\Support\Facades\Http;
 
 class CurrencySeeder extends Seeder
 {
     /**
      * Run the database seeds.
+     * Fiat: static list. Crypto: from Core API GET /api/info (crypto_structure).
      */
     public function run(): void
     {
-        // Fiat currencies
+        $this->seedFiat();
+        $this->seedCryptoFromCore();
+    }
+
+    private function seedFiat(): void
+    {
         $fiatCurrencies = [
             ['code' => 'RUB', 'name' => 'Russian Ruble', 'symbol' => '₽'],
             ['code' => 'USD', 'name' => 'US Dollar', 'symbol' => '$'],
@@ -34,26 +41,86 @@ class CurrencySeeder extends Seeder
                 $currency
             );
         }
+    }
 
-        // Cryptocurrencies
-        $cryptoCurrencies = [
-            ['code' => 'XRP', 'name' => 'Ripple', 'is_stablecoin' => false],
-            ['code' => 'BTC', 'name' => 'Bitcoin', 'is_stablecoin' => false],
-            ['code' => 'ETH', 'name' => 'Ethereum', 'is_stablecoin' => false],
-            ['code' => 'USDT', 'name' => 'Tether', 'is_stablecoin' => true],
-            ['code' => 'USDC', 'name' => 'USD Coin', 'is_stablecoin' => true],
-            ['code' => 'DAI', 'name' => 'Dai', 'is_stablecoin' => true],
-            ['code' => 'BUSD', 'name' => 'Binance USD', 'is_stablecoin' => true],
-            ['code' => 'LTC', 'name' => 'Litecoin', 'is_stablecoin' => false],
-            ['code' => 'BCH', 'name' => 'Bitcoin Cash', 'is_stablecoin' => false],
-            ['code' => 'ADA', 'name' => 'Cardano', 'is_stablecoin' => false],
-        ];
+    /**
+     * Fetch crypto list from Core GET /api/info and sync to crypto_currencies.
+     * Uses config services.core (sandbox). Set CORE_URL to production URL to seed from production.
+     */
+    private function seedCryptoFromCore(): void
+    {
+        $coreUrl = rtrim(config('services.core.url', ''), '/');
+        $coreKey = config('services.core.key', '');
+        $timeout = config('services.core.timeout', 10);
 
-        foreach ($cryptoCurrencies as $currency) {
-            CryptoCurrency::updateOrCreate(
-                ['code' => $currency['code']],
-                $currency
-            );
+        if (empty($coreUrl)) {
+            $this->command?->warn('CORE_URL not set. Skipping crypto seed from Core.');
+            return;
+        }
+
+        $request = Http::timeout($timeout);
+        if ($coreKey !== '') {
+            $request = $request->withHeaders(['X-Core-Key' => $coreKey]);
+        }
+
+        $response = $request->get($coreUrl . '/api/info');
+        if (!$response->successful()) {
+            throw new \RuntimeException('Core GET /api/info failed: ' . $response->status() . ' ' . $response->body());
+        }
+
+        $body = $response->json();
+        $data = $body['data'] ?? null;
+        $cryptoStructure = $data['crypto_structure'] ?? [];
+        // Preserve string keys (native, stellar, tron…): (array) on stdClass yields numeric keys
+        $networksRaw = $cryptoStructure['networks'] ?? [];
+        $networks = is_array($networksRaw) ? $networksRaw : json_decode(json_encode($networksRaw), true);
+        $orderRaw = $cryptoStructure['order'] ?? [];
+        $order = is_array($orderRaw) ? $orderRaw : json_decode(json_encode($orderRaw), true);
+
+        if (empty($networks)) {
+            $this->command?->warn('Core returned empty crypto_structure.networks.');
+            return;
+        }
+
+        // Process every network that has data (order + any extra keys in networks, so native is never skipped)
+        $networkNames = array_unique(array_merge($order, array_keys($networks)));
+        foreach ($networkNames as $networkName) {
+            $networkName = (string) $networkName;
+            if ($networkName === '') {
+                continue;
+            }
+            $cryptos = $networks[$networkName] ?? null;
+            if (is_object($cryptos)) {
+                $cryptos = (array) $cryptos;
+            }
+            if (!is_array($cryptos)) {
+                continue;
+            }
+            $isNative = strtolower($networkName) === 'native';
+            $apiNetwork = $isNative ? null : $networkName;
+
+            foreach ($cryptos as $code => $info) {
+                $info = is_array($info) ? $info : (array) (is_object($info) ? $info : []);
+                if ($info === []) {
+                    continue;
+                }
+                $id = isset($info['id']) ? (int) $info['id'] : 0;
+                if ($id <= 0) {
+                    continue;
+                }
+                $name = $info['name'] ?? $code;
+
+                CryptoCurrency::updateOrCreate(
+                    ['id' => $id],
+                    [
+                        'code'      => $code,
+                        'name'      => $name,
+                        'is_native' => $isNative,
+                        'network'   => $apiNetwork,
+                        'is_active' => true,
+                    ]
+                );
+            }
         }
     }
-} 
+}

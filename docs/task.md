@@ -50,7 +50,7 @@ XBoard is a P2P cryptocurrency exchange (bulletin board) with collateral guarant
 #### Reference Data
 - **Countries** (countries) - ISO 3166-1 alpha-3 codes
 - **Fiat currencies** (fiat_currencies) - ISO 4217 codes
-- **Cryptocurrencies** (crypto_currencies) - major + stablecoins
+- **Cryptocurrencies** (crypto_currencies) — major + stablecoins; схема синхронизирована с Core (см. [CRYPTO_CURRENCIES_MIGRATION.md](CRYPTO_CURRENCIES_MIGRATION.md))
 - **Banks** (banks) - linked to countries and currencies
 
 #### Main Tables

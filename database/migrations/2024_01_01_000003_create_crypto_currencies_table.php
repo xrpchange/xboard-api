@@ -8,18 +8,24 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
+     * Schema aligned with Core GET /info crypto_structure (id from [crypto_currency_ids]).
+     * For existing DB: drop table or run a separate migration to alter (drop is_stablecoin, add is_native, network).
      */
     public function up(): void
     {
         Schema::create('crypto_currencies', function (Blueprint $table) {
-            $table->id()->comment('Unique cryptocurrency identifier');
-            $table->string('code', 10)->unique()->comment('Cryptocurrency ticker (BTC, ETH, etc.)');
-            $table->string('name', 50)->comment('Cryptocurrency name');
-            $table->boolean('is_stablecoin')->default(false)->comment('Stablecoin flag');
-            $table->boolean('is_active')->default(true)->comment('Cryptocurrency activity flag in the system');
+            $table->id()->comment('Unique cryptocurrency identifier (sync with Core crypto_currency_ids)');
+            $table->string('code', 32)->unique()->comment('Cryptocurrency code from Core, e.g. xrp, usdt_stellar');
+            $table->string('name', 100)->comment('Display name, e.g. XRP (Ripple), USDT');
+            $table->boolean('is_native')->default(false)->comment('True = native chain coin (xrp, btc, xmr), false = token on network');
+            $table->string('network', 20)->nullable()->comment('Network from Core: native, stellar, polygon, tron');
+            $table->boolean('is_active')->default(true)->comment('Available for use in the system');
             $table->timestamps();
-            
-            $table->index('code', 'idx_crypto_currencies_code');
+
+            $table->index('code');
+            $table->index('is_native');
+            $table->index('network');
+            $table->index('is_active');
         });
     }
 
@@ -30,4 +36,4 @@ return new class extends Migration
     {
         Schema::dropIfExists('crypto_currencies');
     }
-}; 
+};

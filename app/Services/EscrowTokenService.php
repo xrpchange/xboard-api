@@ -155,9 +155,10 @@ class EscrowTokenService
             throw new InvalidTokenException('Invalid token format');
         }
         
-        // Get crypto currency ID by code
+        // Get crypto currency ID by code (case-insensitive; Core sends e.g. xrp, usdt_stellar)
+        $code = strtolower((string) $tokenDecoded['currency']);
         $cryptoCurrency = DB::table('crypto_currencies')
-            ->where('code', $tokenDecoded['currency'])
+            ->whereRaw('LOWER(code) = ?', [$code])
             ->where('is_active', true)
             ->first();
             

@@ -17,28 +17,28 @@ class ExchangeLotSeeder extends Seeder
      */
     public function run(): void
     {
-        // Get currencies
-        $btc = CryptoCurrency::where('code', 'BTC')->first();
-        $eth = CryptoCurrency::where('code', 'ETH')->first();
-        $xrp = CryptoCurrency::where('code', 'XRP')->first();
-        $usdt = CryptoCurrency::where('code', 'USDT')->first();
-        $usdc = CryptoCurrency::where('code', 'USDC')->first();
-        
+        // Get currencies (codes from Core: xrp, btc, xmr, usdt_stellar, usdc_stellar, etc.)
+        $btc = CryptoCurrency::byCode('btc')->first();
+        $xrp = CryptoCurrency::byCode('xrp')->first();
+        $xmr = CryptoCurrency::byCode('xmr')->first();
+        $usdt = CryptoCurrency::byCode('usdt_stellar')->first();
+        $usdc = CryptoCurrency::byCode('usdc_stellar')->first();
+
         $usd = FiatCurrency::where('code', 'USD')->first();
         $eur = FiatCurrency::where('code', 'EUR')->first();
         $rub = FiatCurrency::where('code', 'RUB')->first();
         $gbp = FiatCurrency::where('code', 'GBP')->first();
-        
+
         // Get countries and banks
         $russia = Country::where('code', 'RUS')->first();
         $usa = Country::where('code', 'USA')->first();
         $germany = Country::where('code', 'DEU')->first();
-        
+
         $sberbank = Bank::where('swift_code', 'SABRRUMM')->first();
         $chase = Bank::where('swift_code', 'CHASUS33')->first();
         $deutsche = Bank::where('swift_code', 'DEUTDEFF')->first();
-        
-        if (!$btc || !$eth || !$xrp || !$usd || !$eur || !$rub) {
+
+        if (!$btc || !$xrp || !$usd || !$eur || !$rub) {
             $this->command->error('Required currencies not found. Please run CurrencySeeder first.');
             return;
         }
@@ -96,17 +96,17 @@ class ExchangeLotSeeder extends Seeder
             ];
         }
         
-        // ETH -> USD (Active, large amount)
-        if ($eth && $usd && $usa && $chase) {
+        // XMR -> USD (Active, large amount)
+        if ($xmr && $usd && $usa && $chase) {
             $lots[] = [
                 'crypto_currency_id' => $xrp->id,
                 'wallet_address' => 'rBsk5RSxdK3ZVDNCqZTMvCSzkHAgbvug3',
                 'sell_currency_type' => 'crypto',
-                'sell_currency_id' => $eth->id,
+                'sell_currency_id' => $xmr->id,
                 'sell_amount' => 10.0,
                 'buy_currency_type' => 'fiat',
                 'buy_currency_id' => $usd->id,
-                'buy_amount' => 35000.00, // ~$3,500 per ETH
+                'buy_amount' => 35000.00, // ~$3,500 per XMR
                 'country_id' => $usa->id,
                 'bank_id' => $chase->id,
                 'bank_account' => '****9012',
@@ -190,8 +190,8 @@ class ExchangeLotSeeder extends Seeder
             ];
         }
         
-        // EUR -> ETH
-        if ($eur && $eth && $germany && $deutsche) {
+        // EUR -> XMR
+        if ($eur && $xmr && $germany && $deutsche) {
             $lots[] = [
                 'crypto_currency_id' => $xrp->id,
                 'wallet_address' => 'rBsk5RSxdK3ZVDNCqZTMvCSzkHAgbvug3',
@@ -199,7 +199,7 @@ class ExchangeLotSeeder extends Seeder
                 'sell_currency_id' => $eur->id,
                 'sell_amount' => 3500.00,
                 'buy_currency_type' => 'crypto',
-                'buy_currency_id' => $eth->id,
+                'buy_currency_id' => $xmr->id,
                 'buy_amount' => 1.0,
                 'country_id' => $germany->id,
                 'bank_id' => $deutsche->id,
@@ -238,8 +238,8 @@ class ExchangeLotSeeder extends Seeder
         
         // ===== CRYPTO -> CRYPTO =====
         
-        // BTC -> ETH
-        if ($btc && $eth) {
+        // BTC -> XMR
+        if ($btc && $xmr) {
             $lots[] = [
                 'crypto_currency_id' => $xrp->id,
                 'wallet_address' => 'rBsk5RSxdK3ZVDNCqZTMvCSzkHAgbvug3',
@@ -247,8 +247,8 @@ class ExchangeLotSeeder extends Seeder
                 'sell_currency_id' => $btc->id,
                 'sell_amount' => 0.1,
                 'buy_currency_type' => 'crypto',
-                'buy_currency_id' => $eth->id,
-                'buy_amount' => 12.85, // ~12.85 ETH per 0.1 BTC
+                'buy_currency_id' => $xmr->id,
+                'buy_amount' => 12.85, // ~12.85 XMR per 0.1 BTC
                 'country_id' => null,
                 'bank_id' => null,
                 'bank_account' => null,
@@ -261,17 +261,17 @@ class ExchangeLotSeeder extends Seeder
             ];
         }
         
-        // ETH -> USDT
-        if ($eth && $usdt) {
+        // XMR -> USDT
+        if ($xmr && $usdt) {
             $lots[] = [
                 'crypto_currency_id' => $xrp->id,
                 'wallet_address' => 'rBsk5RSxdK3ZVDNCqZTMvCSzkHAgbvug3',
                 'sell_currency_type' => 'crypto',
-                'sell_currency_id' => $eth->id,
+                'sell_currency_id' => $xmr->id,
                 'sell_amount' => 5.0,
                 'buy_currency_type' => 'crypto',
                 'buy_currency_id' => $usdt->id,
-                'buy_amount' => 17500.0, // ~$3,500 per ETH
+                'buy_amount' => 17500.0, // ~$3,500 per XMR
                 'country_id' => null,
                 'bank_id' => null,
                 'bank_account' => null,
@@ -361,13 +361,13 @@ class ExchangeLotSeeder extends Seeder
         
         // ===== INACTIVE LOTS =====
         
-        // Inactive: ETH -> USD
-        if ($eth && $usd && $usa && $chase) {
+        // Inactive: XMR -> USD
+        if ($xmr && $usd && $usa && $chase) {
             $lots[] = [
                 'crypto_currency_id' => $xrp->id,
                 'wallet_address' => 'rBsk5RSxdK3ZVDNCqZTMvCSzkHAgbvug3',
                 'sell_currency_type' => 'crypto',
-                'sell_currency_id' => $eth->id,
+                'sell_currency_id' => $xmr->id,
                 'sell_amount' => 2.0,
                 'buy_currency_type' => 'fiat',
                 'buy_currency_id' => $usd->id,

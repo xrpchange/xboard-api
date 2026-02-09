@@ -228,8 +228,8 @@ class CollateralTokenService
      */
     public function getOrCreateExchangeLot(string $walletAddress, string $currency = 'XRP'): ExchangeLot
     {
-        // Find cryptocurrency
-        $cryptoCurrency = CryptoCurrency::where('code', $currency)->first();
+        // Find cryptocurrency (case-insensitive; Core uses e.g. xrp, usdt_stellar)
+        $cryptoCurrency = CryptoCurrency::byCode($currency)->first();
         if (!$cryptoCurrency) {
             throw new \Exception('Unsupported currency: ' . $currency);
         }

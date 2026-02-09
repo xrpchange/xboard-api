@@ -106,6 +106,7 @@ php artisan key:generate
 php artisan migrate
 php artisan db:seed
 ```
+- Для уже существующих БД: миграция справочника `crypto_currencies` (синхронизация с Core) описана в [docs/CRYPTO_CURRENCIES_MIGRATION.md](docs/CRYPTO_CURRENCIES_MIGRATION.md). Пользователю БД нужны права `ALTER` на таблицу.
 
 5. **XRPChangeCore setup**
 ```bash
