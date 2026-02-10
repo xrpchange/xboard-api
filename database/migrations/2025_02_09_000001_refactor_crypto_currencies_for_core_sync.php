@@ -9,8 +9,10 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * Refactors existing crypto_currencies table to match Core GET /info schema:
-     * drop is_stablecoin, add is_native and network. Safe to run when table already has new schema (no-op).
+     *
+     * crypto_currencies is not configuration—it is a mirror of Core data (GET /info).
+     * This migration refactors an existing table to match that schema: drop is_stablecoin,
+     * add is_native and network, backfill by code. Idempotent when the table already has the new schema.
      */
     public function up(): void
     {

@@ -8,8 +8,10 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * Schema aligned with Core GET /info crypto_structure (id from [crypto_currency_ids]).
-     * For existing DB: drop table or run a separate migration to alter (drop is_stablecoin, add is_native, network).
+     *
+     * This table is not local configuration: it is a mirror of the cryptocurrency list from Core.
+     * Data is synced from Core API GET /info (crypto_structure); IDs come from Core [crypto_currency_ids].
+     * Schema aligned with Core GET /info. For existing DB, use the refactor migration to alter the table.
      */
     public function up(): void
     {
@@ -26,6 +28,8 @@ return new class extends Migration
             $table->index('is_native');
             $table->index('network');
             $table->index('is_active');
+
+            $table->comment('Mirror of Core GET /info crypto list, not local config. Synced via CurrencySeeder.');
         });
     }
 
