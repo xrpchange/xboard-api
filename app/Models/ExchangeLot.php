@@ -8,27 +8,28 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
+ * Лот обмена. Соответствует экранному представлению создания лота.
+ *
  * @OA\Schema(
  *     schema="ExchangeLot",
  *     title="ExchangeLot",
  *     description="Exchange lot model"
  * )
  */
-
 class ExchangeLot extends Model
 {
     use HasFactory;
 
     protected $fillable = [
+        'node_id',
+        'from_currency',
+        'to_currency',
+        'sell_amount',
+        'buy_amount_min',
+        'buy_amount_max',
+        'buy_amounts',
         'crypto_currency_id',
         'wallet_address',
-        'sell_currency_type',
-        'sell_currency_id',
-        'sell_amount',
-        'buy_currency_type',
-        'buy_currency_id',
-        'buy_amount',
-        'country_id',
         'bank_id',
         'bank_account',
         'payment_purpose',
@@ -41,34 +42,11 @@ class ExchangeLot extends Model
         'expires_at',
     ];
 
-    /**
-     * @OA\Property(property="id", type="integer", example=1)
-     * @OA\Property(property="crypto_currency_id", type="integer", example=1)
-     * @OA\Property(property="wallet_address", type="string", example="rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh")
-     * @OA\Property(property="sell_currency_type", type="string", example="fiat")
-     * @OA\Property(property="sell_currency_id", type="integer", example=1)
-     * @OA\Property(property="sell_amount", type="number", format="float", example=1000.00)
-     * @OA\Property(property="buy_currency_type", type="string", example="crypto")
-     * @OA\Property(property="buy_currency_id", type="integer", example=1)
-     * @OA\Property(property="buy_amount", type="number", format="float", example=100.00)
-     * @OA\Property(property="country_id", type="integer", example=1)
-     * @OA\Property(property="bank_id", type="integer", example=1)
-     * @OA\Property(property="bank_account", type="string", example="1234567890")
-     * @OA\Property(property="payment_purpose", type="string", example="Payment for crypto")
-     * @OA\Property(property="contract_url", type="string", example="https://example.com/contract")
-     * @OA\Property(property="is_for_individuals", type="boolean", example=true)
-     * @OA\Property(property="is_for_legal_entities", type="boolean", example=true)
-     * @OA\Property(property="is_active", type="boolean", example=true)
-     * @OA\Property(property="is_test", type="boolean", example=false)
-     * @OA\Property(property="test_group", type="string", example="test_group_1")
-     * @OA\Property(property="expires_at", type="string", format="date-time")
-     * @OA\Property(property="created_at", type="string", format="date-time")
-     * @OA\Property(property="updated_at", type="string", format="date-time")
-     */
-
     protected $casts = [
         'sell_amount' => 'decimal:8',
-        'buy_amount' => 'decimal:8',
+        'buy_amount_min' => 'decimal:8',
+        'buy_amount_max' => 'decimal:8',
+        'buy_amounts' => 'array',
         'is_for_individuals' => 'boolean',
         'is_for_legal_entities' => 'boolean',
         'is_active' => 'boolean',
@@ -77,7 +55,15 @@ class ExchangeLot extends Model
     ];
 
     /**
-     * Get token cryptocurrency
+     * Узел, к которому привязан лот
+     */
+    public function node(): BelongsTo
+    {
+        return $this->belongsTo(Node::class);
+    }
+
+    /**
+     * Криптовалюта лота (из Core)
      */
     public function cryptoCurrency(): BelongsTo
     {
@@ -85,15 +71,7 @@ class ExchangeLot extends Model
     }
 
     /**
-     * Get country
-     */
-    public function country(): BelongsTo
-    {
-        return $this->belongsTo(Country::class);
-    }
-
-    /**
-     * Get bank
+     * Банк (опционально)
      */
     public function bank(): BelongsTo
     {
@@ -101,56 +79,18 @@ class ExchangeLot extends Model
     }
 
     /**
-     * Get sell currency (fiat) - only loaded when sell_currency_type is 'fiat'
-     */
-    public function sellCurrency(): BelongsTo
-    {
-        return $this->belongsTo(FiatCurrency::class, 'sell_currency_id');
-    }
-
-    /**
-     * Get sell crypto currency - only loaded when sell_currency_type is 'crypto'
-     */
-    public function sellCryptoCurrency(): BelongsTo
-    {
-        return $this->belongsTo(CryptoCurrency::class, 'sell_currency_id');
-    }
-
-    /**
-     * Get buy currency (fiat) - only loaded when buy_currency_type is 'fiat'
-     */
-    public function buyCurrency(): BelongsTo
-    {
-        return $this->belongsTo(FiatCurrency::class, 'buy_currency_id');
-    }
-
-    /**
-     * Get buy crypto currency - only loaded when buy_currency_type is 'crypto'
-     */
-    public function buyCryptoCurrency(): BelongsTo
-    {
-        return $this->belongsTo(CryptoCurrency::class, 'buy_currency_id');
-    }
-
-    /**
-     * Get transactions for this lot
+     * Транзакции по лоту
      */
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class);
     }
 
-    /**
-     * Get active lots
-     */
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
     }
 
-    /**
-     * Get test lots
-     */
     public function scopeTest($query, $testGroup = null)
     {
         $query = $query->where('is_test', true);
@@ -160,19 +100,13 @@ class ExchangeLot extends Model
         return $query;
     }
 
-    /**
-     * Get lots for individuals
-     */
     public function scopeForIndividuals($query)
     {
         return $query->where('is_for_individuals', true);
     }
 
-    /**
-     * Get lots for legal entities
-     */
     public function scopeForLegalEntities($query)
     {
         return $query->where('is_for_legal_entities', true);
     }
-} 
+}
