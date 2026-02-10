@@ -20,7 +20,7 @@ class BankController extends Controller
     public function index(Request $request): JsonResponse
     {
         $banks = Bank::active()
-            ->with('country')
+            ->with(['country', 'fiatCurrencies'])
             ->when($request->country_id, fn($q, $id) => $q->where('country_id', $id))
             ->when($request->for_individuals === 'true', fn($q) => $q->forIndividuals())
             ->when($request->for_legal_entities === 'true', fn($q) => $q->forLegalEntities())
@@ -31,23 +31,39 @@ class BankController extends Controller
             ->orderBy('name')
             ->get();
 
-        return response()->json(['success' => true, 'data' => $banks]);
+        $data = $banks->map(function (Bank $bank) {
+            $arr = $bank->toArray();
+            $arr['supported_fiat_codes'] = $bank->fiatCurrencies->pluck('code')->values()->all();
+            return $arr;
+        });
+
+        return response()->json(['success' => true, 'data' => $data]);
     }
 
     public function show(Bank $bank): JsonResponse
     {
-        return response()->json(['success' => true, 'data' => $bank->load('country')]);
+        $bank->load(['country', 'fiatCurrencies']);
+        $arr = $bank->toArray();
+        $arr['supported_fiat_codes'] = $bank->fiatCurrencies->pluck('code')->values()->all();
+        return response()->json(['success' => true, 'data' => $arr]);
     }
 
     public function byCountry(Country $country, Request $request): JsonResponse
     {
         $banks = $country->banks()
             ->active()
+            ->with('fiatCurrencies')
             ->when($request->for_individuals === 'true', fn($q) => $q->forIndividuals())
             ->when($request->for_legal_entities === 'true', fn($q) => $q->forLegalEntities())
             ->orderBy('name')
             ->get();
 
-        return response()->json(['success' => true, 'data' => $banks]);
+        $data = $banks->map(function (Bank $bank) {
+            $arr = $bank->toArray();
+            $arr['supported_fiat_codes'] = $bank->fiatCurrencies->pluck('code')->values()->all();
+            return $arr;
+        });
+
+        return response()->json(['success' => true, 'data' => $data]);
     }
 } 

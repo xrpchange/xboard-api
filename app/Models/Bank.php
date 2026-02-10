@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 /**
  * @OA\Schema(
@@ -51,6 +52,14 @@ class Bank extends Model
     public function country(): BelongsTo
     {
         return $this->belongsTo(Country::class);
+    }
+
+    /**
+     * Фиатные валюты, которые поддерживает банк
+     */
+    public function fiatCurrencies(): BelongsToMany
+    {
+        return $this->belongsToMany(FiatCurrency::class, 'bank_fiat_currency')->withTimestamps();
     }
 
     /**

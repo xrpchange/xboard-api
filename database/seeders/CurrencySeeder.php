@@ -33,6 +33,7 @@ class CurrencySeeder extends Seeder
             ['code' => 'AUD', 'name' => 'Australian Dollar', 'symbol' => 'A$'],
             ['code' => 'CHF', 'name' => 'Swiss Franc', 'symbol' => 'CHF'],
             ['code' => 'BRL', 'name' => 'Brazilian Real', 'symbol' => 'R$'],
+            ['code' => 'INR', 'name' => 'Indian Rupee', 'symbol' => '₹'],
         ];
 
         foreach ($fiatCurrencies as $currency) {

@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
             CountrySeeder::class,
             CurrencySeeder::class,
             BankSeeder::class,
+            BankFiatCurrencySeeder::class,
             NodeSeeder::class,
             ExchangeLotSeeder::class,
             EmailProviderSeeder::class,
