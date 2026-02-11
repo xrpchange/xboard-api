@@ -22,8 +22,10 @@ class ExchangeLot extends Model
 
     protected $fillable = [
         'node_id',
-        'from_currency',
-        'to_currency',
+        'from_fiat_currency_id',
+        'from_crypto_currency_id',
+        'to_fiat_currency_id',
+        'to_crypto_currency_id',
         'sell_amount',
         'buy_amount_min',
         'buy_amount_max',
@@ -60,6 +62,58 @@ class ExchangeLot extends Model
     public function node(): BelongsTo
     {
         return $this->belongsTo(Node::class);
+    }
+
+    /**
+     * Валюта «отдаём» — фиат (ровно один из from_fiat / from_crypto задан).
+     */
+    public function fromFiatCurrency(): BelongsTo
+    {
+        return $this->belongsTo(FiatCurrency::class, 'from_fiat_currency_id');
+    }
+
+    public function fromCryptoCurrency(): BelongsTo
+    {
+        return $this->belongsTo(CryptoCurrency::class, 'from_crypto_currency_id');
+    }
+
+    /**
+     * Валюта «получаем» — фиат или крипта (ровно один из to_fiat / to_crypto задан).
+     */
+    public function toFiatCurrency(): BelongsTo
+    {
+        return $this->belongsTo(FiatCurrency::class, 'to_fiat_currency_id');
+    }
+
+    public function toCryptoCurrency(): BelongsTo
+    {
+        return $this->belongsTo(CryptoCurrency::class, 'to_crypto_currency_id');
+    }
+
+    /**
+     * Код валюты «отдаём» (для API; из справочника по FK).
+     */
+    public function getFromCurrencyAttribute(): string
+    {
+        $fiat = $this->fromFiatCurrency;
+        if ($fiat) {
+            return $fiat->code ?? '';
+        }
+        $crypto = $this->fromCryptoCurrency;
+        return $crypto ? (string) $crypto->code : '';
+    }
+
+    /**
+     * Код валюты «получаем» (для API; из справочника по FK).
+     */
+    public function getToCurrencyAttribute(): string
+    {
+        $fiat = $this->toFiatCurrency;
+        if ($fiat) {
+            return $fiat->code ?? '';
+        }
+        $crypto = $this->toCryptoCurrency;
+        return $crypto ? (string) $crypto->code : '';
     }
 
     /**

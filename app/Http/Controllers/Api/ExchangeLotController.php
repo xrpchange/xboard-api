@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\CryptoCurrency;
 use App\Models\ExchangeLot;
+use App\Models\FiatCurrency;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -34,7 +36,7 @@ class ExchangeLotController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = ExchangeLot::active()
-            ->with(['cryptoCurrency', 'node', 'bank']);
+            ->with(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']);
 
         if ($request->has('is_test')) {
             if ($request->is_test === 'true') {
@@ -45,10 +47,18 @@ class ExchangeLotController extends Controller
         }
 
         if ($request->filled('from_currency')) {
-            $query->where('from_currency', strtoupper($request->from_currency));
+            $code = strtoupper($request->from_currency);
+            $query->where(function ($q) use ($code) {
+                $q->whereHas('fromFiatCurrency', fn ($q2) => $q2->where('code', $code))
+                    ->orWhereHas('fromCryptoCurrency', fn ($q2) => $q2->whereRaw('LOWER(code) = ?', [strtolower($code)]));
+            });
         }
         if ($request->filled('to_currency')) {
-            $query->where('to_currency', strtoupper($request->to_currency));
+            $code = strtoupper($request->to_currency);
+            $query->where(function ($q) use ($code) {
+                $q->whereHas('toFiatCurrency', fn ($q2) => $q2->where('code', $code))
+                    ->orWhereHas('toCryptoCurrency', fn ($q2) => $q2->whereRaw('LOWER(code) = ?', [strtolower($code)]));
+            });
         }
         if ($request->has('node_id')) {
             $query->where('node_id', $request->node_id);
@@ -93,7 +103,7 @@ class ExchangeLotController extends Controller
     {
         return response()->json([
             'success' => true,
-            'data' => $lot->load(['cryptoCurrency', 'node', 'bank'])
+            'data' => $lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency'])
         ]);
     }
 
@@ -162,14 +172,30 @@ class ExchangeLotController extends Controller
         $validated['buy_amount_min'] = min($buyAmounts);
         $validated['buy_amount_max'] = max($buyAmounts);
         $validated['buy_amounts'] = $buyAmounts;
-        $validated['from_currency'] = strtoupper($validated['from_currency']);
-        $validated['to_currency'] = strtoupper($validated['to_currency']);
+
+        $fromCode = strtoupper($validated['from_currency']);
+        $toCode = strtoupper($validated['to_currency']);
+        $fromFiat = FiatCurrency::where('code', $fromCode)->first();
+        $fromCrypto = $fromFiat ? null : CryptoCurrency::whereRaw('LOWER(code) = ?', [strtolower($fromCode)])->first();
+        $toFiat = FiatCurrency::where('code', $toCode)->first();
+        $toCrypto = $toFiat ? null : CryptoCurrency::whereRaw('LOWER(code) = ?', [strtolower($toCode)])->first();
+        if (!$fromFiat && !$fromCrypto) {
+            return response()->json(['success' => false, 'errors' => ['from_currency' => ['Unknown currency code.']]], 422);
+        }
+        if (!$toFiat && !$toCrypto) {
+            return response()->json(['success' => false, 'errors' => ['to_currency' => ['Unknown currency code.']]], 422);
+        }
+        $validated['from_fiat_currency_id'] = $fromFiat?->id;
+        $validated['from_crypto_currency_id'] = $fromCrypto?->id;
+        $validated['to_fiat_currency_id'] = $toFiat?->id;
+        $validated['to_crypto_currency_id'] = $toCrypto?->id;
+        unset($validated['from_currency'], $validated['to_currency']);
 
         $lot = ExchangeLot::create($validated);
 
         return response()->json([
             'success' => true,
-            'data' => \App\Http\Resources\ExchangeLotResource::make($lot->load(['cryptoCurrency', 'node', 'bank']))
+            'data' => \App\Http\Resources\ExchangeLotResource::make($lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']))
         ], 201);
     }
 
@@ -216,7 +242,7 @@ class ExchangeLotController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $lot->load(['cryptoCurrency', 'node', 'bank'])
+            'data' => $lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency'])
         ]);
     }
 
