@@ -35,7 +35,8 @@ class ExchangeLotController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $query = ExchangeLot::active()
+        $includeInactive = filter_var($request->get('include_inactive', false), FILTER_VALIDATE_BOOLEAN);
+        $query = ($includeInactive ? ExchangeLot::query() : ExchangeLot::active())
             ->with(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']);
 
         if ($request->has('is_test')) {
@@ -200,20 +201,19 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * @OA\Put(
-     *     path="/exchange-lots/{id}",
+     * @OA\Post(
+     *     path="/exchange-lots/{id}/update",
      *     summary="Update exchange lot",
      *     tags={"Exchange Lots"},
      *     security={{"bearerAuth":{}}},
      *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
      *     @OA\RequestBody(
-     *         required=true,
      *         @OA\JsonContent(
-     *             @OA\Property(property="is_active", type="boolean"),
-     *             @OA\Property(property="expires_at", type="string", format="date-time"),
-     *             @OA\Property(property="bank_account", type="string"),
-     *             @OA\Property(property="payment_purpose", type="string"),
-     *             @OA\Property(property="contract_url", type="string"),
+     *             @OA\Property(property="from_currency", type="string"),
+     *             @OA\Property(property="to_currency", type="string"),
+     *             @OA\Property(property="sell_amount", type="number"),
+     *             @OA\Property(property="buy_amounts", type="array", @OA\Items(type="number")),
+     *             @OA\Property(property="bank_id", type="integer")
      *         )
      *     ),
      *     @OA\Response(response=200, description="Updated"),
@@ -224,11 +224,12 @@ class ExchangeLotController extends Controller
     public function update(Request $request, ExchangeLot $lot): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'is_active' => 'boolean',
-            'expires_at' => 'nullable|date',
-            'bank_account' => 'nullable|string|max:100',
-            'payment_purpose' => 'nullable|string|max:255',
-            'contract_url' => 'nullable|url|max:255',
+            'from_currency' => 'required|string|max:20',
+            'to_currency' => 'required|string|max:20',
+            'sell_amount' => 'required|numeric|min:0',
+            'buy_amounts' => 'required|array',
+            'buy_amounts.*' => 'numeric|min:0',
+            'bank_id' => 'nullable|exists:banks,id',
         ]);
 
         if ($validator->fails()) {
@@ -238,17 +239,49 @@ class ExchangeLotController extends Controller
             ], 422);
         }
 
-        $lot->update($validator->validated());
+        $validated = $validator->validated();
+        $buyAmounts = array_values(array_filter(array_map('floatval', $validated['buy_amounts']), fn($v) => $v > 0));
+        if (empty($buyAmounts)) {
+            return response()->json([
+                'success' => false,
+                'errors' => ['buy_amounts' => ['At least one positive amount is required.']]
+            ], 422);
+        }
+
+        $fromCode = strtoupper($validated['from_currency']);
+        $toCode = strtoupper($validated['to_currency']);
+        $fromFiat = FiatCurrency::where('code', $fromCode)->first();
+        $fromCrypto = $fromFiat ? null : CryptoCurrency::whereRaw('LOWER(code) = ?', [strtolower($fromCode)])->first();
+        $toFiat = FiatCurrency::where('code', $toCode)->first();
+        $toCrypto = $toFiat ? null : CryptoCurrency::whereRaw('LOWER(code) = ?', [strtolower($toCode)])->first();
+        if (!$fromFiat && !$fromCrypto) {
+            return response()->json(['success' => false, 'errors' => ['from_currency' => ['Unknown currency code.']]], 422);
+        }
+        if (!$toFiat && !$toCrypto) {
+            return response()->json(['success' => false, 'errors' => ['to_currency' => ['Unknown currency code.']]], 422);
+        }
+
+        $lot->update([
+            'from_fiat_currency_id' => $fromFiat?->id,
+            'from_crypto_currency_id' => $fromCrypto?->id,
+            'to_fiat_currency_id' => $toFiat?->id,
+            'to_crypto_currency_id' => $toCrypto?->id,
+            'sell_amount' => $validated['sell_amount'],
+            'buy_amount_min' => min($buyAmounts),
+            'buy_amount_max' => max($buyAmounts),
+            'buy_amounts' => $buyAmounts,
+            'bank_id' => $validated['bank_id'] ?? null,
+        ]);
 
         return response()->json([
             'success' => true,
-            'data' => $lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency'])
+            'data' => \App\Http\Resources\ExchangeLotResource::make($lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']))
         ]);
     }
 
     /**
-     * @OA\Delete(
-     *     path="/exchange-lots/{id}",
+     * @OA\Post(
+     *     path="/exchange-lots/{id}/delete",
      *     summary="Delete exchange lot",
      *     tags={"Exchange Lots"},
      *     security={{"bearerAuth":{}}},
@@ -265,6 +298,43 @@ class ExchangeLotController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Lot successfully deleted'
+        ]);
+    }
+
+    /**
+     * @OA\Post(
+     *     path="/exchange-lots/{id}/set-active",
+     *     summary="Set lot active/inactive",
+     *     tags={"Exchange Lots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(required={"is_active"}, @OA\Property(property="is_active", type="boolean"))
+     *     ),
+     *     @OA\Response(response=200, description="Updated"),
+     *     @OA\Response(response=401, description="Unauthorized"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
+     */
+    public function setActive(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'is_active' => 'required|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $lot->update(['is_active' => $request->boolean('is_active')]);
+
+        return response()->json([
+            'success' => true,
+            'data' => \App\Http\Resources\ExchangeLotResource::make($lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']))
         ]);
     }
 } 

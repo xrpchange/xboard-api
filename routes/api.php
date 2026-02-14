@@ -127,8 +127,9 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
         Route::get('/', [ExchangeLotController::class, 'index']);
         Route::get('/{lot}', [ExchangeLotController::class, 'show']);
         Route::post('/', [ExchangeLotController::class, 'store']);
-        Route::put('/{lot}', [ExchangeLotController::class, 'update']);
-        Route::delete('/{lot}', [ExchangeLotController::class, 'destroy']);
+        Route::post('/{lot}/update', [ExchangeLotController::class, 'update']);
+        Route::post('/{lot}/delete', [ExchangeLotController::class, 'destroy']);
+        Route::post('/{lot}/set-active', [ExchangeLotController::class, 'setActive']);
     });
 
     // Buy triggers
