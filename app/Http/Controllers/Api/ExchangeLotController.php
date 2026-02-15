@@ -8,6 +8,7 @@ use App\Models\ExchangeLot;
 use App\Models\FiatCurrency;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -35,6 +36,16 @@ class ExchangeLotController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        $walletAddresses = $request->input('wallet_address') ?? $request->input('wallet_address[]');
+        $walletCount = is_array($walletAddresses) ? count($walletAddresses) : ($walletAddresses ? 1 : 0);
+        Log::info('[exchange-lots] REQUEST', [
+            'from_currency' => $request->get('from_currency'),
+            'to_currency' => $request->get('to_currency'),
+            'is_test' => $request->get('is_test'),
+            'include_inactive' => $request->get('include_inactive'),
+            'wallet_address_count' => $walletCount,
+        ]);
+
         $includeInactive = filter_var($request->get('include_inactive', false), FILTER_VALIDATE_BOOLEAN);
         $query = ($includeInactive ? ExchangeLot::query() : ExchangeLot::active())
             ->with(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']);
@@ -73,14 +84,41 @@ class ExchangeLotController extends Controller
         if ($request->filled('bank_id')) {
             $query->where('bank_id', $request->bank_id);
         }
-        if ($request->filled('wallet_address')) {
-            $query->where('wallet_address', $request->wallet_address);
+        $walletAddresses = $request->input('wallet_address') ?? $request->input('wallet_address[]');
+        $hashes = [];
+        if (!empty($walletAddresses)) {
+            $addresses = is_array($walletAddresses) ? $walletAddresses : [$walletAddresses];
+            $addresses = array_filter(array_map('trim', $addresses));
+            foreach ($addresses as $a) {
+                $decoded = json_decode($a, true);
+                if (is_array($decoded) && !empty($decoded['token_hash'])) {
+                    $hashes[] = strtolower(trim($decoded['token_hash']));
+                }
+            }
+            $hashes = array_values(array_unique(array_filter($hashes)));
+            if (!empty($hashes)) {
+                $query->whereIn('wallet_hash', $hashes);
+            }
         }
 
         // Sorting
         $query->orderBy('created_at', 'desc');
 
         $lots = $query->paginate($request->get('per_page', 20));
+        $items = $lots->items();
+        $totalAllTest = ExchangeLot::when($request->has('is_test') && $request->is_test === 'true', fn ($q) => $q->test($request->test_group))
+            ->when($request->has('is_test') && $request->is_test !== 'true', fn ($q) => $q->where('is_test', false))
+            ->count();
+        $count = count($items);
+
+        $responseLog = ['wallet_hash_count' => count($hashes), 'lots_count' => $count];
+        if (!empty($hashes)) {
+            $responseLog['hash_prefixes'] = array_map(fn ($h) => substr($h, 0, 12) . '...', array_slice($hashes, 0, 5));
+        }
+        $responseLog['returned_ids'] = array_map(fn ($l) => $l->id, $items);
+        $responseLog['returned_wallet_hashes'] = array_map(fn ($l) => substr($l->wallet_hash ?? '', 0, 12) . '...', $items);
+        $responseLog['total_all_test_in_db'] = $totalAllTest;
+        Log::info('[exchange-lots] RESPONSE', $responseLog);
 
         return response()->json([
             'success' => true,
@@ -143,7 +181,7 @@ class ExchangeLotController extends Controller
             'buy_amounts' => 'required|array',
             'buy_amounts.*' => 'numeric|min:0',
             'crypto_currency_id' => 'required|exists:crypto_currencies,id',
-            'wallet_address' => 'required|string|max:500',
+            'wallet_address' => 'required|string',
             'bank_id' => 'nullable|exists:banks,id',
             'bank_account' => 'nullable|string|max:100',
             'payment_purpose' => 'nullable|string|max:255',
@@ -190,6 +228,14 @@ class ExchangeLotController extends Controller
         $validated['from_crypto_currency_id'] = $fromCrypto?->id;
         $validated['to_fiat_currency_id'] = $toFiat?->id;
         $validated['to_crypto_currency_id'] = $toCrypto?->id;
+        $decoded = json_decode($validated['wallet_address'], true);
+        if (!is_array($decoded) || empty($decoded['token_hash'])) {
+            return response()->json([
+                'success' => false,
+                'errors' => ['wallet_address' => ['token_hash is required in public part of escrow token.']]
+            ], 422);
+        }
+        $validated['wallet_hash'] = strtolower(trim($decoded['token_hash']));
         unset($validated['from_currency'], $validated['to_currency']);
 
         $lot = ExchangeLot::create($validated);

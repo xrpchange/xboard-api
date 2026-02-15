@@ -27,7 +27,7 @@
 | `sell_amount` | number | обязательно, ≥ 0 | Сумма, которую отдаём (одним числом). |
 | `buy_amounts` | array of number | обязательно, массив чисел ≥ 0 | Суммы, которые хотим получить (продажа частями). Должен содержать хотя бы одно положительное значение. Элементы приводятся к float; нули отбрасываются. |
 | `crypto_currency_id` | integer | обязательно, должен существовать в `crypto_currencies` | ID криптовалюты лота из справочника API (например из `GET /v1/currencies` / типа crypto). |
-| `wallet_address` | string | обязательно, до 500 символов | Адрес кошелька (обычно открытая часть эскроу-счёта для выбранной криптовалюты). |
+| `wallet_address` | string | обязательно | Полная открытая часть (public part) эскроу-токена в виде JSON. Должна содержать поле `token_hash`. В `wallet_hash` сохраняется значение `token_hash` из public part; поиск лотов — по этим хэшам. |
 
 ### Необязательные поля
 
@@ -55,7 +55,7 @@
   "sell_amount": 1000,
   "buy_amounts": [0.5, 0.3, 0.2],
   "crypto_currency_id": 2,
-  "wallet_address": "4AdkPJoxn7JCvAqX1K...",
+  "wallet_address": "{\"version\":1,\"wallet_address\":\"4AdkPJoxn7JCvAqX1K...\",\"currency\":\"XMR\",\"token_hash\":\"abc123...\"}",
   "bank_id": 1,
   "payment_purpose": "P2P exchange",
   "is_for_individuals": true,
@@ -81,6 +81,6 @@
 2. Валюты — кодами в **`from_currency`** и **`to_currency`** (строки).
 3. **`sell_amount`** — одно число (сколько отдаём).
 4. **`buy_amounts`** — JSON-массив чисел (сколько хотим получить по частям); минимум одно число > 0.
-5. **`crypto_currency_id`** и **`wallet_address`** — из эскроу-токена или справочника валют для выбранного узла/криптовалюты.
+5. **`crypto_currency_id`** — из Core; **`wallet_address`** — полная открытая часть (public part) эскроу-токена в виде JSON. При поиске лотов: параметр `wallet_address` (или `wallet_address[]`) — один или несколько public part; API извлекает `token_hash` из каждого и фильтрует по `wallet_hash IN (...)` (в колонке хранится `token_hash`).
 
 См. также: [NODES_API_DOCUMENTATION.md](NODES_API_DOCUMENTATION.md), [ESCROW_TOKEN_AUTHENTICATION.md](ESCROW_TOKEN_AUTHENTICATION.md).
