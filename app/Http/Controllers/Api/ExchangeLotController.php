@@ -44,6 +44,7 @@ class ExchangeLotController extends Controller
             'is_test' => $request->get('is_test'),
             'include_inactive' => $request->get('include_inactive'),
             'wallet_address_count' => $walletCount,
+            'wallet_address_raw_keys' => array_keys($request->query()),
         ]);
 
         $includeInactive = filter_var($request->get('include_inactive', false), FILTER_VALIDATE_BOOLEAN);
@@ -93,9 +94,15 @@ class ExchangeLotController extends Controller
                 $decoded = json_decode($a, true);
                 if (is_array($decoded) && !empty($decoded['token_hash'])) {
                     $hashes[] = strtolower(trim($decoded['token_hash']));
+                } else {
+                    Log::warning('[exchange-lots] Failed to parse wallet_address', [
+                        'raw_preview' => is_string($a) ? substr($a, 0, 200) : gettype($a),
+                        'json_error' => json_last_error_msg(),
+                    ]);
                 }
             }
             $hashes = array_values(array_unique(array_filter($hashes)));
+            Log::info('[exchange-lots] Extracted hashes for query', ['hashes' => $hashes, 'count' => count($hashes)]);
             if (!empty($hashes)) {
                 $query->whereIn('wallet_hash', $hashes);
             }
@@ -118,6 +125,13 @@ class ExchangeLotController extends Controller
         $responseLog['returned_ids'] = array_map(fn ($l) => $l->id, $items);
         $responseLog['returned_wallet_hashes'] = array_map(fn ($l) => substr($l->wallet_hash ?? '', 0, 12) . '...', $items);
         $responseLog['total_all_test_in_db'] = $totalAllTest;
+        // When filter returns 0 but DB has lots — log their wallet_hashes for debugging
+        if ($count === 0 && $totalAllTest > 0 && !empty($hashes)) {
+            $allTestLots = ExchangeLot::when($request->has('is_test') && $request->is_test === 'true', fn ($q) => $q->test($request->test_group))
+                ->when($request->has('is_test') && $request->is_test !== 'true', fn ($q) => $q->where('is_test', false))
+                ->get(['id', 'wallet_hash']);
+            $responseLog['db_test_wallet_hashes'] = $allTestLots->map(fn ($l) => substr($l->wallet_hash ?? '', 0, 16) . '...')->all();
+        }
         Log::info('[exchange-lots] RESPONSE', $responseLog);
 
         return response()->json([

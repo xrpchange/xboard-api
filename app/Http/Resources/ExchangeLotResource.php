@@ -24,6 +24,7 @@ class ExchangeLotResource extends JsonResource
         return [
             'id' => (string) $this->id,
             'node_id' => $this->node_id ? (string) $this->node_id : null,
+            'node_domain' => $this->relationLoaded('node') ? ($this->node?->domain ?? null) : null,
             'from_currency' => $this->from_currency ?? '',
             'to_currency' => $this->to_currency ?? '',
             'sell_amount' => (float) $this->sell_amount,

@@ -11,6 +11,7 @@ Start by reading:
 
 Key points:
 - Backend: PHP 8+, Laravel. Configuration via `.env` and `config/*.php`, no hardcoded `127.0.0.1`.
+- **NO fallback by host on server:** For `.env.xrpchange` (api.xrpchange.site), `APP_ENV` MUST be set explicitly via Apache `SetEnv` (or equivalent). Do NOT add fallback detection by `HTTP_HOST` or any other implicit method on production.
 - `nodes` table — source of available nodes for clients; keep migrations and schema up to date (including `weight`, `max_connections` if applicable).
 - Integrations:
   - XBoard Core — business operations for tokens/escrow
