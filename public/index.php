@@ -13,6 +13,19 @@ if (empty($appEnv) && function_exists('apache_getenv')) {
 }
 $envFile = !empty($appEnv) ? '.env.' . $appEnv : null;
 
+// Debug: env loading (remove after fixing)
+error_log(sprintf('[xboard-api] APP_ENV: host=%s appEnv=%s envFile=%s server_app_env=%s redirect_app_env=%s env_app_env=%s getenv=%s file_exists=.env=%s .env.xrpchange=%s',
+    $_SERVER['HTTP_HOST'] ?? '?',
+    $appEnv ?? 'null',
+    $envFile ?? 'null',
+    $_SERVER['APP_ENV'] ?? 'unset',
+    $_SERVER['REDIRECT_APP_ENV'] ?? 'unset',
+    $_ENV['APP_ENV'] ?? 'unset',
+    getenv('APP_ENV') ?: 'false',
+    file_exists(__DIR__ . '/../.env') ? 'yes' : 'no',
+    file_exists(__DIR__ . '/../.env.xrpchange') ? 'yes' : 'no'
+));
+
 // Determine if the application is in maintenance mode...
 if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
     require $maintenance;
@@ -25,6 +38,7 @@ require __DIR__.'/../vendor/autoload.php';
 $app = require_once __DIR__.'/../bootstrap/app.php';
 
 if ($envFile && file_exists(__DIR__.'/../'.$envFile)) {
+    error_log(sprintf('[xboard-api] Loading env from %s', $envFile));
     $app->loadEnvironmentFrom($envFile);
 
     // PHP-FPM workers reuse $_ENV between requests. Dotenv::safeLoad() does NOT overwrite
@@ -37,6 +51,8 @@ if ($envFile && file_exists(__DIR__.'/../'.$envFile)) {
             unset($_ENV[$key], $_SERVER[$key]);
         }
     });
+} else {
+    error_log(sprintf('[xboard-api] Using default .env (envFile=%s exists=%s)', $envFile ?? 'null', $envFile ? (file_exists(__DIR__.'/../'.$envFile) ? 'yes' : 'no') : 'n/a'));
 }
 
 $app->handleRequest(Request::capture());
