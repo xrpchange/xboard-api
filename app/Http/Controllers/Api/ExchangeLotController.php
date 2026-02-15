@@ -55,7 +55,7 @@ class ExchangeLotController extends Controller
             if ($request->is_test === 'true') {
                 $query->test($request->test_group);
             } else {
-                $query->where('is_test', false);
+                $query->main($request->main_group);
             }
         }
 
@@ -114,7 +114,7 @@ class ExchangeLotController extends Controller
         $lots = $query->paginate($request->get('per_page', 20));
         $items = $lots->items();
         $totalAllTest = ExchangeLot::when($request->has('is_test') && $request->is_test === 'true', fn ($q) => $q->test($request->test_group))
-            ->when($request->has('is_test') && $request->is_test !== 'true', fn ($q) => $q->where('is_test', false))
+            ->when($request->has('is_test') && $request->is_test !== 'true', fn ($q) => $q->main($request->main_group))
             ->count();
         $count = count($items);
 
@@ -128,7 +128,7 @@ class ExchangeLotController extends Controller
         // When filter returns 0 but DB has lots — log their wallet_hashes for debugging
         if ($count === 0 && $totalAllTest > 0 && !empty($hashes)) {
             $allTestLots = ExchangeLot::when($request->has('is_test') && $request->is_test === 'true', fn ($q) => $q->test($request->test_group))
-                ->when($request->has('is_test') && $request->is_test !== 'true', fn ($q) => $q->where('is_test', false))
+                ->when($request->has('is_test') && $request->is_test !== 'true', fn ($q) => $q->main($request->main_group))
                 ->get(['id', 'wallet_hash']);
             $responseLog['db_test_wallet_hashes'] = $allTestLots->map(fn ($l) => substr($l->wallet_hash ?? '', 0, 16) . '...')->all();
         }
@@ -203,7 +203,8 @@ class ExchangeLotController extends Controller
             'is_for_individuals' => 'boolean',
             'is_for_legal_entities' => 'boolean',
             'is_test' => 'boolean',
-            'test_group' => 'nullable|string|max:50',
+            'test_group' => 'nullable|string|max:128',
+            'main_group' => 'nullable|string|max:128',
             'expires_at' => 'nullable|date',
         ]);
 

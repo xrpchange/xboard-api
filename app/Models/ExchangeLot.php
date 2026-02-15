@@ -42,6 +42,7 @@ class ExchangeLot extends Model
         'is_active',
         'is_test',
         'test_group',
+        'main_group',
         'expires_at',
     ];
 
@@ -151,6 +152,18 @@ class ExchangeLot extends Model
         $query = $query->where('is_test', true);
         if ($testGroup) {
             $query->where('test_group', $testGroup);
+        }
+        return $query;
+    }
+
+    /**
+     * Фильтр по main_group для production (is_test=false)
+     */
+    public function scopeMain($query, $mainGroup = null)
+    {
+        $query = $query->where('is_test', false);
+        if ($mainGroup) {
+            $query->where('main_group', $mainGroup);
         }
         return $query;
     }

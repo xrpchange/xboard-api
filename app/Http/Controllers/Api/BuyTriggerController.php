@@ -152,7 +152,7 @@ class BuyTriggerController extends Controller
             'is_for_individuals' => 'boolean',
             'is_for_legal_entities' => 'boolean',
             'is_test' => 'boolean',
-            'test_group' => 'nullable|string|max:50',
+            'test_group' => 'nullable|string|max:128',
         ]);
 
         if ($validator->fails()) {

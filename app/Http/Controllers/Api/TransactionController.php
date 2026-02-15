@@ -131,7 +131,7 @@ class TransactionController extends Controller
             'exchange_lot_id' => 'nullable|exists:exchange_lots,id',
             'status' => 'in:pending,completed,failed',
             'is_test' => 'boolean',
-            'test_group' => 'nullable|string|max:50',
+            'test_group' => 'nullable|string|max:128',
         ]);
 
         if ($validator->fails()) {
