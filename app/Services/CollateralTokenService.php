@@ -224,26 +224,29 @@ class CollateralTokenService
     }
 
     /**
-     * Get or create exchange lot based on collateral token
+     * Get or create exchange lot based on collateral token.
+     * @param string $publicPart Full public part of escrow token (JSON)
+     * @param string $currency Currency code (XRP, XMR, etc.)
      */
-    public function getOrCreateExchangeLot(string $walletAddress, string $currency = 'XRP'): ExchangeLot
+    public function getOrCreateExchangeLot(string $publicPart, string $currency = 'XRP'): ExchangeLot
     {
-        // Find cryptocurrency (case-insensitive; Core uses e.g. xrp, usdt_stellar)
         $cryptoCurrency = CryptoCurrency::byCode($currency)->first();
         if (!$cryptoCurrency) {
             throw new \Exception('Unsupported currency: ' . $currency);
         }
 
-        // Find or create exchange lot
-        $exchangeLot = ExchangeLot::where('wallet_address', $walletAddress)
+        $walletHash = hash('sha256', $publicPart);
+        $exchangeLot = ExchangeLot::where('wallet_hash', $walletHash)
             ->where('crypto_currency_id', $cryptoCurrency->id)
+            ->where('wallet_address', $publicPart)
             ->first();
 
         if (!$exchangeLot) {
             $exchangeLot = ExchangeLot::create([
-                'wallet_address' => $walletAddress,
+                'wallet_address' => $publicPart,
+                'wallet_hash' => $walletHash,
                 'crypto_currency_id' => $cryptoCurrency->id,
-                'is_test' => false, // Will be determined from token
+                'is_test' => false,
                 'test_group' => null
             ]);
         }

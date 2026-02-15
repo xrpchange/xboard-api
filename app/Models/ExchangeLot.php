@@ -32,6 +32,7 @@ class ExchangeLot extends Model
         'buy_amounts',
         'crypto_currency_id',
         'wallet_address',
+        'wallet_hash',
         'bank_id',
         'bank_account',
         'payment_purpose',
