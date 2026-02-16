@@ -53,9 +53,11 @@ class ExchangeLotController extends Controller
 
         if ($request->has('is_test')) {
             if ($request->is_test === 'true') {
-                $query->test($request->test_group);
+                $testGroupHash = $request->filled('test_group') ? hash('sha256', trim($request->test_group)) : null;
+                $query->test($testGroupHash);
             } else {
-                $query->main($request->main_group);
+                $mainGroupHash = $request->filled('main_group') ? hash('sha256', trim($request->main_group)) : null;
+                $query->main($mainGroupHash);
             }
         }
 
@@ -113,8 +115,10 @@ class ExchangeLotController extends Controller
 
         $lots = $query->paginate($request->get('per_page', 20));
         $items = $lots->items();
-        $totalAllTest = ExchangeLot::when($request->has('is_test') && $request->is_test === 'true', fn ($q) => $q->test($request->test_group))
-            ->when($request->has('is_test') && $request->is_test !== 'true', fn ($q) => $q->main($request->main_group))
+        $testGroupHashForTotal = $request->filled('test_group') ? hash('sha256', trim($request->test_group)) : null;
+        $mainGroupHashForTotal = $request->filled('main_group') ? hash('sha256', trim($request->main_group)) : null;
+        $totalAllTest = ExchangeLot::when($request->has('is_test') && $request->is_test === 'true', fn ($q) => $q->test($testGroupHashForTotal))
+            ->when($request->has('is_test') && $request->is_test !== 'true', fn ($q) => $q->main($mainGroupHashForTotal))
             ->count();
         $count = count($items);
 
@@ -127,8 +131,8 @@ class ExchangeLotController extends Controller
         $responseLog['total_all_test_in_db'] = $totalAllTest;
         // When filter returns 0 but DB has lots — log their wallet_hashes for debugging
         if ($count === 0 && $totalAllTest > 0 && !empty($hashes)) {
-            $allTestLots = ExchangeLot::when($request->has('is_test') && $request->is_test === 'true', fn ($q) => $q->test($request->test_group))
-                ->when($request->has('is_test') && $request->is_test !== 'true', fn ($q) => $q->main($request->main_group))
+            $allTestLots = ExchangeLot::when($request->has('is_test') && $request->is_test === 'true', fn ($q) => $q->test($testGroupHashForTotal))
+                ->when($request->has('is_test') && $request->is_test !== 'true', fn ($q) => $q->main($mainGroupHashForTotal))
                 ->get(['id', 'wallet_hash']);
             $responseLog['db_test_wallet_hashes'] = $allTestLots->map(fn ($l) => substr($l->wallet_hash ?? '', 0, 16) . '...')->all();
         }
@@ -203,8 +207,8 @@ class ExchangeLotController extends Controller
             'is_for_individuals' => 'boolean',
             'is_for_legal_entities' => 'boolean',
             'is_test' => 'boolean',
-            'test_group' => 'nullable|string|max:128',
-            'main_group' => 'nullable|string|max:128',
+            'test_group' => 'nullable|string|max:128',  // plain text from client, hashed before storing
+            'main_group' => 'nullable|string|max:128',  // plain text from client, hashed before storing
             'expires_at' => 'nullable|date',
         ]);
 
@@ -251,6 +255,15 @@ class ExchangeLotController extends Controller
             ], 422);
         }
         $validated['wallet_hash'] = strtolower(trim($decoded['token_hash']));
+
+        // Store group hashes (SHA256) instead of plain text; null if no group
+        $validated['test_group'] = !empty($validated['test_group'])
+            ? hash('sha256', trim($validated['test_group']))
+            : null;
+        $validated['main_group'] = !empty($validated['main_group'])
+            ? hash('sha256', trim($validated['main_group']))
+            : null;
+
         unset($validated['from_currency'], $validated['to_currency']);
 
         $lot = ExchangeLot::create($validated);
@@ -291,6 +304,8 @@ class ExchangeLotController extends Controller
             'buy_amounts' => 'required|array',
             'buy_amounts.*' => 'numeric|min:0',
             'bank_id' => 'nullable|exists:banks,id',
+            'test_group' => 'nullable|string|max:128',
+            'main_group' => 'nullable|string|max:128',
         ]);
 
         if ($validator->fails()) {
@@ -322,7 +337,7 @@ class ExchangeLotController extends Controller
             return response()->json(['success' => false, 'errors' => ['to_currency' => ['Unknown currency code.']]], 422);
         }
 
-        $lot->update([
+        $updateData = [
             'from_fiat_currency_id' => $fromFiat?->id,
             'from_crypto_currency_id' => $fromCrypto?->id,
             'to_fiat_currency_id' => $toFiat?->id,
@@ -332,7 +347,14 @@ class ExchangeLotController extends Controller
             'buy_amount_max' => max($buyAmounts),
             'buy_amounts' => $buyAmounts,
             'bank_id' => $validated['bank_id'] ?? null,
-        ]);
+        ];
+        $updateData['test_group'] = !empty($validated['test_group'] ?? null)
+            ? hash('sha256', trim($validated['test_group']))
+            : null;
+        $updateData['main_group'] = !empty($validated['main_group'] ?? null)
+            ? hash('sha256', trim($validated['main_group']))
+            : null;
+        $lot->update($updateData);
 
         return response()->json([
             'success' => true,

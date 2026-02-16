@@ -40,7 +40,8 @@
 | `is_for_individuals` | boolean | — | Доступно для физлиц (по умолчанию может быть true). |
 | `is_for_legal_entities` | boolean | — | Доступно для юрлиц. |
 | `is_test` | boolean | — | Тестовый лот. |
-| `test_group` | string | nullable, до 50 символов | Группа тестового режима. |
+| `test_group` | string | nullable, до 128 символов | Группа тестового режима (sandbox). Клиент передаёт текст; API сохраняет SHA256-хэш (64 hex). При отсутствии — null. |
+| `main_group` | string | nullable, до 128 символов | Группа production. Клиент передаёт текст; API сохраняет SHA256-хэш (64 hex). При отсутствии — null. |
 | `expires_at` | string | nullable, формат даты/date-time | Срок действия лота. |
 
 ---

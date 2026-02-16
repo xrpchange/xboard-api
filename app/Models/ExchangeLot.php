@@ -147,23 +147,30 @@ class ExchangeLot extends Model
         return $query->where('is_active', true);
     }
 
+    /**
+     * Фильтр по test_group. $testGroup = null — только лоты без группы (test_group IS NULL).
+     */
     public function scopeTest($query, $testGroup = null)
     {
         $query = $query->where('is_test', true);
         if ($testGroup) {
             $query->where('test_group', $testGroup);
+        } else {
+            $query->whereNull('test_group');
         }
         return $query;
     }
 
     /**
-     * Фильтр по main_group для production (is_test=false)
+     * Фильтр по main_group. $mainGroup = null — только лоты без группы (main_group IS NULL).
      */
     public function scopeMain($query, $mainGroup = null)
     {
         $query = $query->where('is_test', false);
         if ($mainGroup) {
             $query->where('main_group', $mainGroup);
+        } else {
+            $query->whereNull('main_group');
         }
         return $query;
     }
