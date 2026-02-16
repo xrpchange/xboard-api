@@ -39,12 +39,18 @@ class ExchangeLotController extends Controller
         $walletAddresses = $request->input('wallet_address') ?? $request->input('wallet_address[]');
         $walletCount = is_array($walletAddresses) ? count($walletAddresses) : ($walletAddresses ? 1 : 0);
         Log::info('[exchange-lots] REQUEST', [
+            'host' => $request->getHost(),
+            'app_env' => config('app.env'),
+            'db_database' => config('database.connections.' . config('database.default') . '.database'),
             'from_currency' => $request->get('from_currency'),
             'to_currency' => $request->get('to_currency'),
+            'country_id' => $request->get('country_id'),
+            'bank_id' => $request->get('bank_id'),
             'is_test' => $request->get('is_test'),
+            'test_group' => $request->get('test_group'),
+            'main_group' => $request->get('main_group'),
             'include_inactive' => $request->get('include_inactive'),
             'wallet_address_count' => $walletCount,
-            'wallet_address_raw_keys' => array_keys($request->query()),
         ]);
 
         $includeInactive = filter_var($request->get('include_inactive', false), FILTER_VALIDATE_BOOLEAN);
@@ -77,6 +83,14 @@ class ExchangeLotController extends Controller
         }
         if ($request->has('node_id')) {
             $query->where('node_id', $request->node_id);
+        }
+        if ($request->filled('country_id')) {
+            // Include lots with bank in this country OR lots without bank (crypto-to-crypto)
+            $countryId = (int) $request->country_id;
+            $query->where(function ($q) use ($countryId) {
+                $q->whereHas('bank', fn ($b) => $b->where('country_id', $countryId))
+                    ->orWhereNull('bank_id');
+            });
         }
         if ($request->has('for_individuals') && $request->for_individuals === 'true') {
             $query->forIndividuals();
@@ -113,8 +127,23 @@ class ExchangeLotController extends Controller
         // Sorting
         $query->orderBy('created_at', 'desc');
 
+        Log::info('[exchange-lots] FILTERS', [
+            'from_currency' => $request->filled('from_currency'),
+            'to_currency' => $request->filled('to_currency'),
+            'country_id' => $request->filled('country_id'),
+            'bank_id' => $request->filled('bank_id'),
+            'is_test' => $request->has('is_test'),
+            'test_group' => $request->filled('test_group'),
+            'main_group' => $request->filled('main_group'),
+            'wallet_hashes_count' => count($hashes),
+        ]);
+
         $lots = $query->paginate($request->get('per_page', 20));
         $items = $lots->items();
+        Log::info('[exchange-lots] RESPONSE', [
+            'returned_count' => count($items),
+            'total' => $lots->total(),
+        ]);
         $testGroupHashForTotal = $request->filled('test_group') ? hash('sha256', trim($request->test_group)) : null;
         $mainGroupHashForTotal = $request->filled('main_group') ? hash('sha256', trim($request->main_group)) : null;
         $totalAllTest = ExchangeLot::when($request->has('is_test') && $request->is_test === 'true', fn ($q) => $q->test($testGroupHashForTotal))
