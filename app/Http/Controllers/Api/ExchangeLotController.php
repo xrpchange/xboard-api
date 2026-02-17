@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\CryptoCurrency;
 use App\Models\ExchangeLot;
 use App\Models\FiatCurrency;
+use App\Services\EscrowTokenValidationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
@@ -20,6 +21,10 @@ use Illuminate\Support\Facades\Validator;
 
 class ExchangeLotController extends Controller
 {
+    public function __construct(
+        private EscrowTokenValidationService $escrowTokenValidation
+    ) {}
+
     /**
      * @OA\Get(
      *     path="/exchange-lots",
@@ -299,6 +304,15 @@ class ExchangeLotController extends Controller
         }
         $validated['wallet_hash'] = strtolower(trim($decoded['token_hash']));
 
+        // Validate escrow token via Core before publishing lot (protection against fake tokens)
+        $validation = $this->escrowTokenValidation->validateToken($validated['wallet_address']);
+        if (!$validation['valid']) {
+            return response()->json([
+                'success' => false,
+                'errors' => ['wallet_address' => [$validation['error'] ?? 'Escrow token validation failed. Token may be fake or invalid.']]
+            ], 422);
+        }
+
         // Store group hashes (SHA256) instead of plain text; null if no group
         $validated['test_group'] = !empty($validated['test_group'])
             ? hash('sha256', trim($validated['test_group']))
@@ -346,6 +360,7 @@ class ExchangeLotController extends Controller
     public function update(Request $request, ExchangeLot $lot): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            'wallet_address' => 'required|string',
             'from_currency' => 'required|string|max:20',
             'to_currency' => 'required|string|max:20',
             'sell_amount' => 'required|numeric|min:0',
@@ -372,6 +387,23 @@ class ExchangeLotController extends Controller
             return response()->json([
                 'success' => false,
                 'errors' => ['buy_amounts' => ['At least one positive amount is required.']]
+            ], 422);
+        }
+
+        // Compare incoming escrow token with lot's stored token (no Core call on update)
+        $decoded = json_decode($validated['wallet_address'], true);
+        if (!is_array($decoded) || empty($decoded['token_hash'])) {
+            return response()->json([
+                'success' => false,
+                'errors' => ['wallet_address' => ['token_hash is required in public part of escrow token.']]
+            ], 422);
+        }
+        $incomingHash = strtolower(trim($decoded['token_hash']));
+        $storedHash = strtolower(trim($lot->wallet_hash ?? ''));
+        if ($incomingHash !== $storedHash) {
+            return response()->json([
+                'success' => false,
+                'errors' => ['wallet_address' => ['Escrow token does not match the lot. Cannot change token when updating.']]
             ], 422);
         }
 
