@@ -238,6 +238,7 @@ class ExchangeLotController extends Controller
             'is_test' => 'boolean',
             'test_group' => 'nullable|string|max:128',  // plain text from client, hashed before storing
             'main_group' => 'nullable|string|max:128',  // plain text from client, hashed before storing
+            'note' => 'nullable|string|max:65535',
             'expires_at' => 'nullable|date',
         ]);
 
@@ -335,6 +336,7 @@ class ExchangeLotController extends Controller
             'bank_id' => 'nullable|exists:banks,id',
             'test_group' => 'nullable|string|max:128',
             'main_group' => 'nullable|string|max:128',
+            'note' => 'nullable|string|max:65535',
         ]);
 
         if ($validator->fails()) {
@@ -383,6 +385,7 @@ class ExchangeLotController extends Controller
         $updateData['main_group'] = !empty($validated['main_group'] ?? null)
             ? hash('sha256', trim($validated['main_group']))
             : null;
+        $updateData['note'] = $validated['note'] ?? null;
         $lot->update($updateData);
 
         return response()->json([

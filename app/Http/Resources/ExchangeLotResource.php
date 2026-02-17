@@ -36,6 +36,7 @@ class ExchangeLotResource extends JsonResource
             'crypto_currency_id' => $this->crypto_currency_id,
             'wallet_address' => $this->wallet_address ?? '',
             'bank_id' => $this->bank_id,
+            'note' => $this->note ?? '',
             'created_at' => $this->created_at?->toISOString() ?? now()->toISOString(),
             'expires_at' => $this->expires_at?->toISOString() ?? '',
         ];

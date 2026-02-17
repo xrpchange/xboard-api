@@ -43,6 +43,7 @@ class ExchangeLot extends Model
         'is_test',
         'test_group',
         'main_group',
+        'note',
         'expires_at',
     ];
 
