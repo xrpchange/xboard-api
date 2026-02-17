@@ -13,6 +13,15 @@ Key points:
 - Backend: PHP 8+, Laravel. Configuration via `.env` and `config/*.php`, no hardcoded `127.0.0.1`.
 - **NO fallback by host on server:** For `.env.xrpchange` (api.xrpchange.site), `APP_ENV` MUST be set explicitly via Apache `SetEnv` (or equivalent). Do NOT add fallback detection by `HTTP_HOST` or any other implicit method on production.
 - `nodes` table — source of available nodes for clients; keep migrations and schema up to date (including `weight`, `max_connections` if applicable).
+
+## Терминология для партнёров и документации (Business terminology)
+
+В документации для партнёров и в пользовательских текстах используйте бизнес-понятия:
+- **Обменник** (EN: Exchange) — один пункт обмена; в коде/API: node (запись в таблице `nodes`).
+- **Сеть обменников** (EN: Exchange network) — набор доверенных обменников; источник данных — таблица `nodes`. Не использовать «кластер».
+- **Клиент** (EN: Client) — приложение для пользователей и партнёров (Android, Web и т.д.), подключающееся к API обменников.
+
+Подробнее: `docs/TERMINOLOGY.md`.
 - Integrations:
   - XBoard Core — business operations for tokens/escrow
   - Monero Balance Service — proxy for XMR balance checks (no "fake" data)

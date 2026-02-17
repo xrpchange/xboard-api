@@ -29,10 +29,22 @@
 | `crypto_currency_id` | integer | обязательно, должен существовать в `crypto_currencies` | ID криптовалюты лота из справочника API (например из `GET /v1/currencies` / типа crypto). |
 | `wallet_address` | string | обязательно | Полная открытая часть (public part) эскроу-токена в виде JSON. Должна содержать поле `token_hash`. В `wallet_hash` сохраняется значение `token_hash` из public part; поиск лотов — по этим хэшам. |
 
+### Поле `rate` (курс обмена)
+
+Курс (rate) используется для отображения и фильтрации лотов. Логика зависит от количества сумм в `buy_amounts`:
+
+| Условие | Поведение |
+|---------|-----------|
+| `buy_amounts` содержит **ровно одно** положительное число | API вычисляет курс сам: `rate = buy_amounts[0] / sell_amount`. Поле `rate` передавать не нужно. |
+| `buy_amounts` содержит **несколько** положительных чисел | Поле `rate` **обязательно**. Продавец указывает курс сам (для отображения, т.к. у каждой суммы свой курс). Без `rate` возвращается 422. |
+
+Поле хранится в таблице `exchange_lots` (миграция `2026_02_19_000001_add_rate_to_exchange_lots`).
+
 ### Необязательные поля
 
 | Поле | Тип | Правила | Описание |
 |------|-----|--------|----------|
+| `rate` | number | nullable, ≥ 0; **обязательно при нескольких** `buy_amounts` | Курс обмена (получаем/отдаём). При одном `buy_amount` — вычисляется API. |
 | `bank_id` | integer | nullable, должен существовать в `banks` | ID банка (для фиатных операций). |
 | `bank_account` | string | nullable, до 100 символов | Номер банковского счёта. |
 | `payment_purpose` | string | nullable, до 255 символов | Назначение платежа. |
@@ -55,6 +67,7 @@
   "to_currency": "XMR",
   "sell_amount": 1000,
   "buy_amounts": [0.5, 0.3, 0.2],
+  "rate": 0.0002,
   "crypto_currency_id": 2,
   "wallet_address": "{\"version\":1,\"wallet_address\":\"4AdkPJoxn7JCvAqX1K...\",\"currency\":\"XMR\",\"token_hash\":\"abc123...\"}",
   "bank_id": 1,
@@ -64,6 +77,8 @@
 }
 ```
 
+*Примечание: `rate` обязателен, т.к. в `buy_amounts` несколько значений. При одном значении (например `[0.5]`) `rate` можно не передавать — API вычислит `0.5 / 1000 = 0.0005`.*
+
 ---
 
 ## Ответы
@@ -72,7 +87,9 @@
 - **401 Unauthorized** — не передан или неверный токен.
 - **422 Unprocessable Entity** — ошибка валидации; в теле приходят `success: false` и объект `errors` с полями и сообщениями (например `node_id`, `buy_amounts`).
 
-Дополнительная проверка на стороне API: если после фильтрации в `buy_amounts` не осталось ни одного положительного числа, возвращается 422 с ошибкой по полю `buy_amounts` («At least one positive amount is required.»).
+Дополнительные проверки на стороне API:
+- Если после фильтрации в `buy_amounts` не осталось ни одного положительного числа — 422 с ошибкой по полю `buy_amounts` («At least one positive amount is required.»).
+- Если в `buy_amounts` несколько значений, а `rate` не передан или ≤ 0 — 422 с ошибкой по полю `rate` («Rate is required when multiple buy_amounts are specified.»).
 
 ---
 
@@ -82,6 +99,13 @@
 2. Валюты — кодами в **`from_currency`** и **`to_currency`** (строки).
 3. **`sell_amount`** — одно число (сколько отдаём).
 4. **`buy_amounts`** — JSON-массив чисел (сколько хотим получить по частям); минимум одно число > 0.
-5. **`crypto_currency_id`** — из Core; **`wallet_address`** — полная открытая часть (public part) эскроу-токена в виде JSON. При поиске лотов: параметр `wallet_address` (или `wallet_address[]`) — один или несколько public part; API извлекает `token_hash` из каждого и фильтрует по `wallet_hash IN (...)` (в колонке хранится `token_hash`).
+5. **`rate`** — при одном `buy_amount` не передавать (API вычислит); при нескольких — обязательно.
+6. **`crypto_currency_id`** — из Core; **`wallet_address`** — полная открытая часть (public part) эскроу-токена в виде JSON. При поиске лотов: параметр `wallet_address` (или `wallet_address[]`) — один или несколько public part; API извлекает `token_hash` из каждого и фильтрует по `wallet_hash IN (...)` (в колонке хранится `token_hash`).
+
+---
+
+## Endpoint обновления лота (POST /v1/exchange-lots/{id}/update)
+
+Для обновления лота (`POST /v1/exchange-lots/{id}/update`) поле `rate` работает так же: при одном `buy_amount` вычисляется на сервере, при нескольких — обязательно в теле запроса.
 
 См. также: [NODES_API_DOCUMENTATION.md](NODES_API_DOCUMENTATION.md), [ESCROW_TOKEN_AUTHENTICATION.md](ESCROW_TOKEN_AUTHENTICATION.md).

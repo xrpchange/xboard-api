@@ -2,7 +2,11 @@
 
 ## 📋 Overview
 
-The Nodes API provides endpoints for managing exchange bulletin board nodes and their endpoints. Each node represents an independent exchange platform with multiple API endpoints (production, sandbox, dev_api, core_api) and role-based access control.
+The Nodes API provides endpoints for managing **exchange bulletin board nodes** and their endpoints. In partner and user-facing documentation we call:
+- **Node** = **Обменник** (Exchange) — one independent exchange platform (one row in `nodes` table).
+- **List of nodes** = **Сеть обменников** (Exchange network) — the set of trusted exchanges available to the client.
+
+Each node (обменник) has multiple API endpoints (production, sandbox, dev_api, core_api) and role-based access control. See [TERMINOLOGY.md](TERMINOLOGY.md) for full partner terminology.
 
 ## 🏗️ Database Schema
 

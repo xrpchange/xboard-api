@@ -20,6 +20,8 @@
 
 **API Endpoints**: See [API documentation](../README.md#api-documentation)
 
+**Terminology (for partners and UI)**: Use **Обменник** (Exchange) = one node; **Сеть обменников** (Exchange network) = list of trusted nodes; **Клиент** (Client) = the app. See [TERMINOLOGY.md](TERMINOLOGY.md).
+
 ---
 
 ## Project Description

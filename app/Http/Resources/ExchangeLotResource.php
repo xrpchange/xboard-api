@@ -10,9 +10,10 @@ class ExchangeLotResource extends JsonResource
     {
         $buyAmounts = $this->buy_amounts ?? [];
         $sellAmount = (float) $this->sell_amount;
-        $rate = $sellAmount > 0 && count($buyAmounts) > 0
-            ? (array_sum($buyAmounts) / count($buyAmounts)) / $sellAmount
-            : 0;
+        // Use stored rate if present; else compute only when single buy_amount
+        $rate = isset($this->rate) && (float) $this->rate > 0
+            ? (float) $this->rate
+            : ($sellAmount > 0 && count($buyAmounts) === 1 ? $buyAmounts[0] / $sellAmount : 0);
 
         $status = 'active';
         if (!$this->is_active) {

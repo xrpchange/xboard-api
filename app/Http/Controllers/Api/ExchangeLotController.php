@@ -244,6 +244,7 @@ class ExchangeLotController extends Controller
             'sell_amount' => 'required|numeric|min:0',
             'buy_amounts' => 'required|array',
             'buy_amounts.*' => 'numeric|min:0',
+            'rate' => 'nullable|numeric|min:0',
             'crypto_currency_id' => 'required|exists:crypto_currencies,id',
             'wallet_address' => 'required|string',
             'bank_id' => 'nullable|exists:banks,id',
@@ -279,6 +280,21 @@ class ExchangeLotController extends Controller
         $validated['buy_amount_min'] = min($buyAmounts);
         $validated['buy_amount_max'] = max($buyAmounts);
         $validated['buy_amounts'] = $buyAmounts;
+
+        // Rate: when single buy_amount — compute; when multiple — require from client
+        if (count($buyAmounts) === 1) {
+            $sellAmount = (float) $validated['sell_amount'];
+            $validated['rate'] = $sellAmount > 0 ? ($buyAmounts[0] / $sellAmount) : 0;
+        } else {
+            $rate = isset($validated['rate']) ? (float) $validated['rate'] : null;
+            if ($rate === null || $rate <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => ['rate' => ['Rate is required when multiple buy_amounts are specified.']]
+                ], 422);
+            }
+            $validated['rate'] = $rate;
+        }
 
         $fromCode = strtoupper($validated['from_currency']);
         $toCode = strtoupper($validated['to_currency']);
@@ -397,6 +413,7 @@ class ExchangeLotController extends Controller
             'sell_amount' => 'required|numeric|min:0',
             'buy_amounts' => 'required|array',
             'buy_amounts.*' => 'numeric|min:0',
+            'rate' => 'nullable|numeric|min:0',
             'bank_id' => 'nullable|exists:banks,id',
             'bank_ids' => 'nullable|array',
             'bank_ids.*' => 'integer|exists:banks,id',
@@ -419,6 +436,21 @@ class ExchangeLotController extends Controller
                 'success' => false,
                 'errors' => ['buy_amounts' => ['At least one positive amount is required.']]
             ], 422);
+        }
+
+        // Rate: when single buy_amount — compute; when multiple — require from client
+        $rateValue = null;
+        if (count($buyAmounts) === 1) {
+            $sellAmount = (float) $validated['sell_amount'];
+            $rateValue = $sellAmount > 0 ? ($buyAmounts[0] / $sellAmount) : 0;
+        } else {
+            $rateValue = isset($validated['rate']) ? (float) $validated['rate'] : null;
+            if ($rateValue === null || $rateValue <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => ['rate' => ['Rate is required when multiple buy_amounts are specified.']]
+                ], 422);
+            }
         }
 
         // Compare incoming escrow token with lot's stored token (no Core call on update)
@@ -460,6 +492,7 @@ class ExchangeLotController extends Controller
             'buy_amount_min' => min($buyAmounts),
             'buy_amount_max' => max($buyAmounts),
             'buy_amounts' => $buyAmounts,
+            'rate' => $rateValue,
             'bank_id' => $validated['bank_id'] ?? null,
         ];
         $updateData['test_group'] = !empty($validated['test_group'] ?? null)
