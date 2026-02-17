@@ -46,6 +46,7 @@ class ExchangeLotController extends Controller
             'to_currency' => $request->get('to_currency'),
             'country_id' => $request->get('country_id'),
             'bank_id' => $request->get('bank_id'),
+            'accept_from_bank_id' => $request->get('accept_from_bank_id'),
             'is_test' => $request->get('is_test'),
             'test_group' => $request->get('test_group'),
             'main_group' => $request->get('main_group'),
@@ -55,7 +56,7 @@ class ExchangeLotController extends Controller
 
         $includeInactive = filter_var($request->get('include_inactive', false), FILTER_VALIDATE_BOOLEAN);
         $query = ($includeInactive ? ExchangeLot::query() : ExchangeLot::active())
-            ->with(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']);
+            ->with(['cryptoCurrency', 'node', 'bank', 'banks', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']);
 
         if ($request->has('is_test')) {
             if ($request->is_test === 'true') {
@@ -98,8 +99,17 @@ class ExchangeLotController extends Controller
         if ($request->has('for_legal_entities') && $request->for_legal_entities === 'true') {
             $query->forLegalEntities();
         }
+        // bank_id = recipient bank (where seller receives money)
         if ($request->filled('bank_id')) {
-            $query->where('bank_id', $request->bank_id);
+            $query->where('bank_id', (int) $request->bank_id);
+        }
+        // accept_from_bank_id = lots that accept payment from this bank (bank_ids contains it OR bank_ids empty)
+        if ($request->filled('accept_from_bank_id')) {
+            $bankId = (int) $request->accept_from_bank_id;
+            $query->where(function ($q) use ($bankId) {
+                $q->whereHas('banks', fn ($b) => $b->where('banks.id', $bankId))
+                    ->orWhereDoesntHave('banks');
+            });
         }
         $walletAddresses = $request->input('wallet_address') ?? $request->input('wallet_address[]');
         $hashes = [];
@@ -132,6 +142,7 @@ class ExchangeLotController extends Controller
             'to_currency' => $request->filled('to_currency'),
             'country_id' => $request->filled('country_id'),
             'bank_id' => $request->filled('bank_id'),
+            'accept_from_bank_id' => $request->filled('accept_from_bank_id'),
             'is_test' => $request->has('is_test'),
             'test_group' => $request->filled('test_group'),
             'main_group' => $request->filled('main_group'),
@@ -230,6 +241,8 @@ class ExchangeLotController extends Controller
             'crypto_currency_id' => 'required|exists:crypto_currencies,id',
             'wallet_address' => 'required|string',
             'bank_id' => 'nullable|exists:banks,id',
+            'bank_ids' => 'nullable|array',
+            'bank_ids.*' => 'integer|exists:banks,id',
             'bank_account' => 'nullable|string|max:100',
             'payment_purpose' => 'nullable|string|max:255',
             'contract_url' => 'nullable|url|max:255',
@@ -295,8 +308,13 @@ class ExchangeLotController extends Controller
             : null;
 
         unset($validated['from_currency'], $validated['to_currency']);
+        $bankIds = $validated['bank_ids'] ?? null;
+        unset($validated['bank_ids']);
 
         $lot = ExchangeLot::create($validated);
+        if (!empty($bankIds)) {
+            $lot->banks()->sync(array_values(array_unique(array_map('intval', $bankIds))));
+        }
 
         return response()->json([
             'success' => true,
@@ -334,6 +352,8 @@ class ExchangeLotController extends Controller
             'buy_amounts' => 'required|array',
             'buy_amounts.*' => 'numeric|min:0',
             'bank_id' => 'nullable|exists:banks,id',
+            'bank_ids' => 'nullable|array',
+            'bank_ids.*' => 'integer|exists:banks,id',
             'test_group' => 'nullable|string|max:128',
             'main_group' => 'nullable|string|max:128',
             'note' => 'nullable|string|max:65535',
@@ -387,6 +407,11 @@ class ExchangeLotController extends Controller
             : null;
         $updateData['note'] = $validated['note'] ?? null;
         $lot->update($updateData);
+
+        if (array_key_exists('bank_ids', $validated)) {
+            $bankIds = $validated['bank_ids'] ?? [];
+            $lot->banks()->sync(empty($bankIds) ? [] : array_values(array_unique(array_map('intval', $bankIds))));
+        }
 
         return response()->json([
             'success' => true,

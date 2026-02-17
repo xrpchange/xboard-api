@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -128,11 +129,19 @@ class ExchangeLot extends Model
     }
 
     /**
-     * Банк (опционально)
+     * Банк (опционально, legacy / primary)
      */
     public function bank(): BelongsTo
     {
         return $this->belongsTo(Bank::class);
+    }
+
+    /**
+     * Список банков, от которых принимаем фиат (доп. фильтр). Пусто = любые.
+     */
+    public function banks(): BelongsToMany
+    {
+        return $this->belongsToMany(Bank::class, 'exchange_lot_banks')->withTimestamps();
     }
 
     /**
