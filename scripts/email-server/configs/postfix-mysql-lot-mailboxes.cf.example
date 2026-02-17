@@ -1,0 +1,11 @@
+# Postfix MySQL virtual_mailbox_maps for lot_mailboxes (chat IMAP)
+# Copy to /etc/postfix/mysql-virtual-mailbox-lot.cf and adjust
+# Add to main.cf: virtual_mailbox_maps = hash:/etc/postfix/virtual-mailbox-maps mysql:/etc/postfix/mysql-virtual-mailbox-lot.cf
+# See docs/LOT_MAILBOX_AND_IMAP_CHAT.md
+
+hosts = localhost
+user = postfix
+password = YOUR_POSTFIX_DB_PASSWORD
+dbname = xboard
+
+query = SELECT CONCAT('/var/mail/vhosts/', domain, '/', local_part, '/') FROM lot_mailboxes WHERE CONCAT(local_part, '@', domain) = '%s' LIMIT 1

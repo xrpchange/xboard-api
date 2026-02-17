@@ -133,8 +133,11 @@ sudo postmap /etc/postfix/transport
 
 #### Виртуальные пользователи
 
+- **Статические ящики** (check@xdexboard.com) — через hash-файлы.
+- **Ящики лотов (lot_mailboxes)** — через MySQL. См. [docs/LOT_MAILBOX_AND_IMAP_CHAT.md](LOT_MAILBOX_AND_IMAP_CHAT.md) и `scripts/email-server/setup-lot-mailboxes.sh`.
+
 ```bash
-# Создайте файлы
+# Создайте файлы для статических ящиков
 echo "xdexboard.com OK" | sudo tee /etc/postfix/virtual-mailbox-domains
 echo "check@xdexboard.com xdexboard.com/check/" | sudo tee /etc/postfix/virtual-mailbox-maps
 echo "check@xdexboard.com check@xdexboard.com" | sudo tee /etc/postfix/virtual-alias-maps
@@ -144,6 +147,8 @@ sudo postmap /etc/postfix/virtual-mailbox-domains
 sudo postmap /etc/postfix/virtual-mailbox-maps
 sudo postmap /etc/postfix/virtual-alias-maps
 ```
+
+Чтобы добавить ящики лотов из MySQL, см. [LOT_MAILBOX_AND_IMAP_CHAT.md](LOT_MAILBOX_AND_IMAP_CHAT.md) и конфиги `postfix-mysql-lot-mailboxes.cf.example` / `dovecot-sql-lot-mailboxes.conf.example`.
 
 ### Dovecot
 

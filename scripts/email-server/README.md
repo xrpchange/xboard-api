@@ -8,14 +8,18 @@
 
 ```
 scripts/email-server/
-├── install.sh                    # Автоматический скрипт установки
-├── php-verifier.php              # PHP скрипт проверки DKIM и отправки ответов
-├── configs/                       # Примеры конфигураций
+├── install.sh                      # Установка Postfix/Dovecot для верификации платежей
+├── setup-mysql-users.sh            # Создание MySQL-пользователей postfix/dovecot (lot mailboxes)
+├── setup-lot-mailboxes.sh          # Настройка Postfix/Dovecot для ящиков лотов (IMAP-чат)
+├── php-verifier.php                # PHP скрипт проверки DKIM и отправки ответов
+├── configs/                        # Примеры конфигураций
 │   ├── postfix-main.cf.example
 │   ├── postfix-master.cf.example
+│   ├── postfix-mysql-lot-mailboxes.cf.example
 │   ├── dovecot.conf.example
-│   └── dovecot-10-imap.conf.example
-└── README.md                      # Этот файл
+│   ├── dovecot-10-imap.conf.example
+│   └── dovecot-sql-lot-mailboxes.conf.example
+└── README.md
 ```
 
 ## Быстрый старт
@@ -59,6 +63,21 @@ scripts/email-server/
 - **OpenDKIM** - подпись исходящих писем
 - **PHP 8.3** - скрипт проверки DKIM
 - **Let's Encrypt** - SSL сертификаты
+
+## Ящики лотов (IMAP-чат)
+
+Для чата между участниками сделки через IMAP:
+
+1. Убедитесь, что миграция `lot_mailboxes` выполнена: `php artisan migrate`
+2. На почтовом сервере установите пакеты: `apt-get install postfix-mysql dovecot-mysql`
+3. Запустите скрипт (создаст MySQL-пользователей и настроит Postfix/Dovecot):
+   ```bash
+   cd scripts/email-server
+   sed -i 's/\r$//' setup-mysql-users.sh setup-lot-mailboxes.sh  # при копировании с Windows
+   sudo bash setup-mysql-users.sh
+   ```
+
+См. [`docs/LOT_MAILBOX_AND_IMAP_CHAT.md`](../../docs/LOT_MAILBOX_AND_IMAP_CHAT.md)
 
 ## Документация
 

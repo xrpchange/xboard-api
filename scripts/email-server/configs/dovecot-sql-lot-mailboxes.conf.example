@@ -1,0 +1,11 @@
+# Dovecot SQL for lot_mailboxes (chat IMAP)
+# Copy to /etc/dovecot/dovecot-sql-lot.conf and adjust
+# Include in passdb {} and userdb {} in dovecot.conf
+# See docs/LOT_MAILBOX_AND_IMAP_CHAT.md
+
+driver = mysql
+connect = host=localhost dbname=xboard user=dovecot password=YOUR_DOVECOT_DB_PASSWORD
+default_pass_scheme = BLF-CRYPT
+
+password_query = SELECT CONCAT(local_part, '@', domain) AS user, password_hash AS password FROM lot_mailboxes WHERE local_part = '%n' AND domain = '%d'
+user_query = SELECT CONCAT(local_part, '@', domain) AS user, 'vmail' AS uid, 'vmail' AS gid, CONCAT('/var/mail/vhosts/', domain, '/', local_part) AS home FROM lot_mailboxes WHERE local_part = '%n' AND domain = '%d'

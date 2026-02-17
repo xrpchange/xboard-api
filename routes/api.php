@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\BuyTriggerController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\NodeController;
 use App\Http\Controllers\Api\EscrowTokenController;
+use App\Http\Controllers\Api\LotMailboxController;
 use App\Http\Controllers\Api\Admin\NodeAdminController;
 
 /*
@@ -123,6 +124,8 @@ Route::prefix('v1')->group(function () {
 // Protected routes (with escrow token authentication)
 Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)->group(function () {
     // Exchange board
+    Route::post('/lot-mailbox/delete', [LotMailboxController::class, 'delete']);
+
     Route::prefix('exchange-lots')->group(function () {
         Route::get('/', [ExchangeLotController::class, 'index']);
         Route::get('/{lot}', [ExchangeLotController::class, 'show']);

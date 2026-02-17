@@ -22,7 +22,8 @@ use Illuminate\Support\Facades\Validator;
 class ExchangeLotController extends Controller
 {
     public function __construct(
-        private EscrowTokenValidationService $escrowTokenValidation
+        private EscrowTokenValidationService $escrowTokenValidation,
+        private \App\Services\LotMailboxService $lotMailboxService
     ) {}
 
     /**
@@ -330,10 +331,40 @@ class ExchangeLotController extends Controller
             $lot->banks()->sync(array_values(array_unique(array_map('intval', $bankIds))));
         }
 
-        return response()->json([
+        // Create or get mailbox for lot chat (IMAP) — see docs/LOT_MAILBOX_AND_IMAP_CHAT.md
+        $mailbox = null;
+        try {
+            $currency = $lot->cryptoCurrency?->code ?? $decoded['currency'] ?? 'crypto';
+            $mailbox = $this->lotMailboxService->ensureMailbox(
+                $validated['wallet_address'],
+                $validated['wallet_hash'],
+                $currency
+            );
+            if ($mailbox) {
+                Log::info('[exchange-lots] Lot mailbox created/retrieved', [
+                    'lot_id' => $lot->id,
+                    'email' => $mailbox['email'] ?? null,
+                ]);
+            } else {
+                Log::debug('[exchange-lots] Lot mailbox not created (normalize failed or disabled)', ['lot_id' => $lot->id]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] Lot mailbox creation failed (non-blocking)', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+        }
+
+        $response = [
             'success' => true,
-            'data' => \App\Http\Resources\ExchangeLotResource::make($lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']))
-        ], 201);
+            'data' => \App\Http\Resources\ExchangeLotResource::make($lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']))->resolve(),
+        ];
+        if ($mailbox) {
+            $response['mailbox'] = $mailbox;
+        }
+
+        return response()->json($response, 201);
     }
 
     /**

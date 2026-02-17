@@ -100,6 +100,14 @@ php artisan key:generate
   - For Mailgun: Configure in `config/services.php`
 - **IMAP operations** use `webklex/php-imap` library (already in composer.json) for reading emails via OAuth
 
+**Lot mailbox (IMAP chat for exchange lots):**
+- See [docs/LOT_MAILBOX_AND_IMAP_CHAT.md](docs/LOT_MAILBOX_AND_IMAP_CHAT.md) for full documentation
+- `LOT_MAILBOX_DOMAIN` — domain for lot mailboxes (default: `xdexboard.com`)
+- `LOT_MAILBOX_IMAP_HOST` — IMAP host for clients (default: `mail.xdexboard.com`)
+- `LOT_MAILBOX_IMAP_PORT` — IMAP port (default: `993`)
+- `LOT_MAILBOX_IMAP_SSL` — use SSL for IMAP (default: `true`)
+- `LOT_MAILBOX_MAILDIR_BASE` — Maildir base path on mail server (default: `/var/mail/vhosts`)
+
 4. **Database setup**
 ```bash
 # Edit .env file with your database settings
@@ -287,6 +295,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **[XRPChangeCore Setup](CORE_NGINX_SETUP.md)** - Core system deployment instructions
 - **[Cron Jobs Setup](CRON_SSL_SETUP.md)** - Automatic certificate renewal
 - **[Email Server Setup](docs/EMAIL_SERVER_SETUP.md)** - Email server for payment verification (DKIM checking)
+- **[Lot Mailbox and IMAP Chat](docs/LOT_MAILBOX_AND_IMAP_CHAT.md)** - Концепция: почтовые ящики для лотов, чат на IMAP (не реализовано)
 - **[Email Verification Methods](docs/EMAIL_VERIFICATION_METHODS.md)** - Complete guide for all email verification methods (OAuth, .eml, forward, copy-paste)
 - **[User Email Verification Guide](docs/USER_EMAIL_VERIFICATION_GUIDE.md)** - User-friendly guide for verifying payment emails
 - **[OAuth Setup Guide](docs/OAUTH_SETUP.md)** - OAuth integration setup for email providers (Yandex, Gmail, Outlook)

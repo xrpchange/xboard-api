@@ -58,5 +58,16 @@ return [
         'mode' => env('DEV_MODE', 'sandbox'), // 'sandbox' or 'production'
     ],
 
+    /*
+    | Lot mailbox (IMAP chat) - mail.xdexboard.com
+    | See docs/LOT_MAILBOX_AND_IMAP_CHAT.md
+    */
+    'lot_mailbox' => [
+        'domain' => env('LOT_MAILBOX_DOMAIN', 'xdexboard.com'),
+        'imap_host' => env('LOT_MAILBOX_IMAP_HOST', 'mail.xdexboard.com'),
+        'imap_port' => env('LOT_MAILBOX_IMAP_PORT', 993),
+        'imap_ssl' => env('LOT_MAILBOX_IMAP_SSL', true),
+        'maildir_base' => env('LOT_MAILBOX_MAILDIR_BASE', '/var/mail/vhosts'), // for Maildir creation
+    ],
 
 ];

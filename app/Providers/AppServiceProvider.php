@@ -11,7 +11,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(\App\Services\LotMailboxService::class, function ($app) {
+            $config = config('services.lot_mailbox', []);
+            return new \App\Services\LotMailboxService(
+                domain: $config['domain'] ?? 'xdexboard.com',
+                maildirBase: $config['maildir_base'] ?? null
+            );
+        });
     }
 
     /**
