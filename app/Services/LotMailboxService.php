@@ -36,7 +36,7 @@ class LotMailboxService
 
         $normalizedAddress = $this->normalizeAddress($walletAddress, $currency);
         if ($normalizedAddress === null) {
-            Log::warning('[lot-mailbox] Failed to normalize address', [
+            Log::warning('[lot-mailbox] ensureMailbox aborted: failed to normalize address (no DB record, no Maildir)', [
                 'currency' => $currency,
                 'wallet_preview' => substr($walletAddress, 0, 100),
             ]);
@@ -56,13 +56,14 @@ class LotMailboxService
                 'currency' => $currency,
             ]);
             $isNew = true;
-            Log::info('[lot-mailbox] Created new mailbox', [
+            Log::info('[lot-mailbox] Created new mailbox (DB record)', [
                 'local_part' => $localPart,
                 'domain' => $this->domain,
+                'mailbox_id' => $mailbox->id,
             ]);
             $this->createMaildirIfNeeded($localPart);
         } else {
-            Log::debug('[lot-mailbox] Found existing mailbox', ['local_part' => $localPart]);
+            Log::info('[lot-mailbox] Found existing mailbox (DB)', ['local_part' => $localPart, 'mailbox_id' => $mailbox->id]);
         }
 
         $imapHost = config('services.lot_mailbox.imap_host', 'mail.' . $this->domain);
@@ -207,20 +208,31 @@ class LotMailboxService
     {
         $base = $this->maildirBase ?? config('services.lot_mailbox.maildir_base');
         if (empty($base)) {
-            Log::debug('[lot-mailbox] maildir_base not configured, skipping Maildir creation');
+            Log::info('[lot-mailbox] Maildir NOT created: maildir_base not configured (only DB record exists; dir may be created by mail server or later)', [
+                'local_part' => $localPart,
+                'config_key' => 'services.lot_mailbox.maildir_base',
+            ]);
             return;
         }
         $path = rtrim($base, '/') . '/' . $this->domain . '/' . $localPart;
         $cur = $path . '/cur';
         $new = $path . '/new';
         $tmp = $path . '/tmp';
-        if (!is_dir($path) && @mkdir($path, 0750, true)) {
+        Log::info('[lot-mailbox] Attempting to create Maildir', ['path' => $path]);
+        if (is_dir($path)) {
+            Log::info('[lot-mailbox] Maildir already exists', ['path' => $path]);
+            return;
+        }
+        if (@mkdir($path, 0750, true)) {
             @mkdir($cur, 0750, true);
             @mkdir($new, 0750, true);
             @mkdir($tmp, 0750, true);
-            Log::info('[lot-mailbox] Created Maildir', ['path' => $path]);
-        } elseif (!is_dir($path)) {
-            Log::warning('[lot-mailbox] Failed to create Maildir', ['path' => $path]);
+            Log::info('[lot-mailbox] Created Maildir on disk', ['path' => $path]);
+        } else {
+            Log::warning('[lot-mailbox] Failed to create Maildir (check path and permissions)', [
+                'path' => $path,
+                'base' => $base,
+            ]);
         }
     }
 }

@@ -350,8 +350,13 @@ class ExchangeLotController extends Controller
 
         // Create or get mailbox for lot chat (IMAP) — see docs/LOT_MAILBOX_AND_IMAP_CHAT.md
         $mailbox = null;
+        Log::info('[exchange-lots] Creating lot: before mailbox step', [
+            'lot_id' => $lot->id,
+            'wallet_hash_preview' => substr($validated['wallet_hash'] ?? '', 0, 16) . '...',
+        ]);
         try {
             $currency = $lot->cryptoCurrency?->code ?? $decoded['currency'] ?? 'crypto';
+            Log::info('[exchange-lots] Calling ensureMailbox', ['lot_id' => $lot->id, 'currency' => $currency]);
             $mailbox = $this->lotMailboxService->ensureMailbox(
                 $validated['wallet_address'],
                 $validated['wallet_hash'],
