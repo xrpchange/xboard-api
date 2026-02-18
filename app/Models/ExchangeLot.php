@@ -46,6 +46,7 @@ class ExchangeLot extends Model
         'test_group',
         'main_group',
         'note',
+        'aml',
         'expires_at',
     ];
 
@@ -59,6 +60,7 @@ class ExchangeLot extends Model
         'is_for_legal_entities' => 'boolean',
         'is_active' => 'boolean',
         'is_test' => 'boolean',
+        'aml' => 'integer',
         'expires_at' => 'datetime',
     ];
 

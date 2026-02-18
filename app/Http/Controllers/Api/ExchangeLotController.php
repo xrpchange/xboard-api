@@ -259,6 +259,7 @@ class ExchangeLotController extends Controller
             'test_group' => 'nullable|string|max:128',  // plain text from client, hashed before storing
             'main_group' => 'nullable|string|max:128',  // plain text from client, hashed before storing
             'note' => 'nullable|string|max:65535',
+            'aml' => 'nullable|integer|min:0|max:100',
             'expires_at' => 'nullable|date',
         ]);
 
@@ -420,6 +421,7 @@ class ExchangeLotController extends Controller
             'test_group' => 'nullable|string|max:128',
             'main_group' => 'nullable|string|max:128',
             'note' => 'nullable|string|max:65535',
+            'aml' => 'nullable|integer|min:0|max:100',
         ]);
 
         if ($validator->fails()) {
@@ -502,6 +504,9 @@ class ExchangeLotController extends Controller
             ? hash('sha256', trim($validated['main_group']))
             : null;
         $updateData['note'] = $validated['note'] ?? null;
+        if (array_key_exists('aml', $validated)) {
+            $updateData['aml'] = $validated['aml'] === null ? null : (int) $validated['aml'];
+        }
         $lot->update($updateData);
 
         if (array_key_exists('bank_ids', $validated)) {

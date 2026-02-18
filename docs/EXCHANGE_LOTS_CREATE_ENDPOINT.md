@@ -54,6 +54,7 @@
 | `is_test` | boolean | — | Тестовый лот. |
 | `test_group` | string | nullable, до 128 символов | Группа тестового режима (sandbox). Клиент передаёт текст; API сохраняет SHA256-хэш (64 hex). При отсутствии — null. |
 | `main_group` | string | nullable, до 128 символов | Группа production. Клиент передаёт текст; API сохраняет SHA256-хэш (64 hex). При отсутствии — null. |
+| `aml` | integer | nullable, 0–100 | AML risk %: максимум риска на сделку при споре (процент). 0 = идеально, 100 — максимум. null = «не интересует». Не применяется к XMR (поле скрыто в клиенте для лотов с Monero). |
 | `expires_at` | string | nullable, формат даты/date-time | Срок действия лота. |
 
 ---
@@ -106,6 +107,6 @@
 
 ## Endpoint обновления лота (POST /v1/exchange-lots/{id}/update)
 
-Для обновления лота (`POST /v1/exchange-lots/{id}/update`) поле `rate` работает так же: при одном `buy_amount` вычисляется на сервере, при нескольких — обязательно в теле запроса.
+Для обновления лота (`POST /v1/exchange-lots/{id}/update`) поле `rate` работает так же: при одном `buy_amount` вычисляется на сервере, при нескольких — обязательно в теле запроса. Поле `aml` (nullable, integer 0–100, %) поддерживается; для XMR в клиенте поле не показывается и не передаётся.
 
 См. также: [NODES_API_DOCUMENTATION.md](NODES_API_DOCUMENTATION.md), [ESCROW_TOKEN_AUTHENTICATION.md](ESCROW_TOKEN_AUTHENTICATION.md).
