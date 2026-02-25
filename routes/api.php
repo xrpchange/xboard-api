@@ -4,6 +4,7 @@
 /** @noinspection PhpUndefinedClassInspection */
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CountryController;
@@ -67,15 +68,30 @@ Route::prefix('v1/auth')->group(function () {
 
 // Reference data (without authentication)
 Route::prefix('v1')->group(function () {
-    // Health check
+    // Health check — verifies banks table is reachable
     Route::get('/health', function () {
+        $dbOk = false;
+        $dbError = null;
+        $dbHost = config('database.connections.' . config('database.default') . '.host');
+        try {
+            DB::connection()->getPdo();
+            DB::table('banks')->limit(1)->exists();
+            $dbOk = true;
+        } catch (\Throwable $e) {
+            $dbError = $e->getMessage();
+        }
         return response()->json([
             'success' => true,
             'version' => '1.0',
             'data' => [
-                'status' => 'ok',
+                'status' => $dbOk ? 'ok' : 'degraded',
                 'timestamp' => now()->toISOString(),
-                'message' => 'API is running'
+                'message' => 'API is running',
+                'database' => [
+                    'reachable' => $dbOk,
+                    'host' => $dbHost,
+                    'error' => $dbError,
+                ],
             ]
         ]);
     });
