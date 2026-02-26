@@ -87,14 +87,35 @@ class ImapMonitorService
             
             // Get INBOX folder (for IMAP) or default folder (for POP3)
             if ($protocol === 'imap') {
-                $this->folder = $this->client->getFolder('INBOX');
+                try {
+                    $this->folder = $this->client->getFolder('INBOX');
+                } catch (\Throwable $e) {
+                    Log::warning("IMAP: getFolder('INBOX') failed, trying getFolders()", ['error' => $e->getMessage()]);
+                    $this->folder = null;
+                }
+                // Some servers (e.g. Yandex) may use different folder name or INBOX path; fallback to first folder
+                if ($this->folder === null) {
+                    $folders = $this->client->getFolders();
+                    $this->folder = $folders->first();
+                    Log::info("IMAP: using first available folder", [
+                        'folder_count' => $folders->count(),
+                        'first_name' => $this->folder ? $this->folder->name : null,
+                    ]);
+                }
             } else {
                 // POP3 doesn't have folders, use default
                 $folders = $this->client->getFolders();
                 $this->folder = $folders->first();
             }
+
+            if ($this->folder === null) {
+                Log::error("IMAP/POP3: no folder available after connect");
+                throw new \RuntimeException('No mail folder available.');
+            }
             
-            Log::info("IMAP/POP3 connected successfully for {$this->email}");
+            Log::info("IMAP/POP3 connected successfully for {$this->email}", [
+                'folder' => $this->folder->name ?? 'unknown',
+            ]);
             return true;
             
         } catch (\Exception $e) {
@@ -218,17 +239,43 @@ class ImapMonitorService
         }
         
         try {
-            // Get messages with pagination
+            // Fetch one batch (page 1 only): library limit(limit, page) - we request enough for this offset+limit window
+            $fetchSize = min($offset + $limit, 500);
+            $fetchSize = max(1, $fetchSize);
+
             $messages = $this->folder->messages()
                 ->all()
-                ->limit($limit, $offset)
+                ->limit($fetchSize, 1)
                 ->get();
-            
-            Log::info("IMAP getEmailList: retrieved " . $messages->count() . " messages");
+
+            // If current folder returned 0 messages, try first available folder (e.g. Yandex may use different INBOX path)
+            if ($messages->count() === 0 && $this->client !== null) {
+                $folders = $this->client->getFolders();
+                $currentName = $this->folder->name ?? '';
+                foreach ($folders as $f) {
+                    if (($f->name ?? '') !== $currentName) {
+                        $this->folder = $f;
+                        Log::info("IMAP getEmailList: retrying with folder", ['folder' => $this->folder->name]);
+                        $messages = $this->folder->messages()->all()->limit($fetchSize, 1)->get();
+                        break;
+                    }
+                }
+            }
+
+            Log::info("IMAP getEmailList: fetched " . $messages->count() . " messages (requested fetchSize={$fetchSize}, offset={$offset}, limit={$limit})");
             
             $result = [];
+            $index = 0;
             
             foreach ($messages as $message) {
+                if ($index < $offset) {
+                    $index++;
+                    continue;
+                }
+                if (count($result) >= $limit) {
+                    break;
+                }
+                $index++;
                 try {
                     /** @var Message $message */
                     $from = $message->getFrom();
