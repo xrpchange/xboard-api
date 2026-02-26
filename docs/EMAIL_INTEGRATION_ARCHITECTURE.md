@@ -244,21 +244,7 @@ Instead of OAuth on client, set up IMAP monitoring on server:
 - ✅ Works with any IMAP provider
 - ✅ Legal proof maintained
 
-**Implementation:**
-
-```php
-// New service: app/Services/ImapMonitorService.php
-class ImapMonitorService
-{
-    public function monitorUserInbox(string $email, string $password)
-    {
-        // Connect via IMAP
-        // Use IDLE for real-time notifications
-        // Filter: only bank domains + payment patterns
-        // Forward matching emails to check@xdexboard.com
-    }
-}
-```
+**Note:** We do **not** implement server-side IMAP. Email is read **only on the client** (app); the API only accepts raw email (e.g. base64 .eml) from the client and verifies DKIM. No server connects to user mailboxes.
 
 ## Security Best Practices
 

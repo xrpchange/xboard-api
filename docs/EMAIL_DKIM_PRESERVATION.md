@@ -47,68 +47,21 @@ function extractAttachedEmail(string $rawEmail): ?string
 - ⚠️ Not all clients support it well
 - ⚠️ Some clients may still modify headers
 
-### ✅ Solution 2: IMAP Server-Side Monitoring (Most Reliable)
+### ✅ Solution 2: Client-Only Email Reading (Chosen Approach)
 
 **How it works:**
-- User provides IMAP credentials (one-time)
-- Server monitors user's inbox via IMAP IDLE
-- Server reads emails directly (preserves DKIM)
-- Server filters: only bank emails + payment patterns
-- Server verifies DKIM on original email
-
-**Implementation:**
-
-```php
-// New service: app/Services/ImapMonitorService.php
-class ImapMonitorService
-{
-    public function monitorUserInbox(string $email, string $password, string $imapHost)
-    {
-        // Connect via IMAP
-        $imap = imap_open(
-            "{{$imapHost}:993/imap/ssl}INBOX",
-            $email,
-            $password
-        );
-        
-        // Use IDLE for real-time notifications
-        imap_idle($imap);
-        
-        // Get new emails
-        $emails = imap_search($imap, 'UNSEEN');
-        
-        foreach ($emails as $emailNum) {
-            // Get raw email (preserves DKIM)
-            $rawEmail = imap_fetchheader($imap, $emailNum, FT_PREFETCHTEXT) 
-                      . imap_body($imap, $emailNum);
-            
-            // Check if from bank domain
-            if (isFromBank($rawEmail)) {
-                // Check if matches payment pattern
-                if (matchesPaymentPattern($rawEmail)) {
-                    // Verify DKIM (original, not forwarded)
-                    verifyDKIM($rawEmail);
-                    
-                    // Process payment
-                    processPaymentEmail($rawEmail);
-                }
-            }
-        }
-    }
-}
-```
+- User opens mail in the **client app** (KMP: IMAP/POP3 or .eml).
+- Client sends raw email (e.g. base64) to the API.
+- **API only receives** the raw email and verifies DKIM; the **server never connects** to user mailboxes.
 
 **Advantages:**
-- ✅ DKIM always preserved (original email)
-- ✅ Real-time processing
-- ✅ Pattern-based filtering
-- ✅ Server-side security
-- ✅ Works with any IMAP provider
+- ✅ DKIM preserved (client sends original raw email)
+- ✅ No server-side IMAP/POP3 — no credentials on server, no "лезем на почтовые сервера"
+- ✅ Works with any provider the client supports (IMAP/POP3)
+- ✅ Server only verifies what the client sends
 
 **Disadvantages:**
-- ⚠️ Requires IMAP credentials
-- ⚠️ Need to store credentials securely
-- ⚠️ More complex setup
+- ⚠️ User must use the app to pick/send the email
 
 ### ✅ Solution 3: Email Server Forwarding (If User Has Own Server)
 

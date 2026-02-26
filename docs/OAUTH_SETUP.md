@@ -328,7 +328,7 @@ Yahoo supports OAuth 2.0 for IMAP access. No verification required, simple imple
 2. Scopes: `mail-r` (read mail), `offline_access`
 3. Implement OAuth flow (similar to Yandex/Mail.ru)
 4. IMAP server: `imap.mail.yahoo.com:993`
-5. Add Yahoo support to ImapMonitorService
+5. (Client-only: if app adds Yahoo OAuth, use it on the client; API does not connect to user mail.)
 
 See [EMAIL_PROVIDERS_OAUTH_SUPPORT.md](./EMAIL_PROVIDERS_OAUTH_SUPPORT.md) for details.
 
@@ -347,7 +347,7 @@ Outlook China (partner.outlook.cn) is the best option for Chinese users:
 1. Register application in Azure China Portal (portal.azure.cn)
 2. Scope: `https://partner.outlook.cn/IMAP.AccessAsUser.All` or similar
 3. Implement OAuth flow (similar to Yandex/Mail.ru)
-4. Add Outlook China support to ImapMonitorService
+4. (Client-only: if app adds Outlook China OAuth, use it on the client; API does not connect to user mail.)
 
 See [EMAIL_PROVIDERS_OAUTH_SUPPORT.md](./EMAIL_PROVIDERS_OAUTH_SUPPORT.md) for details.
 

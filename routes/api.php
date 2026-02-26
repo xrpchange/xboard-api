@@ -34,18 +34,9 @@ use App\Http\Controllers\Api\Admin\NodeAdminController;
 //     return $request->user();
 // });
 
-// Email access endpoints (v1 API, uses IMAP/POP3 credentials, no escrow token required)
-// These endpoints use IMAP/POP3 username/password for email access
-// Currently used for testing email verification and DKIM validation (no transaction required)
+// Payment verification: email is read on the client only; API accepts raw email from client (no server-side IMAP/POP3).
 Route::prefix('v1/payments')->group(function () {
-    // Get email list and raw email (OAuth token required)
-    Route::get('/emails', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'getEmailList']);
-    Route::get('/emails/{messageId}', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'getRawEmail']);
-    
-    // DKIM verification (OAuth token required, no forwarding)
-    Route::get('/verify-dkim/{messageId}', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'verifyDkim']);
-    
-    // Email verification and forwarding (for testing DKIM validation only)
+    // Email verification and forwarding (client sends raw email from its own reader)
     Route::post('/verify-email', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'verifyEmail']);
     Route::post('/verify-email-content', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'verifyEmailContent']);
     Route::post('/forward-email', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'forwardEmail']);
