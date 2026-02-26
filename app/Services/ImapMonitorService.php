@@ -114,29 +114,35 @@ class ImapMonitorService
             $userFriendlyError = $errorMessage;
             $suggestions = [];
             
-            if (stripos($errorMessage, 'AUTHENTICATIONFAILED') !== false) {
-                if (stripos($errorMessage, 'IMAP is disabled') !== false || stripos($errorMessage, 'disabled') !== false) {
-                    $userFriendlyError = 'IMAP access is disabled for this account.';
-                    $suggestions[] = 'Enable IMAP access in your email account settings.';
+            // Server response "[AUTH] login failure or POP3 disabled" (e.g. Yandex) — check before generic "SSL" (connection string contains /ssl)
+            $isAuthOrPop3Disabled = stripos($errorMessage, 'login failure') !== false
+                || stripos($errorMessage, 'POP3 disabled') !== false
+                || (stripos($errorMessage, '[AUTH]') !== false && (stripos($errorMessage, 'failure') !== false || stripos($errorMessage, 'disabled') !== false));
+            if ($isAuthOrPop3Disabled || stripos($errorMessage, 'AUTHENTICATIONFAILED') !== false) {
+                if (stripos($errorMessage, 'IMAP is disabled') !== false || stripos($errorMessage, 'POP3 disabled') !== false || stripos($errorMessage, 'disabled') !== false) {
+                    $userFriendlyError = $protocol === 'pop3'
+                        ? 'POP3 access is disabled for this account or login failed.'
+                        : 'IMAP access is disabled for this account.';
+                    $suggestions[] = 'Enable ' . strtoupper($protocol) . ' access in your email account settings.';
                     
                     // Provider-specific instructions
                     if (stripos($imapHost, 'yandex') !== false) {
-                        $suggestions[] = 'For Yandex: Go to Settings → Mail programs → Enable "Access via IMAP protocol"';
-                        $suggestions[] = 'For Yandex: You may also need to create an app password in Security settings';
+                        $suggestions[] = 'Yandex: Настройки → Почтовые программы → включите «С сервера imap.yandex.ru по протоколу IMAP» и/или доступ по POP3';
+                        $suggestions[] = 'Yandex: Используйте пароль приложения, не основной пароль: https://id.yandex.ru/security/app-passwords';
                     } elseif (stripos($imapHost, 'gmail') !== false) {
                         $suggestions[] = 'For Gmail: Go to Settings → Forwarding and POP/IMAP → Enable IMAP';
                         $suggestions[] = 'For Gmail: Enable 2-Step Verification and create an App Password';
                     }
                 } else {
-                    $userFriendlyError = 'Authentication failed: Invalid email or password.';
+                    $userFriendlyError = 'Authentication failed: invalid email or password.';
                     $suggestions[] = 'Check that your email address and password are correct.';
                     
                     // Provider-specific instructions
                     if (stripos($imapHost, 'yandex') !== false) {
-                        $suggestions[] = 'For Yandex: You must use an app password, not your regular account password.';
-                        $suggestions[] = 'For Yandex: Create app password at https://id.yandex.ru/security/app-passwords';
-                        $suggestions[] = 'For Yandex: IMAP access must be enabled in account settings';
-                        $errorDetails['yandex_note'] = 'Yandex requires app password for IMAP access. Regular password will not work.';
+                        $suggestions[] = 'Yandex: Use an app password (пароль приложения), not your main password.';
+                        $suggestions[] = 'Yandex: Create app password: https://id.yandex.ru/security/app-passwords';
+                        $suggestions[] = 'Yandex: Enable POP3/IMAP in Settings → Mail programs.';
+                        $errorDetails['yandex_note'] = 'Yandex requires app password for external clients.';
                     } elseif (stripos($imapHost, 'gmail') !== false) {
                         $suggestions[] = 'For Gmail: Use App Password, not your regular password.';
                         $suggestions[] = 'For Gmail: Enable 2-Step Verification first, then create App Password';
