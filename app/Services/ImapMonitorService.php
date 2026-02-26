@@ -125,10 +125,13 @@ class ImapMonitorService
                         : 'IMAP access is disabled for this account.';
                     $suggestions[] = 'Enable ' . strtoupper($protocol) . ' access in your email account settings.';
                     
-                    // Provider-specific instructions
+                    // Provider-specific instructions (API returns English only; client localizes if needed)
                     if (stripos($imapHost, 'yandex') !== false) {
-                        $suggestions[] = 'Yandex: Настройки → Почтовые программы → включите «С сервера imap.yandex.ru по протоколу IMAP» и/или доступ по POP3';
-                        $suggestions[] = 'Yandex: Используйте пароль приложения, не основной пароль: https://id.yandex.ru/security/app-passwords';
+                        $suggestions[] = 'Yandex: Settings → Mail programs → enable "Access via IMAP" and/or POP3';
+                        $suggestions[] = 'Yandex: Use app password, not main password: https://id.yandex.ru/security/app-passwords';
+                        if (strtolower($protocol ?? '') === 'pop3') {
+                            $suggestions[] = 'Yandex: If POP3 stays disabled, try IMAP instead: server imap.yandex.com, port 993, protocol IMAP';
+                        }
                     } elseif (stripos($imapHost, 'gmail') !== false) {
                         $suggestions[] = 'For Gmail: Go to Settings → Forwarding and POP/IMAP → Enable IMAP';
                         $suggestions[] = 'For Gmail: Enable 2-Step Verification and create an App Password';
@@ -137,9 +140,9 @@ class ImapMonitorService
                     $userFriendlyError = 'Authentication failed: invalid email or password.';
                     $suggestions[] = 'Check that your email address and password are correct.';
                     
-                    // Provider-specific instructions
+                    // Provider-specific instructions (API returns English only)
                     if (stripos($imapHost, 'yandex') !== false) {
-                        $suggestions[] = 'Yandex: Use an app password (пароль приложения), not your main password.';
+                        $suggestions[] = 'Yandex: Use an app password, not your main password.';
                         $suggestions[] = 'Yandex: Create app password: https://id.yandex.ru/security/app-passwords';
                         $suggestions[] = 'Yandex: Enable POP3/IMAP in Settings → Mail programs.';
                         $errorDetails['yandex_note'] = 'Yandex requires app password for external clients.';
