@@ -117,10 +117,13 @@ class PaymentVerificationController extends Controller
                 ], 422);
             }
 
-            // Verify DKIM signature (skip for plain format)
+            // Verify DKIM signature (skip for plain format). Prefer manual verification (RFC 6376), then PHPMailer.
             $dkimResult = ['valid' => false, 'signature' => null, 'domain' => null, 'error' => null];
             if ($format !== 'plain') {
-                $dkimResult = $this->verifyDKIM($rawEmail);
+                $dkimResult = $this->verifyDKIMManual($rawEmail);
+                if (!$dkimResult['valid']) {
+                    $dkimResult = $this->verifyDKIM($rawEmail);
+                }
                 if (!$dkimResult['valid']) {
                     return response()->json([
                         'success' => false,
@@ -373,6 +376,312 @@ class PaymentVerificationController extends Controller
     }
 
     /**
+     * RFC 6376 body canonicalization for DKIM body hash (bh=).
+     * l= if present: take first L octets of raw body BEFORE canonicalization.
+     */
+    private function canonicalizeBody(string $body, string $style, ?int $l = null): string
+    {
+        if ($l !== null) {
+            $body = substr($body, 0, $l);
+        }
+        if ($body === '') {
+            return "\r\n";
+        }
+        $b = str_replace("\r\n", "\n", $body);
+        if ($style === 'relaxed') {
+            $b = preg_replace('/[ \t]+$/m', '', $b);
+            $b = preg_replace('/[ \t]+/m', ' ', $b);
+        }
+        $b = preg_replace('/\n+$/', '', $b);
+        $b = str_replace("\n", "\r\n", $b);
+        if (!str_ends_with($b, "\r\n")) {
+            $b .= "\r\n";
+        }
+        return $b;
+    }
+
+    /**
+     * Log DKIM body hash diagnostic: parse DKIM-Signature, extract body, canonicalize, recompute bh, compare.
+     * Run before verifyDKIM so we can see computed_bh vs signature bh and hex of canon body (first/last 100).
+     */
+    private function logDkimBodyHashDiagnostic(string $rawEmail): void
+    {
+        $pos = strpos($rawEmail, "\r\n\r\n");
+        if ($pos === false) {
+            $pos = strpos($rawEmail, "\n\n");
+            $rawBody = $pos !== false ? substr($rawEmail, $pos + 2) : '';
+        } else {
+            $rawBody = substr($rawEmail, $pos + 4);
+        }
+
+        if (!preg_match_all('/^DKIM-Signature:\s*(.+)$/mi', $rawEmail, $matches)) {
+            Log::info('DKIM body hash diagnostic: no DKIM-Signature header found');
+            return;
+        }
+
+        foreach ($matches[1] as $i => $sigLine) {
+            $sig = preg_replace('/\r?\n\s+/', ' ', $sigLine);
+            $tags = [];
+            foreach (explode(';', $sig) as $pair) {
+                $eq = strpos($pair, '=');
+                if ($eq !== false) {
+                    $tags[trim(substr($pair, 0, $eq))] = trim(substr($pair, $eq + 1));
+                }
+            }
+            $c = $tags['c'] ?? 'simple/simple';
+            $parts = explode('/', $c);
+            $bodyC = $parts[1] ?? 'simple';
+            $bh = $tags['bh'] ?? '';
+            $a = $tags['a'] ?? 'rsa-sha256';
+            $algo = str_replace('rsa-', '', $a);
+            if ($algo !== 'sha256' && $algo !== 'sha1') {
+                $algo = 'sha256';
+            }
+            $l = isset($tags['l']) ? (int) $tags['l'] : null;
+
+            Log::info('DKIM tags', [
+                'sig_index' => $i,
+                'c' => $c,
+                'bh' => $bh,
+                'algo' => $algo,
+                'l' => $l,
+                'd' => $tags['d'] ?? null,
+            ]);
+
+            $canonBody = $this->canonicalizeBody($rawBody, $bodyC, $l);
+            $computedBh = base64_encode(hash($algo, $canonBody, true));
+            $bhMatch = hash_equals($bh, $computedBh);
+
+            Log::info('Body hash debug', [
+                'sig_index' => $i,
+                'raw_body_len' => strlen($rawBody),
+                'canon_body_len' => strlen($canonBody),
+                'computed_bh' => $computedBh,
+                'signature_bh' => $bh,
+                'match' => $bhMatch,
+                'canon_first_100_hex' => bin2hex(substr($canonBody, 0, 100)),
+                'canon_last_100_hex' => bin2hex(substr($canonBody, -100)),
+            ]);
+        }
+    }
+
+    /**
+     * Parse raw email into headers list (name => value, last occurrence wins for duplicates) and raw body.
+     * Headers are unfolded (continuation lines merged).
+     */
+    private function parseEmailHeadersAndBody(string $rawEmail): array
+    {
+        $sep = strpos($rawEmail, "\r\n\r\n");
+        if ($sep === false) {
+            $sep = strpos($rawEmail, "\n\n");
+            $headerBlock = $sep !== false ? substr($rawEmail, 0, $sep) : $rawEmail;
+            $rawBody = $sep !== false ? substr($rawEmail, $sep + 2) : '';
+        } else {
+            $headerBlock = substr($rawEmail, 0, $sep);
+            $rawBody = substr($rawEmail, $sep + 4);
+        }
+        $lines = preg_split('/\r\n|\n/', $headerBlock);
+        $headers = [];
+        $currentName = null;
+        $currentValue = null;
+        foreach ($lines as $line) {
+            if (preg_match('/^([\x21-\x39\x3B-\x7E]+):\s*(.*)$/', $line, $m)) {
+                if ($currentName !== null) {
+                    $headers[] = ['name' => $currentName, 'value' => trim($currentValue ?? '')];
+                }
+                $currentName = $m[1];
+                $currentValue = $m[2];
+            } elseif ($currentName !== null && preg_match('/^\s+(.*)$/', $line, $m)) {
+                $currentValue = ($currentValue ?? '') . ' ' . trim($m[1]);
+            }
+        }
+        if ($currentName !== null) {
+            $headers[] = ['name' => $currentName, 'value' => trim($currentValue ?? '')];
+        }
+        return ['headers' => $headers, 'body' => $rawBody];
+    }
+
+    /**
+     * RFC 6376 relaxed header canonicalization: lowercase name, collapse WSP to single space, strip trailing WSP.
+     */
+    private function canonicalizeHeaderRelaxed(string $name, string $value): string
+    {
+        $name = strtolower($name);
+        $value = preg_replace('/[ \t]+/', ' ', $value);
+        $value = trim($value);
+        return $name . ':' . $value;
+    }
+
+    /**
+     * RFC 6376 simple header canonicalization: no change except CRLF.
+     */
+    private function canonicalizeHeaderSimple(string $name, string $value): string
+    {
+        return $name . ':' . $value;
+    }
+
+    /**
+     * Build the DKIM signing string (headers in h= order, canonicalized; DKIM-Signature with b= and bh= empty).
+     */
+    private function buildDkimSigningString(array $headers, string $headerCanon, array $hOrder, string $dkimSignatureValueForSigning): string
+    {
+        $lastValueByName = [];
+        foreach ($headers as $h) {
+            $lastValueByName[strtolower($h['name'])] = ['name' => $h['name'], 'value' => $h['value']];
+        }
+        $canon = $headerCanon === 'relaxed' ? 'relaxed' : 'simple';
+        $parts = [];
+        foreach ($hOrder as $nameLower) {
+            $nameLower = strtolower(trim($nameLower));
+            if ($nameLower === '') {
+                continue;
+            }
+            if (!isset($lastValueByName[$nameLower])) {
+                continue;
+            }
+            $entry = $lastValueByName[$nameLower];
+            if ($nameLower === 'dkim-signature') {
+                $value = $dkimSignatureValueForSigning;
+            } else {
+                $value = $entry['value'];
+            }
+            $parts[] = $canon === 'relaxed'
+                ? $this->canonicalizeHeaderRelaxed($entry['name'], $value)
+                : $this->canonicalizeHeaderSimple($entry['name'], $value);
+        }
+        return implode("\r\n", $parts) . "\r\n";
+    }
+
+    /**
+     * Get DKIM public key from DNS (selector._domainkey.domain TXT).
+     */
+    private function getDkimPublicKey(string $selector, string $domain): ?string
+    {
+        $record = $selector . '._domainkey.' . $domain;
+        $txt = @dns_get_record($record, DNS_TXT);
+        if ($txt === false || empty($txt)) {
+            return null;
+        }
+        $combined = '';
+        foreach ($txt as $r) {
+            if (isset($r['txt'])) {
+                $combined .= is_array($r['txt']) ? implode('', $r['txt']) : $r['txt'];
+            }
+        }
+        if ($combined === '') {
+            return null;
+        }
+        $tags = [];
+        foreach (explode(';', $combined) as $pair) {
+            $eq = strpos($pair, '=');
+            if ($eq !== false) {
+                $tags[trim(substr($pair, 0, $eq))] = trim(substr($pair, $eq + 1));
+            }
+        }
+        return $tags['p'] ?? null;
+    }
+
+    /**
+     * Manual DKIM verification (RFC 6376): body hash + header signature. Used when PHPMailer validator fails.
+     */
+    private function verifyDKIMManual(string $rawEmail): array
+    {
+        $result = [
+            'valid' => false,
+            'signature' => null,
+            'domain' => null,
+            'error' => null,
+        ];
+
+        $parsed = $this->parseEmailHeadersAndBody($rawEmail);
+        $headers = $parsed['headers'];
+        $rawBody = $parsed['body'];
+
+        $dkimSignatureHeaders = [];
+        foreach ($headers as $h) {
+            if (strtolower($h['name']) === 'dkim-signature') {
+                $dkimSignatureHeaders[] = $h['value'];
+            }
+        }
+        if (empty($dkimSignatureHeaders)) {
+            $result['error'] = 'No DKIM-Signature header';
+            return $result;
+        }
+
+        foreach ($dkimSignatureHeaders as $sigIdx => $sigValue) {
+            $tags = [];
+            foreach (explode(';', $sigValue) as $pair) {
+                $eq = strpos($pair, '=');
+                if ($eq !== false) {
+                    $tags[trim(substr($pair, 0, $eq))] = trim(substr($pair, $eq + 1));
+                }
+            }
+            $d = $tags['d'] ?? null;
+            $s = $tags['s'] ?? null;
+            $h = $tags['h'] ?? null;
+            $b = $tags['b'] ?? null;
+            $bh = $tags['bh'] ?? null;
+            $c = $tags['c'] ?? 'simple/simple';
+            $a = $tags['a'] ?? 'rsa-sha256';
+            $algo = str_replace('rsa-', '', $a);
+            if ($algo !== 'sha256' && $algo !== 'sha1') {
+                $algo = 'sha256';
+            }
+            $l = isset($tags['l']) ? (int) $tags['l'] : null;
+            $parts = explode('/', $c);
+            $headerCanon = $parts[0] ?? 'simple';
+            $bodyCanon = $parts[1] ?? 'simple';
+            $hOrder = $h ? explode(':', $h) : [];
+
+            if (!$d || !$s || !$b || !$bh || empty($hOrder)) {
+                continue;
+            }
+
+            $canonBody = $this->canonicalizeBody($rawBody, $bodyCanon, $l);
+            $computedBh = base64_encode(hash($algo, $canonBody, true));
+            if (!hash_equals($bh, $computedBh)) {
+                Log::info('DKIM manual: body hash mismatch', ['sig_index' => $sigIdx, 'd' => $d]);
+                continue;
+            }
+
+            $dkimValueForSigning = preg_replace('/\bb=([^;\s]+)/', 'b=', $sigValue);
+            $dkimValueForSigning = preg_replace('/\bbh=([^;\s]+)/', 'bh=', $dkimValueForSigning);
+            $signingString = $this->buildDkimSigningString($headers, $headerCanon, $hOrder, $dkimValueForSigning);
+
+            $hash = hash($algo, $signingString, true);
+            $signatureBinary = base64_decode(str_replace([' ', "\t", "\r", "\n"], '', $b), true);
+            if ($signatureBinary === false) {
+                continue;
+            }
+
+            $pem = $this->getDkimPublicKey($s, $d);
+            if ($pem === null || $pem === '') {
+                Log::info('DKIM manual: no public key in DNS', ['selector' => $s, 'domain' => $d]);
+                continue;
+            }
+            $pubKey = "-----BEGIN PUBLIC KEY-----\n" . chunk_split($pem, 64, "\n") . "-----END PUBLIC KEY-----";
+            $key = openssl_pkey_get_public($pubKey);
+            if ($key === false) {
+                Log::info('DKIM manual: invalid public key', ['d' => $d]);
+                continue;
+            }
+            $opensslAlgo = $algo === 'sha256' ? OPENSSL_ALGO_SHA256 : OPENSSL_ALGO_SHA1;
+            $ok = openssl_verify($signingString, $signatureBinary, $key, $opensslAlgo);
+            openssl_pkey_free($key);
+            if ($ok === 1) {
+                $result['valid'] = true;
+                $result['domain'] = $d;
+                $result['signature'] = $b;
+                Log::info('DKIM manual verification passed', ['domain' => $d, 'sig_index' => $sigIdx]);
+                return $result;
+            }
+        }
+
+        $result['error'] = 'DKIM manual verification failed (body hash or signature)';
+        return $result;
+    }
+
+    /**
      * Extract payment data from email
      */
     private function extractPaymentData(string $rawEmail, string $bankDomain): array
@@ -493,29 +802,46 @@ class PaymentVerificationController extends Controller
         }
 
         try {
-            // Decode raw email
-            $rawEmail = base64_decode($request->email_raw);
-            
-            if (!$rawEmail) {
+            // Decode base64 (strict mode) — client sends base64(gzip(raw EML))
+            $gzipped = base64_decode($request->email_raw, true);
+            if ($gzipped === false) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Invalid email format'
+                    'message' => 'Invalid base64 in email_raw'
                 ], 422);
             }
 
-            // Log what we received
+            $rawEmail = gzdecode($gzipped);
+            if ($rawEmail === false) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to decompress gzip payload (email_raw must be base64-encoded gzipped raw EML)'
+                ], 422);
+            }
+
+            Log::debug("verifyEmailContent: raw email after gzdecode", [
+                'length' => strlen($rawEmail),
+                'md5' => md5($rawEmail),
+                'first_300' => substr($rawEmail, 0, 300),
+                'last_300' => substr($rawEmail, -300),
+            ]);
             Log::info("verifyEmailContent: received decoded email", [
                 'decoded_length' => strlen($rawEmail),
-                'starts_with' => substr($rawEmail, 0, 100),
                 'has_from' => strpos($rawEmail, 'From:') !== false,
                 'has_dkim' => strpos($rawEmail, 'DKIM-Signature') !== false,
             ]);
 
+            // DKIM body hash diagnostic (RFC 6376): extract signature tags and manually recompute bh (INFO so it's visible)
+            $this->logDkimBodyHashDiagnostic($rawEmail);
+
             // Extract sender domain and email
             $senderInfo = $this->extractSenderInfo($rawEmail);
-            
-            // Verify DKIM signature
-            $dkimResult = $this->verifyDKIM($rawEmail);
+
+            // Prefer manual DKIM verification (correct body canonicalization and l= handling); fallback to PHPMailer
+            $dkimResult = $this->verifyDKIMManual($rawEmail);
+            if (!$dkimResult['valid']) {
+                $dkimResult = $this->verifyDKIM($rawEmail);
+            }
 
             Log::info("Email content verification", [
                 'raw_email_length' => strlen($rawEmail),
