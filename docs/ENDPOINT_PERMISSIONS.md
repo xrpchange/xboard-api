@@ -1,5 +1,7 @@
 # 🔐 Система прав доступа к точкам входа узлов
 
+**Примечание:** С февраля 2026 аутентификация только через escrow token (таблица `escrow_token_cache`). Таблица `user_tokens` и bearer token удалены. Роль пользователя определяется через заголовок или специальный escrow token (см. варианты ниже).
+
 ## 🎯 Проблема
 
 **Dev API** (`dev.api.xdexboard.com`) не должен быть доступен обычным пользователям - только разработчикам.
@@ -34,29 +36,14 @@
 
 ## 🔑 Определение роли пользователя
 
-### Вариант 1: Через Bearer Token (рекомендуется)
-
-При создании bearer token в таблице `user_tokens` добавить поле `role`:
-
-```sql
-ALTER TABLE `user_tokens` ADD COLUMN `role` ENUM('public', 'developer', 'admin') DEFAULT 'public';
-```
-
-При валидации токена в middleware определяется роль:
-
-```php
-$userToken = UserToken::where('token', $bearerToken)->first();
-$userRole = $userToken->role ?? 'public';
-```
-
-### Вариант 2: Через заголовок (временно для разработки)
+### Вариант 1: Через заголовок (для разработки и админки)
 
 ```http
 GET /api/v1/nodes
 X-User-Role: developer
 ```
 
-### Вариант 3: Через специальный escrow token
+### Вариант 2: Через специальный escrow token
 
 При создании escrow token с `special_conditions = true` пользователь автоматически получает роль `developer`.
 
@@ -84,14 +71,7 @@ public function index(Request $request): JsonResponse
 
 private function getUserRole(Request $request): string
 {
-    // Способ 1: Из bearer token
-    $bearerToken = $request->bearerToken();
-    if ($bearerToken) {
-        $userToken = UserToken::where('token', $bearerToken)->first();
-        return $userToken->role ?? 'public';
-    }
-    
-    // Способ 2: Из заголовка (для разработки)
+    // Роль из заголовка (для разработки и админки)
     return $request->header('X-User-Role', 'public');
 }
 ```
@@ -178,17 +158,15 @@ public function up(): void
 
 ### Для обычного пользователя:
 - Создает escrow token с дефолтными настройками
-- Получает bearer token с ролью `public`
+- Аутентификация через X-Escrow-Token (escrow_token_cache)
 - Видит только публичные endpoints
 
 ### Для разработчика:
-- Создает escrow token с `special_conditions = true` (через админ панель)
-- Получает bearer token с ролью `developer`
+- Создает escrow token с `special_conditions = true` (через админ панель) или заголовок X-User-Role
 - Видит dev endpoints
 
 ### Для администратора:
-- Создает специальный escrow token
-- Получает bearer token с ролью `admin`
+- Заголовок X-User-Role: admin или специальный escrow token
 - Видит все endpoints включая закрытые
 
 ## 🔒 Безопасность

@@ -4,40 +4,27 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
-use App\Models\UserToken;
 use Symfony\Component\HttpFoundation\Response;
 
 class AdminAccess
 {
     /**
      * Handle an incoming request.
-     * Проверяет, что пользователь имеет роль admin
+     * Requires valid admin key (X-Admin-Key header or Bearer token) from config.
+     * Used together with escrow.token for admin routes.
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $bearerToken = $request->bearerToken();
-
-        if (!$bearerToken) {
+        $adminKey = config('services.admin.key');
+        if (empty($adminKey)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthorized - Bearer token required'
-            ], 401);
+                'message' => 'Admin access not configured'
+            ], 503);
         }
 
-        // Получаем токен из БД
-        $userToken = UserToken::where('token', $bearerToken)->first();
-
-        if (!$userToken || $userToken->isExpired()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized - Invalid or expired token'
-            ], 401);
-        }
-
-        // Проверяем роль (если поле role еще не добавлено, используем временное решение)
-        $userRole = $userToken->role ?? 'public';
-
-        if ($userRole !== 'admin') {
+        $provided = $request->header('X-Admin-Key') ?? $request->bearerToken();
+        if (empty($provided) || !hash_equals($adminKey, $provided)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Forbidden - Admin access required'

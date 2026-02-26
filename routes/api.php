@@ -58,12 +58,7 @@ Route::prefix('v1/email-providers')->group(function () {
 
 // Authentication (without middleware)
 Route::prefix('v1/auth')->group(function () {
-    // NEW: Simple token validation - no Bearer tokens, just validate publicPart
     Route::post('/validate-token', [AuthController::class, 'validateToken']);
-    
-    // DEPRECATED: Old Bearer token endpoints (kept for backward compatibility, will be removed)
-    // Route::post('/bearer-token', [AuthController::class, 'getBearerToken']);
-    // Route::get('/validate', [AuthController::class, 'validateBearerToken']);
 });
 
 // Reference data (without authentication)

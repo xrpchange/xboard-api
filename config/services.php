@@ -58,6 +58,10 @@ return [
         'mode' => env('DEV_MODE', 'sandbox'), // 'sandbox' or 'production'
     ],
 
+    'admin' => [
+        'key' => env('ADMIN_API_KEY', ''), // Optional: for /v1/admin/* routes (X-Admin-Key or Bearer)
+    ],
+
     /*
     | Lot mailbox (IMAP chat) - mail.xdexboard.com
     | See docs/LOT_MAILBOX_AND_IMAP_CHAT.md

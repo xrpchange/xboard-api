@@ -63,10 +63,10 @@ class ApiCompatibilityTest extends TestCase
     public function test_auth_endpoints_return_expected_structure(): void
     {
         // Test invalid escrow token
-        $response = $this->postJson('/api/v1/auth/bearer-token', [
+        $response = $this->postJson('/api/v1/auth/validate-token', [
             'escrow_token' => 'invalid_token'
         ]);
-        
+
         $response->assertStatus(401);
         $data = $response->json();
         $this->assertArrayHasKey('success', $data);

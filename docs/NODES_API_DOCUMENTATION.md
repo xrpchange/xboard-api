@@ -452,7 +452,6 @@ public function getAccessibleEndpoints(string $userRole = 'public'): array
 
 ### Middleware
 
-- **ValidateBearerToken**: Validates bearer token for admin endpoints
 - **AdminAccess**: Ensures user has admin role for admin endpoints
 
 ## 📊 Health Monitoring
