@@ -321,7 +321,7 @@ Your emails remain private and secure.
 "Select bank payment email to verify:
 
 [Email 1] Sberbank - Payment received
-[Email 2] Tinkoff - Transfer completed
+[Email 2] T-Bank - Transfer completed
 [Email 3] Alfa Bank - Payment notification
 
 [Refresh]"

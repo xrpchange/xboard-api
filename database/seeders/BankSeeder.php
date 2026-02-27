@@ -102,7 +102,7 @@ class BankSeeder extends Seeder
             ['name' => 'PostFinance', 'swift_code' => 'PSCHCH22', 'allowed_domain' => 'postfinance.ch', 'currencies' => ['CHF', 'USD']],
         ],
         'RUS' => [
-            ['name' => 'Tinkoff', 'swift_code' => 'TCSBRUMM', 'allowed_domain' => 'tinkoff.ru', 'currencies' => ['RUB', 'USD', 'EUR']],
+            ['name' => 'T-Bank', 'swift_code' => 'TCSBRUMM', 'allowed_domain' => 'tinkoff.ru', 'currencies' => ['RUB', 'USD', 'EUR']],
             ['name' => 'Alfa-Bank', 'swift_code' => 'ALFARUMM', 'allowed_domain' => 'alfabank.ru', 'currencies' => ['RUB', 'USD', 'EUR']],
             ['name' => 'VTB', 'swift_code' => 'VTBRRUMM', 'allowed_domain' => 'vtb.ru', 'currencies' => ['RUB', 'USD', 'EUR']],
             ['name' => 'Sberbank of Russia', 'swift_code' => 'SABRRUMM', 'allowed_domain' => 'sberbank.ru', 'currencies' => ['RUB', 'USD', 'EUR']],
@@ -231,8 +231,21 @@ class BankSeeder extends Seeder
                     'supports_legal_entities' => true,
                 ];
 
+                // One bank per allowed_domain. Prefer existing row with same swift to avoid unique constraint when updating.
                 if (!empty($row['swift_code'])) {
-                    $bank = Bank::updateOrCreate(['swift_code' => $row['swift_code']], $attributes);
+                    $existing = Bank::where('country_id', $country->id)
+                        ->where('allowed_domain', $allowedDomain)
+                        ->get();
+                    if ($existing->isEmpty()) {
+                        $bank = Bank::create($attributes);
+                    } else {
+                        $bank = $existing->first(fn ($b) => $b->swift_code === $row['swift_code']) ?? $existing->first();
+                        $bank->update($attributes);
+                        Bank::where('country_id', $country->id)
+                            ->where('allowed_domain', $allowedDomain)
+                            ->where('id', '!=', $bank->id)
+                            ->delete();
+                    }
                 } else {
                     $bank = Bank::updateOrCreate(
                         [
