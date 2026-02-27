@@ -200,6 +200,74 @@ class BankSeeder extends Seeder
             ['name' => 'Commercial International Bank', 'swift_code' => 'CIBEEGCX', 'allowed_domain' => 'cib.com.eg', 'currencies' => ['EGP', 'USD', 'EUR']],
             ['name' => 'QNB Alahli', 'swift_code' => 'QNBAEGCX', 'allowed_domain' => 'qnbalahli.com', 'currencies' => ['EGP', 'USD', 'EUR']],
         ],
+        'ARG' => [
+            ['name' => 'Banco Galicia', 'swift_code' => 'GFNBARBA', 'allowed_domain' => 'galicia.com.ar', 'currencies' => ['ARS', 'USD', 'EUR']],
+            ['name' => 'BBVA Argentina', 'swift_code' => 'BFRPARBA', 'allowed_domain' => 'bbva.com.ar', 'currencies' => ['ARS', 'USD', 'EUR']],
+            ['name' => 'Banco Santander Rio', 'swift_code' => 'BSARARBA', 'allowed_domain' => 'santander.com.ar', 'currencies' => ['ARS', 'USD', 'EUR']],
+            ['name' => 'Banco Macro', 'swift_code' => 'BMAOARBA', 'allowed_domain' => 'macro.com.ar', 'currencies' => ['ARS', 'USD', 'EUR']],
+            ['name' => 'HSBC Bank Argentina', 'swift_code' => 'HSBCARBA', 'allowed_domain' => 'hsbc.com.ar', 'currencies' => ['ARS', 'USD', 'EUR']],
+        ],
+        'CHL' => [
+            ['name' => 'Banco de Chile', 'swift_code' => 'EDWACHCL', 'allowed_domain' => 'bancodechile.cl', 'currencies' => ['CLP', 'USD', 'EUR']],
+            ['name' => 'Banco Santander Chile', 'swift_code' => 'BSCHCLRM', 'allowed_domain' => 'santander.cl', 'currencies' => ['CLP', 'USD', 'EUR']],
+            ['name' => 'Banco de Credito e Inversiones', 'swift_code' => 'BICECLRM', 'allowed_domain' => 'bci.cl', 'currencies' => ['CLP', 'USD', 'EUR']],
+            ['name' => 'BancoEstado', 'swift_code' => 'BESTCLRM', 'allowed_domain' => 'bancoestado.cl', 'currencies' => ['CLP', 'USD', 'EUR']],
+            ['name' => 'Scotiabank Chile', 'swift_code' => 'NSUDCLRM', 'allowed_domain' => 'scotiabank.cl', 'currencies' => ['CLP', 'USD', 'EUR']],
+        ],
+        'COL' => [
+            ['name' => 'Bancolombia', 'swift_code' => 'COLOCOBM', 'allowed_domain' => 'bancolombia.com', 'currencies' => ['COP', 'USD', 'EUR']],
+            ['name' => 'Banco de Bogota', 'swift_code' => 'BBOGCOBB', 'allowed_domain' => 'bancodebogota.com', 'currencies' => ['COP', 'USD', 'EUR']],
+            ['name' => 'BBVA Colombia', 'swift_code' => 'GEROCOBB', 'allowed_domain' => 'bbva.com.co', 'currencies' => ['COP', 'USD', 'EUR']],
+            ['name' => 'Davivienda', 'swift_code' => 'CAFECOBB', 'allowed_domain' => 'davivienda.com', 'currencies' => ['COP', 'USD', 'EUR']],
+        ],
+        'PER' => [
+            ['name' => 'Banco de Credito del Peru', 'swift_code' => 'BCPLPEPL', 'allowed_domain' => 'bcp.com.pe', 'currencies' => ['PEN', 'USD', 'EUR']],
+            ['name' => 'Interbank', 'swift_code' => 'IBKPEPL', 'allowed_domain' => 'interbank.pe', 'currencies' => ['PEN', 'USD', 'EUR']],
+            ['name' => 'BBVA Continental', 'swift_code' => 'BCONPEPL', 'allowed_domain' => 'bbva.pe', 'currencies' => ['PEN', 'USD', 'EUR']],
+            ['name' => 'Scotiabank Peru', 'swift_code' => 'BSUDPEPL', 'allowed_domain' => 'scotiabank.com.pe', 'currencies' => ['PEN', 'USD', 'EUR']],
+        ],
+        'IDN' => [
+            ['name' => 'Bank Mandiri', 'swift_code' => 'BMRIIDJA', 'allowed_domain' => 'mandiri.co.id', 'currencies' => ['IDR', 'USD', 'EUR']],
+            ['name' => 'Bank Rakyat Indonesia', 'swift_code' => 'BRINIDJA', 'allowed_domain' => 'bri.co.id', 'currencies' => ['IDR', 'USD', 'EUR']],
+            ['name' => 'Bank Central Asia', 'swift_code' => 'BCAIIDJA', 'allowed_domain' => 'bca.co.id', 'currencies' => ['IDR', 'USD', 'EUR']],
+            ['name' => 'Bank Negara Indonesia', 'swift_code' => 'BNINIDJA', 'allowed_domain' => 'bni.co.id', 'currencies' => ['IDR', 'USD', 'EUR']],
+        ],
+        'MYS' => [
+            ['name' => 'Maybank', 'swift_code' => 'MBBEMYKL', 'allowed_domain' => 'maybank.com.my', 'currencies' => ['MYR', 'USD', 'EUR']],
+            ['name' => 'CIMB Bank', 'swift_code' => 'CIBBMYKL', 'allowed_domain' => 'cimb.com.my', 'currencies' => ['MYR', 'USD', 'EUR']],
+            ['name' => 'Public Bank', 'swift_code' => 'PBBEMYKL', 'allowed_domain' => 'publicbank.com.my', 'currencies' => ['MYR', 'USD', 'EUR']],
+            ['name' => 'RHB Bank', 'swift_code' => 'RHBBMYKL', 'allowed_domain' => 'rhbgroup.com', 'currencies' => ['MYR', 'USD', 'EUR']],
+        ],
+        'THA' => [
+            ['name' => 'Bangkok Bank', 'swift_code' => 'BKKBTHBK', 'allowed_domain' => 'bangkokbank.com', 'currencies' => ['THB', 'USD', 'EUR']],
+            ['name' => 'Kasikorn Bank', 'swift_code' => 'KASITHBK', 'allowed_domain' => 'kasikornbank.com', 'currencies' => ['THB', 'USD', 'EUR']],
+            ['name' => 'Siam Commercial Bank', 'swift_code' => 'SCBLTHBX', 'allowed_domain' => 'scb.co.th', 'currencies' => ['THB', 'USD', 'EUR']],
+            ['name' => 'Krung Thai Bank', 'swift_code' => 'KRTHTHBK', 'allowed_domain' => 'ktb.co.th', 'currencies' => ['THB', 'USD', 'EUR']],
+        ],
+        'VNM' => [
+            ['name' => 'Vietcombank', 'swift_code' => 'BFTVVNVX', 'allowed_domain' => 'vietcombank.com.vn', 'currencies' => ['VND', 'USD', 'EUR']],
+            ['name' => 'BIDV', 'swift_code' => 'BIDVVNVX', 'allowed_domain' => 'bidv.com.vn', 'currencies' => ['VND', 'USD', 'EUR']],
+            ['name' => 'VietinBank', 'swift_code' => 'ICBVVNVX', 'allowed_domain' => 'vietinbank.vn', 'currencies' => ['VND', 'USD', 'EUR']],
+            ['name' => 'Techcombank', 'swift_code' => 'VTCBVNVX', 'allowed_domain' => 'techcombank.com.vn', 'currencies' => ['VND', 'USD', 'EUR']],
+        ],
+        'PAK' => [
+            ['name' => 'Habib Bank Limited', 'swift_code' => 'HABBPKKA', 'allowed_domain' => 'hbl.com', 'currencies' => ['PKR', 'USD', 'EUR']],
+            ['name' => 'National Bank of Pakistan', 'swift_code' => 'NBPAPKKA', 'allowed_domain' => 'nbp.com.pk', 'currencies' => ['PKR', 'USD', 'EUR']],
+            ['name' => 'United Bank Limited', 'swift_code' => 'UNILPKKA', 'allowed_domain' => 'ubl.com.pk', 'currencies' => ['PKR', 'USD', 'EUR']],
+            ['name' => 'MCB Bank', 'swift_code' => 'MCBAPKKA', 'allowed_domain' => 'mcb.com.pk', 'currencies' => ['PKR', 'USD', 'EUR']],
+        ],
+        'KEN' => [
+            ['name' => 'KCB Bank', 'swift_code' => 'KCBOKENX', 'allowed_domain' => 'kcbbankgroup.com', 'currencies' => ['KES', 'USD', 'EUR']],
+            ['name' => 'Equity Bank', 'swift_code' => 'EQBLKENA', 'allowed_domain' => 'equitybankgroup.com', 'currencies' => ['KES', 'USD', 'EUR']],
+            ['name' => 'Co-operative Bank of Kenya', 'swift_code' => 'KOOPKENX', 'allowed_domain' => 'co-opbank.co.ke', 'currencies' => ['KES', 'USD', 'EUR']],
+            ['name' => 'Standard Chartered Bank Kenya', 'swift_code' => 'SCBLKENX', 'allowed_domain' => 'standardchartered.co.ke', 'currencies' => ['KES', 'USD', 'EUR']],
+        ],
+        'MAR' => [
+            ['name' => 'Attijariwafa Bank', 'swift_code' => 'BCMAMAMC', 'allowed_domain' => 'attijariwafabank.com', 'currencies' => ['MAD', 'USD', 'EUR']],
+            ['name' => 'Banque Populaire', 'swift_code' => 'BCPOMAMC', 'allowed_domain' => 'banquepopulaire.ma', 'currencies' => ['MAD', 'USD', 'EUR']],
+            ['name' => 'Bank of Africa', 'swift_code' => 'BMCEMAMC', 'allowed_domain' => 'bmcebank.ma', 'currencies' => ['MAD', 'USD', 'EUR']],
+            ['name' => 'Credit Agricole du Maroc', 'swift_code' => 'CADMMAMC', 'allowed_domain' => 'creditagricole.ma', 'currencies' => ['MAD', 'USD', 'EUR']],
+        ],
     ];
 
     public function run(): void

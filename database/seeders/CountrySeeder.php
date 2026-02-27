@@ -44,6 +44,17 @@ class CountrySeeder extends Seeder
             ['name' => 'South Korea', 'code' => 'KOR', 'phone_code' => '+82'],
             ['name' => 'Nigeria', 'code' => 'NGA', 'phone_code' => '+234'],
             ['name' => 'Egypt', 'code' => 'EGY', 'phone_code' => '+20'],
+            ['name' => 'Argentina', 'code' => 'ARG', 'phone_code' => '+54'],
+            ['name' => 'Chile', 'code' => 'CHL', 'phone_code' => '+56'],
+            ['name' => 'Colombia', 'code' => 'COL', 'phone_code' => '+57'],
+            ['name' => 'Peru', 'code' => 'PER', 'phone_code' => '+51'],
+            ['name' => 'Indonesia', 'code' => 'IDN', 'phone_code' => '+62'],
+            ['name' => 'Malaysia', 'code' => 'MYS', 'phone_code' => '+60'],
+            ['name' => 'Thailand', 'code' => 'THA', 'phone_code' => '+66'],
+            ['name' => 'Vietnam', 'code' => 'VNM', 'phone_code' => '+84'],
+            ['name' => 'Pakistan', 'code' => 'PAK', 'phone_code' => '+92'],
+            ['name' => 'Kenya', 'code' => 'KEN', 'phone_code' => '+254'],
+            ['name' => 'Morocco', 'code' => 'MAR', 'phone_code' => '+212'],
         ];
 
         foreach ($countries as $country) {
