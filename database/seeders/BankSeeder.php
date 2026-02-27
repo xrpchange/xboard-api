@@ -21,11 +21,16 @@ class BankSeeder extends Seeder
 
         if ($russia) {
             $russianBanks = [
-                ['name' => 'Sberbank of Russia', 'swift_code' => 'SABRRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true],
-                ['name' => 'VTB Bank', 'swift_code' => 'VTBRRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true],
-                ['name' => 'Gazprombank', 'swift_code' => 'GAZPRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true],
-                ['name' => 'Rosselkhozbank', 'swift_code' => 'RUAGRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true],
-                ['name' => 'Alfa-Bank', 'swift_code' => 'ALFARUMM', 'supports_individuals' => true, 'supports_legal_entities' => true],
+                ['name' => 'Sberbank of Russia', 'swift_code' => 'SABRRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true, 'allowed_domain' => 'sberbank.ru'],
+                ['name' => 'VTB Bank', 'swift_code' => 'VTBRRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true, 'allowed_domain' => 'vtb.ru'],
+                ['name' => 'Gazprombank', 'swift_code' => 'GAZPRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true, 'allowed_domain' => 'gazprombank.ru'],
+                ['name' => 'Rosselkhozbank', 'swift_code' => 'RUAGRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true, 'allowed_domain' => null],
+                ['name' => 'Alfa-Bank', 'swift_code' => 'ALFARUMM', 'supports_individuals' => true, 'supports_legal_entities' => true, 'allowed_domain' => 'alfabank.ru'],
+                ['name' => 'Tinkoff Bank', 'swift_code' => 'TICSRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true, 'allowed_domain' => 'tinkoff.ru'],
+                ['name' => 'Raiffeisen Bank', 'swift_code' => 'RZBMRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true, 'allowed_domain' => 'raiffeisen.ru'],
+                ['name' => 'Rosbank', 'swift_code' => 'ROSRRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true, 'allowed_domain' => 'rosbank.ru'],
+                ['name' => 'OTP Bank', 'swift_code' => 'OTPVRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true, 'allowed_domain' => 'otpbank.ru'],
+                ['name' => 'Uralsib', 'swift_code' => 'URTLRUMM', 'supports_individuals' => true, 'supports_legal_entities' => true, 'allowed_domain' => 'uralsib.ru'],
             ];
 
             foreach ($russianBanks as $bank) {

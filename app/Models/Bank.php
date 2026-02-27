@@ -26,6 +26,7 @@ class Bank extends Model
         'supports_individuals',
         'supports_legal_entities',
         'is_active',
+        'allowed_domain',
     ];
 
     /**
@@ -36,6 +37,7 @@ class Bank extends Model
      * @OA\Property(property="supports_individuals", type="boolean", example=true)
      * @OA\Property(property="supports_legal_entities", type="boolean", example=true)
      * @OA\Property(property="is_active", type="boolean", example=true)
+     * @OA\Property(property="allowed_domain", type="string", nullable=true, description="Second-level domain for payment email sender whitelist (e.g. sberbank.ru)")
      * @OA\Property(property="created_at", type="string", format="date-time")
      * @OA\Property(property="updated_at", type="string", format="date-time")
      */
@@ -84,5 +86,13 @@ class Bank extends Model
     public function scopeForLegalEntities($query)
     {
         return $query->where('supports_legal_entities', true);
+    }
+
+    /**
+     * Banks that have allowed_domain set (for DKIM / payment email sender whitelist)
+     */
+    public function scopeWithAllowedDomain($query)
+    {
+        return $query->whereNotNull('allowed_domain')->where('allowed_domain', '!=', '');
     }
 } 

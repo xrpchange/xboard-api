@@ -127,6 +127,18 @@ Payment processing
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## Bank domain whitelist (DKIM / sender verification)
+
+The API verifies that the email sender's domain belongs to an allowed bank. The whitelist is stored in the database:
+
+- **Table:** `banks`
+- **Field:** `allowed_domain` (nullable string) — second-level domain, e.g. `sberbank.ru`, `tinkoff.ru`. Filled via `BankSeeder`.
+- Only banks with non-empty `allowed_domain` are used for the whitelist (`Bank::withAllowedDomain()`).
+
+**Verification response:**
+- **Success (sender in whitelist):** `data.sender_known = true`, `data.sender_bank_name` = bank name (e.g. "Sberbank of Russia"). Client can show: "Letter from bank X" (green).
+- **Failure (sender not in whitelist):** HTTP 422 with `sender_known = false`, `sender_domain` = extracted domain. Client can show: "Letter from unknown sender" (red).
+
 ## Implementation Plan
 
 ### Phase 1: Pattern-Based Email Filtering

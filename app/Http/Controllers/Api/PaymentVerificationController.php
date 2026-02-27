@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Bank;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -22,22 +23,6 @@ use PHPMailer\DKIMValidator\DKIMException;
  */
 class PaymentVerificationController extends Controller
 {
-    /**
-     * Allowed bank domains
-     */
-    private array $allowedBanks = [
-        'sberbank.ru',
-        'tinkoff.ru',
-        'alfabank.ru',
-        'vtb.ru',
-        'gazprombank.ru',
-        'raiffeisen.ru',
-        'rosbank.ru',
-        'otpbank.ru',
-        'uralsib.ru',
-        'banki.ru',
-    ];
-
     /**
      * @OA\Post(
      *     path="/api/v1/payments/verify-email",
@@ -107,13 +92,15 @@ class PaymentVerificationController extends Controller
                 ], 422);
             }
 
-            // Verify sender (bank domain)
+            // Verify sender (bank domain whitelist from banks.allowed_domain)
             $senderCheck = $this->verifySender($rawEmail);
             if (!$senderCheck['valid']) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Email is not from an allowed bank',
-                    'error' => $senderCheck['error']
+                    'error' => $senderCheck['error'],
+                    'sender_domain' => $senderCheck['domain'] ?? null,
+                    'sender_known' => false,
                 ], 422);
             }
 
@@ -153,6 +140,8 @@ class PaymentVerificationController extends Controller
                 'message' => $dkimResult['valid'] ? 'DKIM verification successful' : 'Email verified (no DKIM)',
                 'data' => [
                     'bank' => $senderCheck['domain'],
+                    'sender_bank_name' => $senderCheck['bank_name'] ?? null,
+                    'sender_known' => true,
                     'amount' => $paymentData['amount'] ?? null,
                     'verified_at' => now()->toISOString(),
                     'dkim_verified' => $dkimResult['valid'],
@@ -231,7 +220,8 @@ class PaymentVerificationController extends Controller
     }
 
     /**
-     * Verify email sender (checks if domain is in allowed banks)
+     * Verify email sender against banks.allowed_domain whitelist.
+     * Returns valid, domain, bank_name (for display "Letter from bank X"), and error when not in whitelist.
      */
     private function verifySender(string $rawEmail): array
     {
@@ -239,30 +229,36 @@ class PaymentVerificationController extends Controller
             'valid' => false,
             'from' => null,
             'domain' => null,
+            'bank_name' => null,
             'error' => null,
         ];
 
-        // Use extractSenderInfo to get domain
         $senderInfo = $this->extractSenderInfo($rawEmail);
-        
-        if ($senderInfo['domain']) {
-            $result['domain'] = $senderInfo['domain'];
-            $result['from'] = $senderInfo['from'];
-            
-            // Check if domain is in allowed banks
-            foreach ($this->allowedBanks as $bankDomain) {
-                if ($senderInfo['domain'] === $bankDomain || 
-                    substr($senderInfo['domain'], -strlen($bankDomain) - 1) === '.' . $bankDomain) {
-                    $result['valid'] = true;
-                    return $result;
-                }
-            }
-            
-            $result['error'] = "Domain '{$senderInfo['domain']}' not in allowed banks";
-        } else {
+
+        if (!$senderInfo['domain']) {
             $result['error'] = 'Could not extract sender domain from email';
+            return $result;
         }
 
+        $result['domain'] = $senderInfo['domain'];
+        $result['from'] = $senderInfo['from'];
+
+        $banks = Bank::withAllowedDomain()->get();
+        foreach ($banks as $bank) {
+            $allowedDomain = strtolower(trim($bank->allowed_domain ?? ''));
+            if ($allowedDomain === '') {
+                continue;
+            }
+            // Exact match or subdomain (e.g. no-reply@sberbank.ru or mail.sberbank.ru)
+            if ($senderInfo['domain'] === $allowedDomain
+                || substr($senderInfo['domain'], -strlen($allowedDomain) - 1) === '.' . $allowedDomain) {
+                $result['valid'] = true;
+                $result['bank_name'] = $bank->name;
+                return $result;
+            }
+        }
+
+        $result['error'] = "Domain '{$senderInfo['domain']}' not in allowed banks (unknown sender)";
         return $result;
     }
 
@@ -837,6 +833,9 @@ class PaymentVerificationController extends Controller
             // Extract sender domain and email
             $senderInfo = $this->extractSenderInfo($rawEmail);
 
+            // Check sender against bank whitelist (allowed_domain)
+            $senderCheck = $this->verifySender($rawEmail);
+
             // Prefer manual DKIM verification (correct body canonicalization and l= handling); fallback to PHPMailer
             $dkimResult = $this->verifyDKIMManual($rawEmail);
             if (!$dkimResult['valid']) {
@@ -859,18 +858,20 @@ class PaymentVerificationController extends Controller
             // Ensure all strings are valid UTF-8 before JSON encoding
             $responseData = [
                 'success' => true,
-                'message' => $dkimResult['valid'] 
-                    ? 'Email verified: DKIM signature is valid' 
+                'message' => $dkimResult['valid']
+                    ? 'Email verified: DKIM signature is valid'
                     : 'Email verified: DKIM signature not found or invalid',
                 'data' => [
                     'dkim_valid' => $dkimResult['valid'],
                     'dkim_domain' => $dkimResult['domain'] ? $this->cleanUtf8String($dkimResult['domain']) : null,
                     'sender_domain' => $senderInfo['domain'] ? $this->cleanUtf8String($senderInfo['domain']) : null,
                     'sender_email' => $senderInfo['email'] ? $this->cleanUtf8String($senderInfo['email']) : null,
+                    'sender_bank_name' => $senderCheck['bank_name'] ? $this->cleanUtf8String($senderCheck['bank_name']) : null,
+                    'sender_known' => $senderCheck['valid'],
                     'dkim_error' => $dkimResult['error'] ? $this->cleanUtf8String($dkimResult['error']) : null,
                 ]
             ];
-            
+
             return response()->json($responseData);
 
         } catch (\Exception $e) {
