@@ -204,6 +204,11 @@ class BankSeeder extends Seeder
 
     public function run(): void
     {
+        // Only banks with allowed_domain are used (DKIM/email receipt whitelist). Remove others.
+        Bank::whereNull('allowed_domain')
+            ->orWhere('allowed_domain', '')
+            ->delete();
+
         $currenciesByCode = FiatCurrency::all()->keyBy('code');
 
         foreach (self::BANKS as $countryCode => $banks) {
@@ -213,11 +218,15 @@ class BankSeeder extends Seeder
             }
 
             foreach ($banks as $row) {
+                $allowedDomain = trim((string) ($row['allowed_domain'] ?? ''));
+                if ($allowedDomain === '') {
+                    continue; // only seed banks with allowed_domain
+                }
                 $attributes = [
                     'country_id' => $country->id,
                     'name' => $row['name'],
                     'swift_code' => $row['swift_code'],
-                    'allowed_domain' => $row['allowed_domain'] ?? null,
+                    'allowed_domain' => $allowedDomain,
                     'supports_individuals' => true,
                     'supports_legal_entities' => true,
                 ];
