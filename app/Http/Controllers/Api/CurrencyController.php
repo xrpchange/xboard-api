@@ -7,6 +7,7 @@ use App\Models\FiatCurrency;
 use App\Models\CryptoCurrency;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 
 /**
  * @OA\Tag(
@@ -67,13 +68,26 @@ class CurrencyController extends Controller
         return response()->json(['success' => true, 'data' => $currencies]);
     }
 
-    public function all(): JsonResponse
+    public function all(Request $request): JsonResponse
     {
+        Log::info('RefData: GET /currencies/all called', [
+            'host' => $request->getHost(),
+            'url' => $request->fullUrl(),
+        ]);
+
+        $fiat = FiatCurrency::active()->get();
+        $crypto = CryptoCurrency::active()->get();
+
+        Log::info('RefData: GET /currencies/all response', [
+            'fiat_count' => $fiat->count(),
+            'crypto_count' => $crypto->count(),
+        ]);
+
         return response()->json([
             'success' => true,
             'data' => [
-                'fiat' => FiatCurrency::active()->get(),
-                'crypto' => CryptoCurrency::active()->get()
+                'fiat' => $fiat,
+                'crypto' => $crypto,
             ]
         ]);
     }

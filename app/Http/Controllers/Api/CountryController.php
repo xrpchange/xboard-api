@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Models\Country;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 
 /**
  * @OA\Tag(
@@ -39,6 +40,11 @@ class CountryController extends BaseApiController
      */
     public function index(Request $request): JsonResponse
     {
+        Log::info('RefData: GET /countries called', [
+            'host' => $request->getHost(),
+            'url' => $request->fullUrl(),
+        ]);
+
         $countries = Country::active()
             ->when($request->search, fn($q, $search) => 
                 $q->where('name', 'like', "%{$search}%")
@@ -46,6 +52,8 @@ class CountryController extends BaseApiController
             )
             ->orderBy('name')
             ->get();
+
+        Log::info('RefData: GET /countries response', ['count' => $countries->count()]);
 
         return $this->successResponse($countries);
     }

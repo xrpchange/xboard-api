@@ -7,6 +7,7 @@ use App\Models\Bank;
 use App\Models\Country;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 
 /**
  * @OA\Tag(
@@ -19,6 +20,11 @@ class BankController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        Log::info('RefData: GET /banks called', [
+            'host' => $request->getHost(),
+            'url' => $request->fullUrl(),
+        ]);
+
         $banks = Bank::active()
             ->with(['country', 'fiatCurrencies'])
             ->when($request->country_id, fn($q, $id) => $q->where('country_id', $id))
@@ -36,6 +42,8 @@ class BankController extends Controller
             $arr['supported_fiat_codes'] = $bank->fiatCurrencies->pluck('code')->values()->all();
             return $arr;
         });
+
+        Log::info('RefData: GET /banks response', ['count' => $data->count()]);
 
         return response()->json(['success' => true, 'data' => $data]);
     }

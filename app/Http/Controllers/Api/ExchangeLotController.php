@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Bank;
+use App\Models\Country;
 use App\Models\CryptoCurrency;
 use App\Models\ExchangeLot;
 use App\Models\FiatCurrency;
@@ -50,8 +52,11 @@ class ExchangeLotController extends Controller
             'db_database' => config('database.connections.' . config('database.default') . '.database'),
             'from_currency' => $request->get('from_currency'),
             'to_currency' => $request->get('to_currency'),
+            'country_code' => $request->get('country_code'),
             'country_id' => $request->get('country_id'),
+            'bank_swift' => $request->get('bank_swift'),
             'bank_id' => $request->get('bank_id'),
+            'accept_from_bank_swift' => $request->get('accept_from_bank_swift'),
             'accept_from_bank_id' => $request->get('accept_from_bank_id'),
             'is_test' => $request->get('is_test'),
             'test_group' => $request->get('test_group'),
@@ -91,9 +96,16 @@ class ExchangeLotController extends Controller
         if ($request->has('node_id')) {
             $query->where('node_id', $request->node_id);
         }
-        if ($request->filled('country_id')) {
-            // Include lots with bank in this country OR lots without bank (crypto-to-crypto)
+        // Country filter: prefer country_code (cross-node) over country_id
+        $countryId = null;
+        if ($request->filled('country_code')) {
+            $country = Country::where('code', strtoupper(trim($request->country_code)))->first();
+            $countryId = $country?->id;
+        }
+        if ($countryId === null && $request->filled('country_id')) {
             $countryId = (int) $request->country_id;
+        }
+        if ($countryId !== null) {
             $query->where(function ($q) use ($countryId) {
                 $q->whereHas('bank', fn ($b) => $b->where('country_id', $countryId))
                     ->orWhereNull('bank_id');
@@ -105,15 +117,30 @@ class ExchangeLotController extends Controller
         if ($request->has('for_legal_entities') && $request->for_legal_entities === 'true') {
             $query->forLegalEntities();
         }
-        // bank_id = recipient bank (where seller receives money)
-        if ($request->filled('bank_id')) {
-            $query->where('bank_id', (int) $request->bank_id);
+        // bank = recipient bank (where seller receives money). Prefer bank_swift (cross-node) over bank_id
+        $recipientBankId = null;
+        if ($request->filled('bank_swift')) {
+            $bank = Bank::where('swift_code', trim($request->bank_swift))->first();
+            $recipientBankId = $bank?->id;
         }
-        // accept_from_bank_id = lots that accept payment from this bank (bank_ids contains it OR bank_ids empty)
-        if ($request->filled('accept_from_bank_id')) {
-            $bankId = (int) $request->accept_from_bank_id;
-            $query->where(function ($q) use ($bankId) {
-                $q->whereHas('banks', fn ($b) => $b->where('banks.id', $bankId))
+        if ($recipientBankId === null && $request->filled('bank_id')) {
+            $recipientBankId = (int) $request->bank_id;
+        }
+        if ($recipientBankId !== null) {
+            $query->where('bank_id', $recipientBankId);
+        }
+        // accept_from_bank = lots that accept payment from this bank. Prefer accept_from_bank_swift over accept_from_bank_id
+        $acceptFromBankId = null;
+        if ($request->filled('accept_from_bank_swift')) {
+            $bank = Bank::where('swift_code', trim($request->accept_from_bank_swift))->first();
+            $acceptFromBankId = $bank?->id;
+        }
+        if ($acceptFromBankId === null && $request->filled('accept_from_bank_id')) {
+            $acceptFromBankId = (int) $request->accept_from_bank_id;
+        }
+        if ($acceptFromBankId !== null) {
+            $query->where(function ($q) use ($acceptFromBankId) {
+                $q->whereHas('banks', fn ($b) => $b->where('banks.id', $acceptFromBankId))
                     ->orWhereDoesntHave('banks');
             });
         }
@@ -146,8 +173,11 @@ class ExchangeLotController extends Controller
         Log::info('[exchange-lots] FILTERS', [
             'from_currency' => $request->filled('from_currency'),
             'to_currency' => $request->filled('to_currency'),
+            'country_code' => $request->filled('country_code'),
             'country_id' => $request->filled('country_id'),
+            'bank_swift' => $request->filled('bank_swift'),
             'bank_id' => $request->filled('bank_id'),
+            'accept_from_bank_swift' => $request->filled('accept_from_bank_swift'),
             'accept_from_bank_id' => $request->filled('accept_from_bank_id'),
             'is_test' => $request->has('is_test'),
             'test_group' => $request->filled('test_group'),
