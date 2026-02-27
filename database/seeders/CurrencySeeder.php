@@ -34,6 +34,21 @@ class CurrencySeeder extends Seeder
             ['code' => 'CHF', 'name' => 'Swiss Franc', 'symbol' => 'CHF'],
             ['code' => 'BRL', 'name' => 'Brazilian Real', 'symbol' => 'R$'],
             ['code' => 'INR', 'name' => 'Indian Rupee', 'symbol' => '₹'],
+            ['code' => 'KZT', 'name' => 'Kazakhstani Tenge', 'symbol' => '₸'],
+            ['code' => 'UAH', 'name' => 'Ukrainian Hryvnia', 'symbol' => '₴'],
+            ['code' => 'ZAR', 'name' => 'South African Rand', 'symbol' => 'R'],
+            ['code' => 'MXN', 'name' => 'Mexican Peso', 'symbol' => '$'],
+            ['code' => 'SEK', 'name' => 'Swedish Krona', 'symbol' => 'kr'],
+            ['code' => 'NOK', 'name' => 'Norwegian Krone', 'symbol' => 'kr'],
+            ['code' => 'PLN', 'name' => 'Polish Zloty', 'symbol' => 'zł'],
+            ['code' => 'TRY', 'name' => 'Turkish Lira', 'symbol' => '₺'],
+            ['code' => 'SAR', 'name' => 'Saudi Riyal', 'symbol' => '﷼'],
+            ['code' => 'AED', 'name' => 'UAE Dirham', 'symbol' => 'د.إ'],
+            ['code' => 'SGD', 'name' => 'Singapore Dollar', 'symbol' => 'S$'],
+            ['code' => 'HKD', 'name' => 'Hong Kong Dollar', 'symbol' => 'HK$'],
+            ['code' => 'KRW', 'name' => 'South Korean Won', 'symbol' => '₩'],
+            ['code' => 'NGN', 'name' => 'Nigerian Naira', 'symbol' => '₦'],
+            ['code' => 'EGP', 'name' => 'Egyptian Pound', 'symbol' => 'E£'],
         ];
 
         foreach ($fiatCurrencies as $currency) {

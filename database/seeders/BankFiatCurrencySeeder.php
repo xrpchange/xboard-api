@@ -31,6 +31,21 @@ class BankFiatCurrencySeeder extends Seeder
         'NLD' => 'EUR',
         'CHE' => 'CHF',
         'IND' => 'INR',
+        'KAZ' => 'KZT',
+        'UKR' => 'UAH',
+        'ZAF' => 'ZAR',
+        'MEX' => 'MXN',
+        'SWE' => 'SEK',
+        'NOR' => 'NOK',
+        'POL' => 'PLN',
+        'TUR' => 'TRY',
+        'SAU' => 'SAR',
+        'ARE' => 'AED',
+        'SGP' => 'SGD',
+        'HKG' => 'HKD',
+        'KOR' => 'KRW',
+        'NGA' => 'NGN',
+        'EGY' => 'EGP',
     ];
 
     public function run(): void
