@@ -1,0 +1,5 @@
+# Domains we allow receiving mail FROM (incoming on port 25).
+# One domain per line: domain<TAB>OK
+# Add partner/trusted domains if needed.
+xdexboard.com	OK
+mail.xdexboard.com	OK

@@ -392,6 +392,90 @@ Postfix не может подключиться к сокету Dovecot для 
 
 **Текущая конфигурация в master.cf:** submission (587) с `smtpd_tls_wrappermode=yes`; submissions (465) с `smtpd_tls_wrappermode=no`, SASL и те же ограничения. После правок: `sudo postfix reload`, проверка: `sudo ss -tlnp | grep -E '465|587'`.
 
+### 4. Postfix слушает только localhost (внешние клиенты не подключаются)
+
+Postfix может быть настроен принимать подключения **только с самого сервера** (127.0.0.1). Тогда снаружи (Canary Mail, приложения, другой хост) подключиться к SMTP (25, 587, 465) нельзя — соединение таймаутит или отказ.
+
+**Проверка на сервере:**
+
+```bash
+# Какие интерфейсы слушает Postfix (главный smtpd и submission/smtps)
+postconf inet_interfaces
+
+# На каких адресах висят порты (должно быть 0.0.0.0 или конкретный IP, не только 127.0.0.1)
+sudo ss -tlnp | grep -E ':25 |:587 |:465 '
+```
+
+- Если **inet_interfaces = localhost** (или только 127.0.0.1) — Postfix слушает только loopback; внешние клиенты не смогут подключиться.
+- Если в `ss` порты 25/587/465 показывают **127.0.0.1** — то же самое.
+
+**Исправление (принять подключения со всех интерфейсов):**
+
+В `/etc/postfix/main.cf` должно быть:
+
+```ini
+inet_interfaces = all
+```
+
+Если там указано `inet_interfaces = localhost`, заменить на `all`, затем:
+
+```bash
+sudo systemctl restart postfix
+sudo ss -tlnp | grep -E ':25 |:587 |:465 '
+```
+
+После этого порты должны слушаться на `0.0.0.0` (или на всех интерфейсах). Дополнительно проверить firewall (ufw/iptables), чтобы порты 25, 587, 465 были открыты для входящих.
+
+### 5. Разрешённые домены: получатели и отправители
+
+В репозитории есть два шаблона (скопировать на сервер в `/etc/postfix/`):
+
+| Файл | Назначение |
+|------|------------|
+| `scripts/email-server/allowed_recipient_domains` | Домены, **на которые** разрешено отправлять (submission 587, smtps 465). |
+| `scripts/email-server/allowed_sender_domains`   | Домены, **с которых** разрешено принимать письма (входящий SMTP, порт 25). |
+
+> **⚠️ Важно: после любого изменения списка доменов нужно пересобрать карту и перезагрузить Postfix.**  
+> Иначе новые домены не начнут работать. На сервере выполнить:
+> ```bash
+> sudo postmap /etc/postfix/allowed_recipient_domains   # если меняли получателей
+> sudo postmap /etc/postfix/allowed_sender_domains      # если меняли отправителей
+> sudo postfix reload
+> ```
+
+**Структура файлов:** одна строка на домен, формат `домен<TAB>OK`. В шаблонах указаны `xdexboard.com` и `mail.xdexboard.com`:
+- **xdexboard.com** — основной домен ящиков (user@xdexboard.com).
+- **mail.xdexboard.com** — хост сервера; если у вас есть ящики вида user@mail.xdexboard.com, они тоже будут разрешены.
+
+Добавлять другие домены (gmail.com, yandex.ru и т.д.) — по необходимости в соответствующий файл.
+
+**Установка на сервер:**
+
+```bash
+# Скопировать файлы (из корня xboard-api)
+sudo cp scripts/email-server/allowed_recipient_domains /etc/postfix/
+sudo cp scripts/email-server/allowed_sender_domains   /etc/postfix/
+
+# Собрать хеш-карты
+sudo postmap /etc/postfix/allowed_recipient_domains
+sudo postmap /etc/postfix/allowed_sender_domains
+```
+
+**Подключение в Postfix:**
+
+- **Получатели (куда разрешено отправлять):** в `master.cf` в блоках submission и smtps задать:
+  ```
+  -o smtpd_recipient_restrictions=permit_mynetworks,permit_sasl_authenticated,check_recipient_access hash:/etc/postfix/allowed_recipient_domains,reject
+  ```
+
+- **Отправители (с каких доменов принимаем):** в `main.cf` (или в блоке smtpd для порта 25 в `master.cf`) добавить в `smtpd_sender_restrictions` проверку по карте:
+  ```
+  smtpd_sender_restrictions = permit_mynetworks, permit_sasl_authenticated, check_sender_access hash:/etc/postfix/allowed_sender_domains, reject_non_fqdn_sender, reject_unknown_sender_domain
+  ```
+  Либо в `main.cf`: `check_sender_access hash:/etc/postfix/allowed_sender_domains, reject` (после permit_mynetworks, permit_sasl_authenticated).
+
+**После добавления или удаления домена в файле — обязательно:** `postmap` по изменённому файлу и `postfix reload`; иначе изменения не применятся.
+
 ---
 
 ## Связанные документы
