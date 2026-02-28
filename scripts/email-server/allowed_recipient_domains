@@ -1,0 +1,5 @@
+# Domains we allow sending TO (submission/smtps).
+# One domain per line: domain<TAB>OK
+# Add other domains (gmail.com, yandex.ru, etc.) if needed.
+xdexboard.com	OK
+mail.xdexboard.com	OK
