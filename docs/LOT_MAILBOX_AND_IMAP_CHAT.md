@@ -216,6 +216,184 @@ $this->lotMailboxService->cleanupMailbox($lot->wallet_address, $lot->cryptoCurre
 
 ---
 
+## Проверка доступа к IMAP извне
+
+Сообщение «Не удалось достучаться до IMAP сервера» в почтовом клиенте (Canary Mail, Outlook и т.д.) может относиться:
+- к **нашему** ящику лота (`mail.xdexboard.com`, данные из подсказки «Настройте IMAP чат»), или
+- к **другому** аккаунту в том же клиенте (Gmail, Yandex и т.п.). В Canary Mail смотрите, для какого аккаунта подсвечена ошибка.
+
+### Проверка нашего IMAP (mail.xdexboard.com:993)
+
+Хост и порт для лотов: **mail.xdexboard.com**, порт **993** (IMAPS). Убедитесь, что к серверу можно подключиться с интернета.
+
+**1. С вашей машины (извне):**
+
+```bash
+# Проверка, что порт 993 открыт и отвечает (IMAPS)
+openssl s_client -connect mail.xdexboard.com:993 -brief
+# или
+nc -zv mail.xdexboard.com 993
+```
+
+Если соединение таймаутит или «Connection refused» — снаружи до сервера не достучаться (фаервол, не проброшен порт, или Dovecot не слушает на 0.0.0.0).
+
+**2. На сервере (ssh server@xrpchange.site):**
+
+```bash
+# Dovecot слушает ли на 993
+sudo ss -tlnp | grep 993
+# или
+sudo netstat -tlnp | grep 993
+
+# Локальная проверка IMAP (после ввода логина/пароля вручную можно прервать Ctrl+C)
+openssl s_client -connect 127.0.0.1:993
+```
+
+Если на сервере `127.0.0.1:993` подключается, а снаружи до `mail.xdexboard.com:993` — нет, причина во входящем доступе (firewall, NAT, неверный A-запись для mail.xdexboard.com).
+
+**3. Фаервол (на сервере):**
+
+```bash
+sudo ufw status
+# При необходимости открыть 993 для входящих:
+sudo ufw allow 993/tcp
+sudo ufw reload
+```
+
+После изменений снова проверьте снаружи `openssl s_client -connect mail.xdexboard.com:993`.
+
+---
+
+## Порт 587 (SMTP submission) — постоянная настройка
+
+Чтобы почтовые клиенты могли отправлять письма с ящиков лотов, на сервере (mail.xdexboard.com) должны быть включены submission и SASL. Изменения хранятся в конфигах в `/etc` и сохраняются после перезагрузки.
+
+**1. Postfix** — раскомментировать блок submission в `/etc/postfix/master.cf`:
+- Строку `#submission inet n ...` заменить на `submission inet n ...`.
+- Раскомментировать все строки параметров блока (от `-o syslog_name=postfix/submission` до `-o milter_macro_daemon_name=ORIGINATING`).
+- После строки `-o smtpd_sasl_auth_enable=yes` добавить:
+  ```
+    -o smtpd_sasl_type=dovecot
+    -o smtpd_sasl_path=private/auth
+  ```
+
+**2. Dovecot** — в `/etc/dovecot/conf.d/10-master.conf` в блоке `service auth` раскомментировать:
+```
+  unix_listener /var/spool/postfix/private/auth {
+    mode = 0666
+  }
+```
+
+**3. Применить:**
+```bash
+sudo postfix reload
+sudo systemctl restart dovecot
+sudo ss -tlnp | grep 587   # должен слушаться
+```
+
+**4. Тест отправки** — скрипт `temp/send_from_lot_mailbox_standalone.php` можно скопировать в document root (например `/var/www/game1-db.xrpchange.site/`) и запускать на сервере: `php send_from_lot_mailbox_standalone.php`.
+
+**5. Ограничение размера mail.log (не более 10 МБ):**
+
+Конфиг `scripts/email-server/logrotate-mail-10mb.conf`: при достижении 10 МБ лог обрезается (copytruncate, rotate 0). Установка на сервер:
+```bash
+sudo cp logrotate-mail-10mb.conf /etc/logrotate.d/mail-xboard
+```
+Первый раз (если лог уже огромный) — освободить место без копирования:  
+`sudo truncate -s 0 /var/log/mail.log`  
+Дальше logrotate по крону будет держать лог ≤ 10 МБ.
+
+**6. Логи (если подключение к 587 или отправка не работают):**
+
+Postfix пишет в `/var/log/mail.log`. Подключения к submission/smtpd и ошибки AUTH видны там же.
+
+- **Почта (Postfix):** `/var/log/mail.log` или `/var/log/maillog`  
+  Подключения к submission и ошибки smtpd:  
+  `sudo grep -E 'submission|smtpd' /var/log/mail.log | tail -100`
+- **Системный лог:**  
+  `sudo journalctl -u postfix -n 50 --no-pager`
+- **Проверить, что порт 587 слушается:**  
+  `sudo ss -tlnp | grep 587`
+- **Dovecot (auth для submission):**  
+  `sudo journalctl -u dovecot -n 50 --no-pager`  
+  или в mail.log строки с `dovecot`.
+
+По логам видно, принимает ли Postfix подключения на 587, отдаёт ли 220, и на каком шаге (AUTH, DATA) происходит отказ.
+
+---
+
+## Устранение неполадок SMTP (порт 587)
+
+### 1. SASL: Connect to Dovecot auth socket 'private/auth' failed / no SASL authentication mechanisms
+
+Postfix не может подключиться к сокету Dovecot для проверки логина/пароля. Сокет `/var/spool/postfix/private/auth` должен создаваться Dovecot при старте.
+
+**Причины и действия:**
+
+- **Главный конфиг не подключает conf.d.** Если в `/etc/dovecot/dovecot.conf` нет строки `!include_try conf.d/*.conf`, то файлы из `conf.d/` (в т.ч. `10-master.conf` с unix_listener для Postfix) не загружаются, и сокет не создаётся. Добавить в конец `dovecot.conf`:
+  ```
+  !include_try conf.d/*.conf
+  ```
+  Затем `sudo systemctl restart dovecot` и проверить `ls -la /var/spool/postfix/private/auth`.
+
+- **Dovecot не создаёт сокет из‑за ошибки конфига.** В логах Dovecot (`/var/log/dovecot.log`, `journalctl -u dovecot`) не должно быть ошибок разбора конфига. Частая причина — устаревший параметр `ssl_protocols = !SSLv2 !SSLv3` в `/etc/dovecot/dovecot.conf`. Заменить на:
+  ```ini
+  ssl_min_protocol = TLSv1.2
+  ```
+  (удалить или заменить обе строки с `ssl_protocols`.)
+
+- **Права на каталог.** Dovecot должен иметь право на запись в `/var/spool/postfix/private/`. Пример:
+  ```bash
+  sudo chown postfix:postfix /var/spool/postfix/private
+  sudo chmod 730 /var/spool/postfix/private
+  sudo usermod -a -G postfix dovecot
+  ```
+  После смены группы перезапустить Dovecot: `sudo systemctl restart dovecot`.
+
+- **Владелец сокета.** В `/etc/dovecot/conf.d/10-master.conf` в блоке `service auth` для сокета Postfix указать:
+  ```
+  unix_listener /var/spool/postfix/private/auth {
+    mode = 0666
+    user = postfix
+    group = postfix
+  }
+  ```
+
+- **AppArmor (Ubuntu).** Частая причина: профиль AppArmor для Dovecot не разрешает создание сокета в `/var/spool/postfix/private/`. Проверка:
+  ```bash
+  sudo systemctl status apparmor
+  sudo aa-status | grep -i dovecot
+  sudo dmesg | grep -i apparmor | grep -i denied
+  ```
+  Если профиль Dovecot в режиме enforce и в логах есть denied для `dovecot` и `/var/spool/postfix/private/auth` — временный тест: `sudo aa-complain /usr/lib/dovecot/auth` (или `/usr/sbin/dovecot`), перезапуск Dovecot, проверка появления сокета. Постоянное исправление: в профиль Dovecot (например `/etc/apparmor.d/usr.lib.dovecot.auth`) добавить внутри блока: ` /var/spool/postfix/private/auth rw,` или ` /var/spool/postfix/private/** rw,`; затем `sudo apparmor_parser -r /etc/apparmor.d/usr.lib.dovecot.auth`, `sudo aa-enforce /usr/lib/dovecot/auth`, перезапуск Dovecot и Postfix. Если AppArmor не установлен или сервис не активен, эта причина не применима.
+
+- **Chroot и прочее.** Убедиться, что в `service auth { }` нет `chroot =`, путь сокета — абсолютный (`/var/spool/postfix/private/auth`). Проверить: `doveconf -n | grep unix_listener`, `ps aux | grep dovecot` (процесс auth запущен).
+
+После правок: `sudo systemctl restart dovecot`, проверить `ls -la /var/spool/postfix/private/auth`, затем `sudo postfix reload`.
+
+### 2. STARTTLS на 587 не работает (SSL_accept error / Connection reset by peer)
+
+В логах при использовании порта 587 и STARTTLS:
+- `SSL_accept error from ... Connection reset by peer`
+- `lost connection after STARTTLS from ...`
+- `ehlo=1 starttls=0/1 commands=1/2`
+
+Рукопожатие TLS после команды STARTTLS обрывается. В этом случае используют **SSL (implicit TLS)** на порту **465** (SMTPS): клиент сразу поднимает TLS, без STARTTLS. Настройка сервера — см. п. 3 ниже.
+
+### 3. Порты 587 и 465: SSL и STARTTLS (текущая схема)
+
+На сервере настроено **наоборот** стандарту RFC, чтобы избежать ошибок с implicit SSL на 465:
+- **587 (submission):** **implicit SSL** — клиент сразу поднимает TLS (`smtpd_tls_wrappermode=yes`). В клиенте: порт **587**, безопасность **SSL (implicit TLS)**.
+- **465 (submissions):** **STARTTLS** — клиент подключается по plain, затем отправляет STARTTLS (`smtpd_tls_wrappermode=no`). В клиенте: порт **465**, безопасность **STARTTLS** (или «TLS»).
+
+В логах при неверном выборе порта/безопасности:
+- На 465 с «SSL»: ошибка (сервер ждёт plain и STARTTLS).
+- На 587 с «STARTTLS»: ошибка (сервер ждёт сразу TLS).
+
+**Текущая конфигурация в master.cf:** submission (587) с `smtpd_tls_wrappermode=yes`; submissions (465) с `smtpd_tls_wrappermode=no`, SASL и те же ограничения. После правок: `sudo postfix reload`, проверка: `sudo ss -tlnp | grep -E '465|587'`.
+
+---
+
 ## Связанные документы
 
 - `docs/EMAIL_SERVER_SETUP.md` — текущая настройка почтового сервера
