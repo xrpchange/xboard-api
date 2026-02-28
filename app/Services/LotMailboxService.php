@@ -67,12 +67,16 @@ class LotMailboxService
         }
 
         $imapHost = config('services.lot_mailbox.imap_host', 'mail.' . $this->domain);
+        $smtpHost = config('services.lot_mailbox.smtp_host', $imapHost);
 
         $result = [
             'email' => $mailbox->email,
             'imap_host' => $imapHost,
             'imap_port' => (int) config('services.lot_mailbox.imap_port', 993),
             'imap_ssl' => (bool) config('services.lot_mailbox.imap_ssl', true),
+            'smtp_host' => $smtpHost,
+            'smtp_port' => (int) config('services.lot_mailbox.smtp_port', 587),
+            'smtp_ssl' => (bool) config('services.lot_mailbox.smtp_ssl', true),
             'password' => $tokenHash,
         ];
         Log::info('[lot-mailbox] ensureMailbox done', [

@@ -71,6 +71,9 @@ return [
         'imap_host' => env('LOT_MAILBOX_IMAP_HOST', 'mail.xdexboard.com'),
         'imap_port' => env('LOT_MAILBOX_IMAP_PORT', 993),
         'imap_ssl' => env('LOT_MAILBOX_IMAP_SSL', true),
+        'smtp_host' => env('LOT_MAILBOX_SMTP_HOST', env('LOT_MAILBOX_IMAP_HOST', 'mail.xdexboard.com')),
+        'smtp_port' => (int) env('LOT_MAILBOX_SMTP_PORT', 587),
+        'smtp_ssl' => env('LOT_MAILBOX_SMTP_SSL', true),
         'maildir_base' => env('LOT_MAILBOX_MAILDIR_BASE', '/var/mail/vhosts'), // for Maildir creation
     ],
 
