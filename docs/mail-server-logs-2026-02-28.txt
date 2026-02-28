@@ -1,0 +1,57 @@
+# Mail server logs — 2026-02-28 (excerpts)
+# Postfix: submission/smtps/smtpd, SASL, TLS; Dovecot
+
+## Postfix (mail.log) — submission/smtps/SASL/TLS
+
+Feb 28 16:47:29 mail postfix/submission/smtpd[2451445]: lost connection after STARTTLS from localhost[127.0.0.1]
+Feb 28 16:47:29 mail postfix/submission/smtpd[2451445]: disconnect from localhost[127.0.0.1] ehlo=1 starttls=0/1 commands=1/2
+Feb 28 16:51:44 mail postfix/submission/smtpd[2589222]: warning: dict_nis_init: NIS domain name not set - NIS lookups disabled
+Feb 28 16:51:44 mail postfix/submission/smtpd[2589222]: connect from localhost[127.0.0.1]
+Feb 28 16:51:44 mail postfix/submission/smtpd[2589222]: warning: connect to Milter service inet:localhost:8891: Connection refused
+Feb 28 16:51:44 mail postfix/submission/smtpd[2589222]: SSL_accept error from localhost[127.0.0.1]: Connection reset by peer
+Feb 28 16:51:44 mail postfix/submission/smtpd[2589222]: lost connection after STARTTLS from localhost[127.0.0.1]
+Feb 28 16:51:44 mail postfix/submission/smtpd[2589222]: disconnect from localhost[127.0.0.1] ehlo=1 starttls=0/1 commands=1/2
+Feb 28 16:52:34 mail postfix/submission/smtpd[2589222]: connect from localhost[127.0.0.1]
+Feb 28 16:52:34 mail postfix/submission/smtpd[2589222]: warning: connect to Milter service inet:localhost:8891: Connection refused
+Feb 28 16:52:34 mail postfix/submission/smtpd[2589222]: warning: SASL: Connect to Dovecot auth socket 'private/auth' failed: No such file or directory
+Feb 28 16:52:34 mail postfix/submission/smtpd[2589222]: fatal: no SASL authentication mechanisms
+Feb 28 16:54:57 mail postfix/submission/smtpd[2641059]: connect from static-a38.Togliatti.golden.ru[195.46.191.38]
+Feb 28 16:54:57 mail postfix/submission/smtpd[2641059]: improper command pipelining after CONNECT from static-a38.Togliatti.golden.ru[195.46.191.38]: \026\003\001... (TLS bytes)
+Feb 28 16:54:57 mail postfix/submission/smtpd[2641059]: warning: non-SMTP command from static-a38.Togliatti.golden.ru[195.46.191.38]
+Feb 28 16:54:57 mail postfix/submission/smtpd[2641059]: disconnect from static-a38.Togliatti.golden.ru[195.46.191.38] unknown=0/1 commands=0/1
+Feb 28 17:07:25 mail postfix/submission/smtpd[2850941]: connect from static-a38.Togliatti.golden.ru[195.46.191.38]
+Feb 28 17:07:26 mail postfix/submission/smtpd[2850941]: warning: SASL: Connect to Dovecot auth socket 'private/auth' failed: No such file or directory
+Feb 28 17:07:26 mail postfix/submission/smtpd[2850941]: fatal: no SASL authentication mechanisms
+Feb 28 17:19:02 mail postfix/smtps/smtpd[3051106]: connect from static-a38.Togliatti.golden.ru[195.46.191.38]
+Feb 28 17:19:03 mail postfix/smtps/smtpd[3051106]: warning: SASL: Connect to Dovecot auth socket 'private/auth' failed: No such file or directory
+Feb 28 17:19:03 mail postfix/smtps/smtpd[3051106]: fatal: no SASL authentication mechanisms
+Feb 28 17:32:38 mail postfix/submission/smtpd[3282062]: connect from unknown[45.144.212.177]
+Feb 28 17:32:39 mail postfix/submission/smtpd[3282062]: disconnect from unknown[45.144.212.177] ehlo=1 auth=0/1 rset=0/1 quit=1 commands=2/4
+Feb 28 17:33:30 mail postfix/smtps/smtpd[3296386]: connect from static-a38.Togliatti.golden.ru[195.46.191.38]
+Feb 28 17:33:30 mail postfix/smtps/smtpd[3296386]: warning: SASL: Connect to Dovecot auth socket 'private/auth' failed: No such file or directory
+Feb 28 17:33:30 mail postfix/smtps/smtpd[3296386]: fatal: no SASL authentication mechanisms
+
+## Dovecot (dovecot.log) — config/ssl errors (repeated on each restart)
+
+config: Warning: Obsolete setting in /etc/dovecot/dovecot.conf:22: ssl_protocols has been replaced by ssl_min_protocol
+config: Error: Could not find a minimum ssl_min_protocol setting from ssl_protocols = !SSLv2 !SSLv3: Unrecognized protocol 'SSLv2'
+config: Warning: Obsolete setting in /etc/dovecot/dovecot.conf:34: ssl_protocols has been replaced by ssl_min_protocol
+config: Error: Could not find a minimum ssl_min_protocol setting from ssl_protocols = !SSLv2 !SSLv3: Unrecognized protocol 'SSLv2'
+
+(On the server dovecot.conf may still have ssl_protocols; if so, Dovecot config parse fails on every restart.)
+
+## Latest (port 587 only, after reverting 465)
+
+- 17:36:42 submission: connect from static-a38.Togliatti.golden.ru[195.46.191.38] → improper command pipelining, non-SMTP command (\026\003\001... TLS bytes) → disconnect unknown=0/1. So the client is sending TLS handshake immediately on 587; Postfix expects plain SMTP then STARTTLS.
+- 16:59:11 submission: unknown[45.144.212.177] → ehlo=1 auth=0/1 rset=0/1 quit=1 commands=2/4 → disconnect (reached AUTH but failed, likely no SASL socket).
+- When SASL is reached: "SASL: Connect to Dovecot auth socket 'private/auth' failed: No such file or directory", "fatal: no SASL authentication mechanisms".
+
+Postfix submission (master.cf): submission inet n - y - - smtpd, -o smtpd_tls_security_level=encrypt, -o smtpd_sasl_auth_enable=yes, -o smtpd_sasl_type=dovecot, -o smtpd_sasl_path=private/auth, -o smtpd_milter_maps=.
+Dovecot 10-master.conf: unix_listener /var/spool/postfix/private/auth { mode = 0666, user = postfix, group = postfix }. Socket still not created. /var/spool/postfix/private/ exists, postfix:postfix, 730; dovecot in group postfix.
+
+## Summary
+
+- Port 465 (smtps): reverted; only 25 and 587 listening after restore from master.cf.bak.before465.
+- SASL: socket /var/spool/postfix/private/auth not created by Dovecot → "no SASL authentication mechanisms".
+- STARTTLS on 587: SSL_accept error / Connection reset by peer.
+- Client 195.46.191.38 (Canary Mail): on 587 sends TLS immediately (improper pipelining); on 465 reached SASL then failed (no auth socket).
