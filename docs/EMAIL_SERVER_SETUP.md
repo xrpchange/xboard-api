@@ -60,9 +60,13 @@ sudo certbot certonly --standalone -d xdexboard.com -d mail.xdexboard.com
 sudo certbot --nginx -d xdexboard.com -d mail.xdexboard.com
 ```
 
-### 4. Настройка DNS записей
+### 4. Настройка DNS записей (SPF, DKIM, DMARC)
 
-Добавьте следующие DNS записи для домена `xdexboard.com`:
+Без корректных SPF, DKIM и DMARC исходящая почта (noreply@, ящики лотов) может отклоняться получателями (Yandex, Gmail и др.) как спам.
+
+**Подробно:** [MAIL_SPF_DKIM_DMARC.md](MAIL_SPF_DKIM_DMARC.md) — точные записи, проверка, устранение ошибок.
+
+Кратко для домена `xdexboard.com`:
 
 #### MX запись
 ```
@@ -71,29 +75,20 @@ xdexboard.com    MX    10    mail.xdexboard.com
 
 #### A запись для mail
 ```
-mail.xdexboard.com    A    YOUR_SERVER_IP
+mail.xdexboard.com    A    <IP вашего сервера>
 ```
 
-#### SPF запись (TXT)
+#### SPF (TXT для xdexboard.com)
 ```
-xdexboard.com    TXT    "v=spf1 mx a ip4:YOUR_SERVER_IP ~all"
-```
-
-#### DKIM запись (TXT)
-
-Получите DKIM ключ:
-```bash
-cat /etc/opendkim/keys/xdexboard.com/mail.txt
+v=spf1 mx a:mail.xdexboard.com ip4:<IP_СЕРВЕРА> -all
 ```
 
-Добавьте TXT запись:
-```
-mail._domainkey.xdexboard.com    TXT    "v=DKIM1; k=rsa; p=YOUR_PUBLIC_KEY_HERE"
-```
+#### DKIM (TXT для mail._domainkey.xdexboard.com)
+Содержимое взять с сервера: `sudo cat /etc/opendkim/keys/xdexboard.com/mail.txt`
 
-#### DMARC запись (TXT)
+#### DMARC (TXT для _dmarc.xdexboard.com)
 ```
-_dmarc.xdexboard.com    TXT    "v=DMARC1; p=quarantine; rua=mailto:check@xdexboard.com"
+v=DMARC1; p=quarantine; rua=mailto:check@xdexboard.com; adkim=r; aspf=r
 ```
 
 ### 5. Перезапуск сервисов
@@ -158,13 +153,23 @@ sudo postmap /etc/postfix/virtual-alias-maps
 
 ### OpenDKIM
 
+- **Сокет:** Postfix подключается к OpenDKIM по TCP. В `/etc/opendkim.conf` должен быть:  
+  `Socket inet:8891@localhost`  
+  (не Unix-сокет, иначе в логах будет «Connection refused» к milter.)
+- **InternalHosts:** чтобы исходящая почта подписывалась, укажите:  
+  `InternalHosts 127.0.0.1, ::1, <IP_СЕРВЕРА>`  
+  (подставьте внешний IP сервера mail.xdexboard.com.)
+
+Генерация ключа (если ещё нет):
+
 ```bash
-# Генерация ключа
 sudo mkdir -p /etc/opendkim/keys/xdexboard.com
 sudo opendkim-genkey -t -s mail -d xdexboard.com -D /etc/opendkim/keys/xdexboard.com/
 sudo chown -R opendkim:opendkim /etc/opendkim/keys
 sudo chmod 600 /etc/opendkim/keys/xdexboard.com/mail.private
 ```
+
+KeyTable/SigningTable для домена xdexboard.com и селектора `mail` должны указывать на этот ключ. Подробнее: [MAIL_SPF_DKIM_DMARC.md](MAIL_SPF_DKIM_DMARC.md).
 
 ## PHP скрипт проверки
 

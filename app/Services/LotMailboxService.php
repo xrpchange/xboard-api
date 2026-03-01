@@ -54,6 +54,7 @@ class LotMailboxService
                 'domain' => $this->domain,
                 'password_hash' => password_hash($tokenHash, PASSWORD_BCRYPT),
                 'currency' => $currency,
+                'is_test' => !app()->environment('production'),
             ]);
             $isNew = true;
             Log::info('[lot-mailbox] Created new mailbox (DB record)', [

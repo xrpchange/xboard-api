@@ -1,0 +1,10 @@
+# Dovecot SQL for send_only_accounts (e.g. noreply@) — SMTP only, not in lot_mailboxes.
+# Copy to /etc/dovecot/dovecot-sql-send-only.conf on server.
+# Same DB/user as dovecot-sql-lot.conf; table: send_only_accounts (local_part, domain, password_hash).
+
+driver = mysql
+connect = host=localhost dbname=xboard user=dovecot password=YOUR_DOVECOT_DB_PASSWORD
+default_pass_scheme = BLF-CRYPT
+
+password_query = SELECT CONCAT(local_part, '@', domain) AS user, password_hash AS password FROM send_only_accounts WHERE local_part = '%n' AND domain = '%d'
+user_query = SELECT CONCAT(local_part, '@', domain) AS user, 'vmail' AS uid, 'vmail' AS gid, CONCAT('/var/mail/vhosts/', domain, '/', local_part) AS home FROM send_only_accounts WHERE local_part = '%n' AND domain = '%d'

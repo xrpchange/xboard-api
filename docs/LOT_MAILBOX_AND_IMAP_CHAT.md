@@ -20,7 +20,7 @@
 - Postfix, Dovecot, OpenDKIM
 - Один ящик `check@xdexboard.com` для верификации платежей
 - Виртуальные пользователи статичные, Dovecot с `nopassword`
-- См. `docs/EMAIL_SERVER_SETUP.md`
+- См. `docs/EMAIL_SERVER_SETUP.md`. Для доставки исходящей почты (в т.ч. с ящиков лотов) на внешние адреса нужны SPF, DKIM, DMARC — см. `docs/MAIL_SPF_DKIM_DMARC.md`.
 
 ### Требуемые изменения
 
@@ -493,3 +493,4 @@ sudo postmap /etc/postfix/exempt_senders
 
 - `docs/EMAIL_SERVER_SETUP.md` — текущая настройка почтового сервера
 - `docs/IMAP_MONITORING_SETUP.md` — IMAP для верификации платежей
+- **`docs/NOREPLY_MAILBOX_SETUP.md`** — технический рассыльщик noreply@xdexboard.com: настройки только в .env, в lot_mailboxes не добавляется

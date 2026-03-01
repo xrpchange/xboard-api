@@ -45,7 +45,7 @@ scripts/email-server/
    sudo ./install.sh
    ```
 
-4. **Настройте DNS записи** (см. `docs/EMAIL_SERVER_SETUP.md`)
+4. **Настройте DNS записи (SPF, DKIM, DMARC)** — см. `docs/MAIL_SPF_DKIM_DMARC.md` и `docs/EMAIL_SERVER_SETUP.md`
 
 5. **Протестируйте** (см. раздел "Тестирование" в документации)
 
@@ -81,7 +81,8 @@ scripts/email-server/
 
 ## Документация
 
-Полная документация: [`docs/EMAIL_SERVER_SETUP.md`](../../docs/EMAIL_SERVER_SETUP.md)
+- **Полная настройка сервера:** [`docs/EMAIL_SERVER_SETUP.md`](../../docs/EMAIL_SERVER_SETUP.md)
+- **SPF, DKIM, DMARC (доставка, защита от спама):** [`docs/MAIL_SPF_DKIM_DMARC.md`](../../docs/MAIL_SPF_DKIM_DMARC.md)
 
 ## Поддержка
 

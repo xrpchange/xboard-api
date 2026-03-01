@@ -17,6 +17,11 @@ class LotMailbox extends Model
         'domain',
         'password_hash',
         'currency',
+        'is_test',
+    ];
+
+    protected $casts = [
+        'is_test' => 'boolean',
     ];
 
     protected $hidden = [
