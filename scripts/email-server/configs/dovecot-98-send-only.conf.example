@@ -1,0 +1,11 @@
+# Send-only SASL (noreply@) — not in lot_mailboxes; uses table send_only_accounts.
+# Copy to /etc/dovecot/conf.d/98-send-only.conf on server.
+# SQL config: /etc/dovecot/dovecot-sql-send-only.conf (see dovecot-sql-send-only.conf.example).
+passdb {
+  driver = sql
+  args = /etc/dovecot/dovecot-sql-send-only.conf
+}
+userdb {
+  driver = sql
+  args = /etc/dovecot/dovecot-sql-send-only.conf
+}

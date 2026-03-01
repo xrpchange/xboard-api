@@ -32,6 +32,7 @@ class EmailProviderSeeder extends Seeder
             
             [
                 'name' => 'Gmail',
+                'domain' => 'gmail.com',
                 'imap_host' => 'imap.gmail.com',
                 'imap_port' => 993,
                 'pop3_host' => 'pop.gmail.com',
@@ -45,6 +46,7 @@ class EmailProviderSeeder extends Seeder
             
             [
                 'name' => 'Yandex',
+                'domain' => 'yandex.com',
                 'imap_host' => 'imap.yandex.com', // Correct: imap.yandex.com (not .ru)
                 'imap_port' => 993,
                 'pop3_host' => 'pop.yandex.com',
@@ -59,6 +61,7 @@ class EmailProviderSeeder extends Seeder
             
             [
                 'name' => 'Outlook',
+                'domain' => 'outlook.com',
                 'imap_host' => 'outlook.office365.com',
                 'imap_port' => 993,
                 'pop3_host' => 'outlook.office365.com', // Fixed: was pop-mail.outlook.com, correct is outlook.office365.com
@@ -72,6 +75,7 @@ class EmailProviderSeeder extends Seeder
             
             [
                 'name' => 'Hotmail',
+                'domain' => 'hotmail.com',
                 'imap_host' => 'outlook.office365.com', // Hotmail now uses Outlook.com infrastructure
                 'imap_port' => 993,
                 'pop3_host' => 'outlook.office365.com',
@@ -84,6 +88,7 @@ class EmailProviderSeeder extends Seeder
             
             [
                 'name' => 'Yahoo Mail',
+                'domain' => 'yahoo.com',
                 'imap_host' => 'imap.mail.yahoo.com',
                 'imap_port' => 993,
                 'pop3_host' => 'pop.mail.yahoo.com',
@@ -97,6 +102,7 @@ class EmailProviderSeeder extends Seeder
             
             [
                 'name' => 'AT&T/Yahoo',
+                'domain' => 'att.net',
                 'imap_host' => 'imap.mail.att.net',
                 'imap_port' => 993,
                 'pop3_host' => 'inbound.att.net',
@@ -109,6 +115,7 @@ class EmailProviderSeeder extends Seeder
             
             [
                 'name' => 'Mail.ru',
+                'domain' => 'mail.ru',
                 'imap_host' => 'imap.mail.ru',
                 'imap_port' => 993,
                 'pop3_host' => 'pop.mail.ru',
@@ -126,6 +133,7 @@ class EmailProviderSeeder extends Seeder
             
             [
                 'name' => 'iCloud',
+                'domain' => 'icloud.com',
                 'imap_host' => 'imap.mail.me.com',
                 'imap_port' => 993,
                 'pop3_host' => null, // Fixed: iCloud Mail does not support POP3, only IMAP
@@ -140,6 +148,7 @@ class EmailProviderSeeder extends Seeder
             
             [
                 'name' => 'AOL',
+                'domain' => 'aol.com',
                 'imap_host' => 'imap.aol.com',
                 'imap_port' => 993,
                 'pop3_host' => 'pop.aol.com',
@@ -609,8 +618,11 @@ class EmailProviderSeeder extends Seeder
             ],
         ];
 
-        // Insert providers with timestamps
+        // Insert providers with timestamps; ensure domain is set (for rate-limit validation)
         foreach ($providers as $provider) {
+            if (empty($provider['domain']) && !empty($provider['imap_host'])) {
+                $provider['domain'] = $this->domainFromImapHost($provider['imap_host']);
+            }
             DB::table('email_providers')->insert(array_merge($provider, [
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -620,5 +632,17 @@ class EmailProviderSeeder extends Seeder
         $this->command->info('Email providers seeded successfully!');
         $this->command->info('Total providers: ' . count($providers));
         $this->command->info('Active providers: ' . collect($providers)->where('is_active', true)->count());
+    }
+
+    /**
+     * Derive primary domain from IMAP host for providers without explicit domain (e.g. imap.gmail.com -> gmail.com).
+     */
+    private function domainFromImapHost(string $imapHost): string
+    {
+        $parts = explode('.', strtolower($imapHost));
+        if (count($parts) >= 2) {
+            return implode('.', array_slice($parts, -2));
+        }
+        return $imapHost;
     }
 }

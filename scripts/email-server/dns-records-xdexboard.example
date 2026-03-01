@@ -1,0 +1,29 @@
+# Example DNS records for xdexboard.com (mail delivery, SPF/DKIM/DMARC)
+# Replace YOUR_SERVER_IP with the actual IP of mail.xdexboard.com (e.g. 152.53.150.194)
+# DKIM p= value: get from server with: sudo cat /etc/opendkim/keys/xdexboard.com/mail.txt
+
+# --- MX ---
+# Host: @ or xdexboard.com
+# Type: MX
+# Priority: 10
+# Value: mail.xdexboard.com
+
+# --- A for mail ---
+# Host: mail
+# Type: A
+# Value: YOUR_SERVER_IP
+
+# --- SPF ---
+# Host: @ or xdexboard.com
+# Type: TXT
+# Value: v=spf1 mx a:mail.xdexboard.com ip4:YOUR_SERVER_IP -all
+
+# --- DKIM ---
+# Host: mail._domainkey
+# Type: TXT
+# Value: (copy full line from /etc/opendkim/keys/xdexboard.com/mail.txt on server)
+
+# --- DMARC ---
+# Host: _dmarc
+# Type: TXT
+# Value: v=DMARC1; p=quarantine; rua=mailto:check@xdexboard.com; adkim=r; aspf=r

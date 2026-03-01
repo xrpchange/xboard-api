@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Services\EscrowTokenService;
+use App\Services\TokenCreationRateLimitService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
@@ -10,9 +11,12 @@ class EscrowTokenController extends BaseApiController
 {
     protected EscrowTokenService $escrowTokenService;
 
-    public function __construct(EscrowTokenService $escrowTokenService)
+    protected TokenCreationRateLimitService $rateLimitService;
+
+    public function __construct(EscrowTokenService $escrowTokenService, TokenCreationRateLimitService $rateLimitService)
     {
         $this->escrowTokenService = $escrowTokenService;
+        $this->rateLimitService = $rateLimitService;
     }
 
     /**
@@ -39,11 +43,14 @@ class EscrowTokenController extends BaseApiController
      *     @OA\RequestBody(
      *         required=true,
      *         @OA\JsonContent(
-     *             required={"crypto_type"},
+     *             required={"crypto_type", "email"},
      *             @OA\Property(property="crypto_type", type="string", example="xrp", description="Cryptocurrency type (xrp, btc, xmr)"),
-     *             @OA\Property(property="amount", type="number", example=10, description="Optional amount")
+     *             @OA\Property(property="amount", type="number", example=10, description="Optional amount"),
+     *             @OA\Property(property="email", type="string", example="user@gmail.com", description="Email from a supported provider (for rate limiting)")
      *         )
      *     ),
+     *     @OA\Response(response=429, description="Rate limit exceeded (email or IP)"),
+     *     @OA\Response(response=400, description="Email provider not supported"),
      *     @OA\Response(
      *         response=201,
      *         description="Token created successfully",
@@ -65,14 +72,48 @@ class EscrowTokenController extends BaseApiController
     {
         $validated = $request->validate([
             'crypto_type' => 'required|string|in:xrp,btc,xmr',
-            'amount' => 'nullable|numeric|min:0'
+            'amount' => 'nullable|numeric|min:0',
+            'email' => 'required|string|email',
         ]);
+
+        $email = $validated['email'];
+        if (!$this->rateLimitService->isEmailAllowed($email)) {
+            return response()->json([
+                'message' => 'Only email addresses from supported providers (see Settings) are allowed for token creation.',
+                'error_code' => 'email_provider_not_supported',
+            ], 400);
+        }
+
+        $host = $request->getHost();
+        $environment = preg_match('/^(sandbox\.|dev\.)/', $host) ? 'sandbox' : 'production';
+        $ip = $request->ip() ?? '0.0.0.0';
+
+        $emailLimit = $this->rateLimitService->getEmailLimit($environment);
+        $emailCount = $this->rateLimitService->getEmailCount($email, $environment);
+        if ($emailCount >= $emailLimit) {
+            return response()->json([
+                'message' => "Token creation limit for this email: {$emailCount}/{$emailLimit} per month ({$environment}). Try again next month.",
+                'error_code' => 'email_quota_exceeded',
+            ], 429);
+        }
+
+        $ipLimit = $this->rateLimitService->getIpLimit();
+        $ipCount = $this->rateLimitService->getIpCount($ip);
+        if ($ipCount >= $ipLimit) {
+            return response()->json([
+                'message' => "Token creation limit for this IP: {$ipCount}/{$ipLimit} per day. Try again tomorrow.",
+                'error_code' => 'ip_quota_exceeded',
+            ], 429);
+        }
 
         try {
             $result = $this->escrowTokenService->createToken(
                 $validated['crypto_type'],
                 (float)($validated['amount'] ?? 0.0)
             );
+
+            $this->rateLimitService->incrementEmail($email, $environment);
+            $this->rateLimitService->incrementIp($ip);
 
             return response()->json($result, 201);
         } catch (\Exception $e) {
