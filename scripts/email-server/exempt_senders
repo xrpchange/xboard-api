@@ -1,0 +1,5 @@
+# Sender addresses that can send without domain restriction (port 25).
+# Full address<TAB>OK — we accept mail FROM these addresses regardless of allowed_sender_domains.
+# These addresses do not have mailboxes: they only send, no incoming delivery.
+# Add one line per address; postmap + postfix reload after changes.
+noreply@xdexboard.com	OK
