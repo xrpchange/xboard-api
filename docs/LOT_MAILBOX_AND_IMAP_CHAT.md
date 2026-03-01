@@ -428,22 +428,26 @@ sudo ss -tlnp | grep -E ':25 |:587 |:465 '
 
 ### 5. Разрешённые домены: получатели и отправители
 
-В репозитории есть два шаблона (скопировать на сервер в `/etc/postfix/`):
+В репозитории есть шаблоны (скопировать на сервер в `/etc/postfix/`):
 
 | Файл | Назначение |
 |------|------------|
-| `scripts/email-server/allowed_recipient_domains` | Домены, **на которые** разрешено отправлять (submission 587, smtps 465). |
-| `scripts/email-server/allowed_sender_domains`   | Домены, **с которых** разрешено принимать письма (входящий SMTP, порт 25). |
+| `allowed_recipient_domains` | Домены, **на которые** разрешено отправлять (587, 465). |
+| `allowed_sender_domains`    | Домены, **с которых** разрешено принимать письма (порт 25). |
+| **`exempt_recipients`**     | **Ящики, на которые вообще никакие ограничения не распространяются:** всегда разрешены и как получатели (587/465), и при приёме (порт 25) — почту на них принимают от любого отправителя. |
+| **`exempt_senders`**       | **Ящики, с которых разрешено отсылать без ограничения по домену** (порт 25). Письма **от** этих адресов принимаются всегда; у этих адресов **нет приёма почты** (только отправка, например noreply@). |
 
-> **⚠️ Важно: после любого изменения списка доменов нужно пересобрать карту и перезагрузить Postfix.**  
-> Иначе новые домены не начнут работать. На сервере выполнить:
+> **⚠️ Важно: после любого изменения списков нужно пересобрать карты и перезагрузить Postfix.**  
+> Иначе изменения не начнут работать. На сервере:
 > ```bash
-> sudo postmap /etc/postfix/allowed_recipient_domains   # если меняли получателей
-> sudo postmap /etc/postfix/allowed_sender_domains      # если меняли отправителей
+> sudo postmap /etc/postfix/allowed_recipient_domains   # если меняли домены получателей
+> sudo postmap /etc/postfix/allowed_sender_domains      # если меняли домены отправителей
+> sudo postmap /etc/postfix/exempt_recipients           # если меняли исключения по получателям
+> sudo postmap /etc/postfix/exempt_senders              # если меняли исключения по отправителям
 > sudo postfix reload
 > ```
 
-**Структура файлов:** одна строка на домен, формат `домен<TAB>OK`. В шаблонах указаны `xdexboard.com` и `mail.xdexboard.com`:
+**Структура:** в файлах доменов — одна строка на домен, формат `домен<TAB>OK`. В `exempt_recipients` и `exempt_senders` — полный адрес, формат `адрес<TAB>OK`. В шаблонах доменов указаны `xdexboard.com` и `mail.xdexboard.com`:
 - **xdexboard.com** — основной домен ящиков (user@xdexboard.com).
 - **mail.xdexboard.com** — хост сервера; если у вас есть ящики вида user@mail.xdexboard.com, они тоже будут разрешены.
 
@@ -455,26 +459,33 @@ sudo ss -tlnp | grep -E ':25 |:587 |:465 '
 # Скопировать файлы (из корня xboard-api)
 sudo cp scripts/email-server/allowed_recipient_domains /etc/postfix/
 sudo cp scripts/email-server/allowed_sender_domains   /etc/postfix/
+sudo cp scripts/email-server/exempt_recipients         /etc/postfix/
+sudo cp scripts/email-server/exempt_senders            /etc/postfix/
 
 # Собрать хеш-карты
 sudo postmap /etc/postfix/allowed_recipient_domains
 sudo postmap /etc/postfix/allowed_sender_domains
+sudo postmap /etc/postfix/exempt_recipients
+sudo postmap /etc/postfix/exempt_senders
 ```
 
 **Подключение в Postfix:**
 
-- **Получатели (куда разрешено отправлять):** в `master.cf` в блоках submission и smtps задать:
+- **Получатели (587, 465):** в `master.cf` в блоках submission и smtps — сначала проверка исключений, затем домены:
   ```
-  -o smtpd_recipient_restrictions=permit_mynetworks,permit_sasl_authenticated,check_recipient_access hash:/etc/postfix/allowed_recipient_domains,reject
+  -o smtpd_recipient_restrictions=permit_mynetworks,permit_sasl_authenticated,check_recipient_access hash:/etc/postfix/exempt_recipients,check_recipient_access hash:/etc/postfix/allowed_recipient_domains,reject
+  ```
+  Адреса из `exempt_recipients` разрешены всегда; остальные — только если домен в `allowed_recipient_domains`.
+
+- **Приём (порт 25):** на ящики из `exempt_recipients` почту принимают от любого отправителя (никаких ограничений). Для этого проверку отправителя делают в `smtpd_recipient_restrictions` при RCPT TO: сначала «получатель в exempt_recipients» → разрешить; иначе — проверка отправителя по картам. В `main.cf`:
+  - **smtpd_sender_restrictions** — без проверки по доменам: `permit_mynetworks, permit_sasl_authenticated`
+  - **smtpd_recipient_restrictions** — в начале: проверка exempt_recipients, затем отправители, затем остальное:
+  ```
+  smtpd_sender_restrictions = permit_mynetworks, permit_sasl_authenticated
+  smtpd_recipient_restrictions = permit_mynetworks, permit_sasl_authenticated, check_recipient_access hash:/etc/postfix/exempt_recipients, check_sender_access hash:/etc/postfix/exempt_senders, check_sender_access hash:/etc/postfix/allowed_sender_domains, reject, reject_non_fqdn_recipient, reject_unknown_recipient_domain, reject_unauth_destination, permit
   ```
 
-- **Отправители (с каких доменов принимаем):** в `main.cf` (или в блоке smtpd для порта 25 в `master.cf`) добавить в `smtpd_sender_restrictions` проверку по карте:
-  ```
-  smtpd_sender_restrictions = permit_mynetworks, permit_sasl_authenticated, check_sender_access hash:/etc/postfix/allowed_sender_domains, reject_non_fqdn_sender, reject_unknown_sender_domain
-  ```
-  Либо в `main.cf`: `check_sender_access hash:/etc/postfix/allowed_sender_domains, reject` (после permit_mynetworks, permit_sasl_authenticated).
-
-**После добавления или удаления домена в файле — обязательно:** `postmap` по изменённому файлу и `postfix reload`; иначе изменения не применятся.
+**После добавления или удаления домена/адреса в любом из этих файлов — обязательно:** `postmap` по изменённому файлу и `postfix reload`; иначе изменения не применятся.
 
 ---
 

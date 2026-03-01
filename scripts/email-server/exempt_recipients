@@ -1,0 +1,4 @@
+# Recipients exempt from allowed_recipient_domains (587/465).
+# Full address<TAB>OK — sending TO these addresses is always allowed.
+# Add one line per address; postmap + postfix reload after changes.
+check@xdexboard.com	OK
