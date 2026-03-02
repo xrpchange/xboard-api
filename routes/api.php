@@ -111,6 +111,12 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/health-check', [NodeController::class, 'healthCheck']);
     });
 
+    // Exchange lots — list and show are public (no escrow token required; anyone can browse)
+    Route::prefix('exchange-lots')->group(function () {
+        Route::get('/', [ExchangeLotController::class, 'index']);
+        Route::get('/{lot}', [ExchangeLotController::class, 'show']);
+    });
+
     // Escrow Tokens (Stage 1 - no authentication required)
     Route::prefix('escrow-tokens')->group(function () {
         Route::get('/available-cryptos', [EscrowTokenController::class, 'getAvailableCryptos']);
@@ -129,8 +135,6 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
     Route::post('/lot-mailbox/delete', [LotMailboxController::class, 'delete']);
 
     Route::prefix('exchange-lots')->group(function () {
-        Route::get('/', [ExchangeLotController::class, 'index']);
-        Route::get('/{lot}', [ExchangeLotController::class, 'show']);
         Route::post('/', [ExchangeLotController::class, 'store']);
         Route::post('/{lot}/update', [ExchangeLotController::class, 'update']);
         Route::post('/{lot}/delete', [ExchangeLotController::class, 'destroy']);
