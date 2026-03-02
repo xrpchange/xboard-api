@@ -14,6 +14,8 @@ class EscrowTokenController extends BaseApiController
 {
     private const CACHE_KEY_PREFIX = 'escrow_verification_code:';
 
+    private const PUZZLE_CACHE_PREFIX = 'escrow_puzzle_token:';
+
     protected EscrowTokenService $escrowTokenService;
 
     protected TokenCreationRateLimitService $rateLimitService;
@@ -25,15 +27,57 @@ class EscrowTokenController extends BaseApiController
     }
 
     /**
+     * Get a proof-of-work puzzle for request-verification-code.
+     * Client must find puzzle_answer such that SHA256(puzzle_token + puzzle_answer) starts with prefix (hex).
+     * One-time use; stops mass bots (each request costs CPU).
+     */
+    public function getVerificationPuzzle(Request $request): JsonResponse
+    {
+        $prefixLen = (int) config('rate_limit.verification_puzzle.prefix_hex_length', 4);
+        $prefixLen = max(1, min(6, $prefixLen));
+        $ttl = (int) config('rate_limit.verification_puzzle.token_ttl_seconds', 300);
+        $token = bin2hex(random_bytes(16));
+        $prefix = str_repeat('0', $prefixLen);
+        Cache::put(self::PUZZLE_CACHE_PREFIX . $token, $prefix, now()->addSeconds($ttl));
+        return response()->json([
+            'puzzle_token' => $token,
+            'prefix' => $prefix,
+            'expires_in_seconds' => $ttl,
+        ]);
+    }
+
+    /**
      * Request verification code for escrow token creation.
+     * Requires valid proof-of-work puzzle solution (puzzle_token + puzzle_answer).
      * Sends code to the given email; client must submit this code when calling create.
      */
     public function requestVerificationCode(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'email' => 'required|string|email',
+            'puzzle_token' => 'required|string|max:128',
+            'puzzle_answer' => 'required|string|max:64',
         ]);
         $email = $validated['email'];
+        $puzzleToken = $validated['puzzle_token'];
+        $puzzleAnswer = $validated['puzzle_answer'];
+
+        $cacheKey = self::PUZZLE_CACHE_PREFIX . $puzzleToken;
+        $storedPrefix = Cache::get($cacheKey);
+        if ($storedPrefix === null) {
+            return response()->json([
+                'message' => 'Invalid or expired puzzle. Request a new one.',
+                'error_code' => 'puzzle_invalid_or_expired',
+            ], 400);
+        }
+        $hash = hash('sha256', $puzzleToken . $puzzleAnswer);
+        if (substr($hash, 0, strlen($storedPrefix)) !== $storedPrefix) {
+            return response()->json([
+                'message' => 'Invalid puzzle solution.',
+                'error_code' => 'puzzle_invalid',
+            ], 400);
+        }
+        Cache::forget($cacheKey);
 
         if (!$this->rateLimitService->isEmailAllowed($email)) {
             return response()->json([

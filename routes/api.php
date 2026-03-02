@@ -120,6 +120,7 @@ Route::prefix('v1')->group(function () {
     // Escrow Tokens (Stage 1 - no authentication required)
     Route::prefix('escrow-tokens')->group(function () {
         Route::get('/available-cryptos', [EscrowTokenController::class, 'getAvailableCryptos']);
+        Route::get('/verification-puzzle', [EscrowTokenController::class, 'getVerificationPuzzle']);
         Route::post('/request-verification-code', [EscrowTokenController::class, 'requestVerificationCode']);
         Route::post('/create', [EscrowTokenController::class, 'create']);
     });
