@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Schema;
  * from_fiat_currency_id, from_crypto_currency_id (ровно один задан),
  * to_fiat_currency_id, to_crypto_currency_id (ровно один задан).
  * API по-прежнему принимает и отдаёт коды (маппинг в контроллере/ресурсе).
+ * Runs after recreate_exchange_lots_table (2025_10_01_000002).
  */
 class ExchangeLotsCurrencyFks extends Migration
 {
