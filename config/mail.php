@@ -48,6 +48,16 @@ return [
 
     'verification_email' => env('PAYMENT_VERIFICATION_EMAIL'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Mailbox verification (escrow token creation)
+    |--------------------------------------------------------------------------
+    | Code TTL in minutes; code is stored in cache and sent to user's email.
+    */
+    'mailbox_verification' => [
+        'code_ttl_minutes' => (int) env('MAILBOX_VERIFICATION_CODE_TTL_MINUTES', 30),
+    ],
+
     'mailers' => [
 
         'smtp' => [
@@ -117,15 +127,15 @@ return [
     | Global "From" Address
     |--------------------------------------------------------------------------
     |
-    | You may wish for all emails sent by your application to be sent from
-    | the same address. Here you may specify a name and address that is
-    | used globally for all emails that are sent by your application.
+    | Used for all outgoing mail (verification codes, notifications, etc.).
+    | Default: noreply@xdexboard.com (configured mailbox on mail.xdexboard.com).
+    | See docs/NOREPLY_MAILBOX_SETUP.md and docs/MAIL_SPF_DKIM_DMARC.md.
     |
     */
 
     'from' => [
-        'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
-        'name' => env('MAIL_FROM_NAME', 'Example'),
+        'address' => env('MAIL_FROM_ADDRESS', 'noreply@xdexboard.com'),
+        'name' => env('MAIL_FROM_NAME', 'XBoard'),
     ],
 
 ];

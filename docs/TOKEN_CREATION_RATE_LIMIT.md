@@ -14,14 +14,19 @@
 
 ## Allowed email providers
 
-Only emails whose **domain** is present in `email_providers.domain` (active providers) are accepted. Other addresses receive `400 email_provider_not_supported`. The client shows the list of supported providers in Settings → Email Access and warns that other mail services are not supported.
+An email is accepted if its **domain** is either:
+
+1. **In `email_providers`** — active user providers (Gmail, Yandex, etc.). The client shows this list in Settings → Email Access.
+2. **Sender domain** — the domain of `mail.from.address` (e.g. noreply@xdexboard.com → xdexboard.com). This is the server/own domain and is allowed programmatically; it is not stored in `email_providers`.
+
+Other addresses receive `400 email_provider_not_supported`.
 
 ## API
 
 - **POST /api/escrow-tokens/create**  
   Body must include `email` (required). The email is used for quota and must belong to a supported provider.
 - **429** with `error_code`: `email_quota_exceeded` or `ip_quota_exceeded`.
-- **400** with `error_code`: `email_provider_not_supported` if the email domain is not in `email_providers`.
+- **400** with `error_code`: `email_provider_not_supported` if the email domain is neither in `email_providers` nor the sender domain from config.
 
 ## Database
 
