@@ -29,4 +29,18 @@ return [
         'email_per_hour' => (int) env('RATE_LIMIT_VERIFICATION_CODE_EMAIL_PER_HOUR', 5),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Proof-of-work puzzle (request-verification-code)
+    |--------------------------------------------------------------------------
+    | Client must find puzzle_answer such that hex(SHA256(puzzle_token + puzzle_answer))
+    | starts with prefix. Stops mass bots (1000 IPs) — each request costs CPU.
+    | prefix_hex_length: number of leading zero hex chars (4 = "0000" ≈ 65k hashes).
+    */
+
+    'verification_puzzle' => [
+        'prefix_hex_length' => (int) env('RATE_LIMIT_PUZZLE_PREFIX_HEX_LENGTH', 4),
+        'token_ttl_seconds' => (int) env('RATE_LIMIT_PUZZLE_TOKEN_TTL', 300),
+    ],
+
 ];

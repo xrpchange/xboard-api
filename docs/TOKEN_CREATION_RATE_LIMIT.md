@@ -34,8 +34,10 @@ Other addresses receive `400 email_provider_not_supported`.
 
 ## API
 
+- **GET /v1/escrow-tokens/verification-puzzle**  
+  Returns a one-time proof-of-work puzzle: `{ "puzzle_token": "...", "prefix": "0000", "expires_in_seconds": 300 }`. Client must find `puzzle_answer` such that `hex(SHA256(puzzle_token + puzzle_answer))` starts with `prefix`, then submit with request-verification-code. Stops mass bots (each request costs CPU).
 - **POST /v1/escrow-tokens/request-verification-code**  
-  Body: `{ "email": "user@example.com" }`. Email must be from a supported provider. Rate limited per IP (per hour) and per email (per hour). Returns 429 if limit exceeded.
+  Body: `{ "email": "...", "puzzle_token": "...", "puzzle_answer": "..." }`. Email must be from a supported provider. Puzzle must be valid and one-time. Rate limited per IP (per hour) and per email (per hour). Returns 400 `puzzle_invalid_or_expired` or `puzzle_invalid` if puzzle check fails; 429 if limit exceeded.
 - **POST /v1/escrow-tokens/create**  
   Body must include `email` (required). The email is used for quota and must belong to a supported provider.
 - **429** with `error_code`: `email_quota_exceeded`, `ip_quota_exceeded`, `verification_code_ip_limit_exceeded`, or `verification_code_email_limit_exceeded`.
