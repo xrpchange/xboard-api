@@ -12,6 +12,7 @@ return new class extends Migration
      * - Валюты кодами (from_currency, to_currency), без country_id и без sell/buy_currency_type/id.
      * - Суммы «получаем»: buy_amount_min, buy_amount_max, buy_amounts (JSON).
      * - wallet_address — открытая часть эскроу-счёта для крипты.
+     * Runs after create_nodes_table so node_id FK exists.
      */
     public function up(): void
     {
@@ -40,6 +41,7 @@ return new class extends Migration
             $table->boolean('is_active')->default(true);
             $table->boolean('is_test')->default(false);
             $table->string('test_group', 50)->nullable();
+            $table->string('main_group', 50)->nullable()->comment('Group for production (is_test=false), like test_group for sandbox');
             $table->timestamp('expires_at')->nullable();
             $table->timestamps();
 
@@ -48,6 +50,7 @@ return new class extends Migration
             $table->index('crypto_currency_id');
             $table->index('wallet_address');
             $table->index(['is_test', 'test_group']);
+            $table->index(['is_test', 'main_group']);
         });
 
         Schema::table('transactions', function (Blueprint $table) {
