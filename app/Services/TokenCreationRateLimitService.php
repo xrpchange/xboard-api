@@ -3,30 +3,70 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class TokenCreationRateLimitService
 {
+    private const LOG_TAG = 'token-rate-limit';
+
     public function __construct() {}
 
     /**
-     * Check if email domain is allowed (present in email_providers).
+     * Domain of the mail sender (from config). Emails on this domain are allowed
+     * for token creation without being in email_providers (server/own domain).
+     */
+    private function getSenderDomain(): string
+    {
+        $address = config('mail.from.address', '');
+        if ($address === '' || !str_contains($address, '@')) {
+            return '';
+        }
+        return strtolower(trim(substr($address, strrpos($address, '@') + 1)));
+    }
+
+    /**
+     * Check if email domain is allowed: either in email_providers (user providers)
+     * or equals the mail sender domain (server domain, identified from config).
      */
     public function isEmailAllowed(string $email): bool
     {
         $email = trim(strtolower($email));
         if (!str_contains($email, '@')) {
+            Log::info(self::LOG_TAG . ' isEmailAllowed: no @ in email', ['email_length' => strlen($email)]);
             return false;
         }
         $domain = substr($email, strrpos($email, '@') + 1);
         if ($domain === '') {
+            Log::info(self::LOG_TAG . ' isEmailAllowed: empty domain', ['email' => $email]);
             return false;
         }
 
-        return DB::table('email_providers')
+        $senderDomain = $this->getSenderDomain();
+        $mailFromAddress = config('mail.from.address', '');
+        Log::info(self::LOG_TAG . ' isEmailAllowed check', [
+            'email_domain' => $domain,
+            'mail_from_address' => $mailFromAddress,
+            'sender_domain' => $senderDomain,
+        ]);
+
+        if ($senderDomain !== '' && $domain === $senderDomain) {
+            Log::info(self::LOG_TAG . ' isEmailAllowed: allowed (sender domain match)');
+            return true;
+        }
+
+        $inProviders = DB::table('email_providers')
             ->where('is_active', true)
             ->whereNotNull('domain')
             ->where('domain', $domain)
             ->exists();
+
+        Log::info(self::LOG_TAG . ' isEmailAllowed result', [
+            'email_domain' => $domain,
+            'in_email_providers' => $inProviders,
+            'allowed' => $inProviders,
+        ]);
+
+        return $inProviders;
     }
 
     /**

@@ -2,13 +2,18 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Mail\MailboxVerificationCodeMail;
 use App\Services\EscrowTokenService;
 use App\Services\TokenCreationRateLimitService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Mail;
 
 class EscrowTokenController extends BaseApiController
 {
+    private const CACHE_KEY_PREFIX = 'escrow_verification_code:';
+
     protected EscrowTokenService $escrowTokenService;
 
     protected TokenCreationRateLimitService $rateLimitService;
@@ -17,6 +22,42 @@ class EscrowTokenController extends BaseApiController
     {
         $this->escrowTokenService = $escrowTokenService;
         $this->rateLimitService = $rateLimitService;
+    }
+
+    /**
+     * Request verification code for escrow token creation.
+     * Sends code to the given email; client must submit this code when calling create.
+     */
+    public function requestVerificationCode(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => 'required|string|email',
+        ]);
+        $email = $validated['email'];
+
+        if (!$this->rateLimitService->isEmailAllowed($email)) {
+            return response()->json([
+                'message' => 'Only email addresses from supported providers (see Settings) are allowed for token creation.',
+                'error_code' => 'email_provider_not_supported',
+            ], 400);
+        }
+
+        $ttlMinutes = config('mail.mailbox_verification.code_ttl_minutes', 30);
+        $code = (string) random_int(100000, 999999);
+        $cacheKey = self::CACHE_KEY_PREFIX . strtolower($email);
+        Cache::put($cacheKey, $code, now()->addMinutes($ttlMinutes));
+
+        try {
+            Mail::send(new MailboxVerificationCodeMail($code, $email));
+        } catch (\Throwable $e) {
+            Cache::forget($cacheKey);
+            return $this->errorResponse('Failed to send verification email: ' . $e->getMessage(), 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'expires_in_minutes' => $ttlMinutes,
+        ]);
     }
 
     /**
@@ -74,9 +115,21 @@ class EscrowTokenController extends BaseApiController
             'crypto_type' => 'required|string|in:xrp,btc,xmr',
             'amount' => 'nullable|numeric|min:0',
             'email' => 'required|string|email',
+            'verification_code' => 'required|string|size:6',
         ]);
 
         $email = $validated['email'];
+        $code = $validated['verification_code'];
+        $cacheKey = self::CACHE_KEY_PREFIX . strtolower($email);
+        $cachedCode = Cache::get($cacheKey);
+
+        if ($cachedCode === null || $cachedCode !== $code) {
+            return response()->json([
+                'message' => 'Invalid or expired verification code. Request a new code.',
+                'error_code' => 'invalid_verification_code',
+            ], 422);
+        }
+
         if (!$this->rateLimitService->isEmailAllowed($email)) {
             return response()->json([
                 'message' => 'Only email addresses from supported providers (see Settings) are allowed for token creation.',
@@ -112,6 +165,7 @@ class EscrowTokenController extends BaseApiController
                 (float)($validated['amount'] ?? 0.0)
             );
 
+            Cache::forget($cacheKey);
             $this->rateLimitService->incrementEmail($email, $environment);
             $this->rateLimitService->incrementIp($ip);
 

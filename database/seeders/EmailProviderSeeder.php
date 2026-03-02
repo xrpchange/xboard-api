@@ -46,16 +46,15 @@ class EmailProviderSeeder extends Seeder
             
             [
                 'name' => 'Yandex',
-                'domain' => 'yandex.com',
-                'imap_host' => 'imap.yandex.com', // Correct: imap.yandex.com (not .ru)
+                'domain' => 'yandex.ru',
+                'imap_host' => 'imap.yandex.com',
                 'imap_port' => 993,
                 'pop3_host' => 'pop.yandex.com',
                 'pop3_port' => 995,
                 'use_ssl' => true,
                 'is_active' => true,
                 'sort_order' => 2,
-                // Requires: App Password, IMAP enabled in settings
-                // Setup: Settings → Mail programs → Enable IMAP, then create app password
+                // Requires: App Password, IMAP enabled in settings. @yandex.ru uses imap.yandex.com
                 // URL: https://id.yandex.ru/security/app-passwords
             ],
             
