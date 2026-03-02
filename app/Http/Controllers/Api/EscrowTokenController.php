@@ -42,6 +42,20 @@ class EscrowTokenController extends BaseApiController
             ], 400);
         }
 
+        $ip = $request->ip() ?? '0.0.0.0';
+        if (!$this->rateLimitService->checkAndIncrementVerificationCodeRequestByIp($ip)) {
+            return response()->json([
+                'message' => 'Too many verification code requests from your network. Try again later.',
+                'error_code' => 'verification_code_ip_limit_exceeded',
+            ], 429);
+        }
+        if (!$this->rateLimitService->checkAndIncrementVerificationCodeRequestByEmail($email)) {
+            return response()->json([
+                'message' => 'Too many verification codes sent to this email. Try again later.',
+                'error_code' => 'verification_code_email_limit_exceeded',
+            ], 429);
+        }
+
         $ttlMinutes = config('mail.mailbox_verification.code_ttl_minutes', 30);
         $code = (string) random_int(100000, 999999);
         $cacheKey = self::CACHE_KEY_PREFIX . strtolower($email);
