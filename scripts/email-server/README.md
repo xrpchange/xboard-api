@@ -90,4 +90,5 @@ scripts/email-server/
 1. Логи: `/var/log/xboard-email/verifier.log`
 2. Статус сервисов: `systemctl status postfix dovecot opendkim`
 3. DNS записи: `dig MX xdexboard.com`
+4. **Yandex не принимает / Gmail в спам:** проверьте PTR: `dig -x <IP_сервера> +short` должен вернуть `mail.xdexboard.com`. Если PTR указывает на другое имя (например supersrv.de), в панели хостера задайте PTR = mail.xdexboard.com (см. раздел 4 в `docs/MAIL_SPF_DKIM_DMARC.md`).
 
