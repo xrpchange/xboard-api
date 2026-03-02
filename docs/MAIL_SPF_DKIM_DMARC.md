@@ -130,7 +130,79 @@ DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/simple; d=xdexboard.com; s=mail; ..
 
 ---
 
-## 4. Связанные документы
+## 4. Yandex не принимает / Gmail в спам — что проверить
+
+### 4.1. Обратная запись DNS (PTR) — обязательно для Yandex
+
+Yandex и многие другие проверяют **PTR** (reverse DNS) для IP сервера. Без правильного PTR письма часто отклоняются.
+
+- У **IP вашего сервера** (152.53.150.194) у хостера/провайдера должна быть настроена **PTR-запись** на имя **mail.xdexboard.com** (то же, что `myhostname` в Postfix).
+- Проверка с любого хоста: `dig -x 152.53.150.194 +short` — должен вернуться `mail.xdexboard.com.`
+- Настройка PTR делается в панели VPS/хостинга (Reverse DNS / PTR record для этого IP). На обычном DNS у регистратора домена PTR не настраивается — только у того, кто выдаёт IP.
+
+### 4.2. Совпадение PTR и myhostname (HELO)
+
+В `/etc/postfix/main.cf` должно быть:
+
+```ini
+myhostname = mail.xdexboard.com
+```
+
+Имя в **PTR** и значение **myhostname** должны совпадать. Иначе получатели могут помечать письмо как подозрительное.
+
+### 4.3. FCrDNS (Forward-Confirmed Reverse DNS)
+
+- По имени из PTR (mail.xdexboard.com) должна быть **A-запись** в DNS, указывающая обратно на ваш IP (152.53.150.194).
+- Проверка: `dig +short A mail.xdexboard.com` — должен вернуться 152.53.150.194.
+- Если A-записи нет или она указывает на другой IP, доставляемость ухудшается (Gmail/Yandex учитывают FCrDNS).
+
+### 4.4. Проверка с сервера по SSH
+
+Подключитесь к серверу и выполните:
+
+```bash
+# PTR (должен быть mail.xdexboard.com)
+dig -x 152.53.150.194 +short
+
+# A-запись для myhostname
+dig +short A mail.xdexboard.com
+
+# SPF, DKIM
+dig +short TXT xdexboard.com
+dig +short TXT mail._domainkey.xdexboard.com
+
+# Postfix и OpenDKIM
+postconf myhostname smtp_tls_security_level
+systemctl status opendkim
+```
+
+### 4.5. Исходящий TLS
+
+В `main.cf` для отправки в сторону внешних MX (Yandex, Gmail) желательно включить TLS:
+
+```ini
+smtp_tls_security_level = may
+smtp_tls_note_starttls_offer = yes
+```
+
+Так Postfix будет использовать STARTTLS при возможности; это улучшает доверие и снижает риск попадания в спам.
+
+### 4.6. Краткий чеклист
+
+| Проверка | Действие |
+|----------|----------|
+| PTR для 152.53.150.194 | В панели хостера: PTR = mail.xdexboard.com |
+| A для mail.xdexboard.com | В DNS домена: A mail.xdexboard.com → 152.53.150.194 |
+| SPF | TXT xdexboard.com: `v=spf1 mx a:mail.xdexboard.com ip4:152.53.150.194 -all` |
+| DKIM | TXT mail._domainkey.xdexboard.com — значение из `/etc/opendkim/keys/xdexboard.com/mail.txt` |
+| DMARC | TXT _dmarc.xdexboard.com: `v=DMARC1; p=quarantine; rua=mailto:check@xdexboard.com; adkim=r; aspf=r` |
+| myhostname | В main.cf: `myhostname = mail.xdexboard.com` |
+| OpenDKIM | `systemctl status opendkim`, порт 8891 слушает |
+| После правок DNS | Подождать 5–60 мин, затем `sudo systemctl restart postfix opendkim` |
+
+---
+
+## 5. Связанные документы
 
 - [EMAIL_SERVER_SETUP.md](EMAIL_SERVER_SETUP.md) — установка Postfix, Dovecot, OpenDKIM  
 - [LOT_MAILBOX_AND_IMAP_CHAT.md](LOT_MAILBOX_AND_IMAP_CHAT.md) — ящики лотов и IMAP  

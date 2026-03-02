@@ -3,6 +3,7 @@
 # Скопируйте этот файл и замените значения на ваши
 
 # Основные настройки
+# myhostname ДОЛЖЕН совпадать с PTR (reverse DNS) для IP сервера — иначе Yandex/Gmail могут отклонять письма
 myhostname = mail.xdexboard.com
 mydomain = xdexboard.com
 myorigin = $mydomain
@@ -36,8 +37,10 @@ smtpd_tls_auth_only = yes
 smtpd_tls_received_header = yes
 smtpd_tls_session_cache_timeout = 3600s
 smtpd_tls_protocols = !SSLv2, !SSLv3
+# Outbound TLS (для доставки в Yandex, Gmail и др.)
 smtp_tls_security_level = may
 smtp_tls_note_starttls_offer = yes
+smtp_tls_loglevel = 1
 
 # DKIM
 milter_protocol = 2
