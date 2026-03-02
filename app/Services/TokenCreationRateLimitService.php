@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -145,6 +146,39 @@ class TokenCreationRateLimitService
                 'updated_at' => now(),
             ]);
         }
+    }
+
+    /**
+     * Check and consume one "verification code request" for this IP (per hour).
+     * Returns true if under limit and counter was incremented, false if limit exceeded.
+     */
+    public function checkAndIncrementVerificationCodeRequestByIp(string $ip): bool
+    {
+        $limit = (int) config('rate_limit.verification_code_request.ip_per_hour', 10);
+        $key = 'verification_code_requests_ip:' . $ip . ':' . date('YmdH');
+        $count = (int) Cache::get($key, 0);
+        if ($count >= $limit) {
+            return false;
+        }
+        Cache::put($key, $count + 1, now()->addHours(2));
+        return true;
+    }
+
+    /**
+     * Check and consume one "verification code request" for this email (per hour).
+     * Returns true if under limit and counter was incremented, false if limit exceeded.
+     */
+    public function checkAndIncrementVerificationCodeRequestByEmail(string $email): bool
+    {
+        $limit = (int) config('rate_limit.verification_code_request.email_per_hour', 5);
+        $email = trim(strtolower($email));
+        $key = 'verification_code_requests_email:' . $email . ':' . date('YmdH');
+        $count = (int) Cache::get($key, 0);
+        if ($count >= $limit) {
+            return false;
+        }
+        Cache::put($key, $count + 1, now()->addHours(2));
+        return true;
     }
 
     /**

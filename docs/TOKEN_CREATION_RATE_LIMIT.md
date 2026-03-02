@@ -1,8 +1,8 @@
 # Escrow token creation rate limit
 
-**Purpose:** Protect against bots and abuse. Combined per-email (monthly) and per-IP (daily) limits.
+**Purpose:** Protect against bots and abuse. Combined per-email (monthly) and per-IP (daily) limits for token creation; separate limits for requesting verification codes.
 
-## Limits
+## Limits (token creation — POST /create)
 
 | Limit        | Production | Sandbox | Config key |
 |-------------|------------|---------|------------|
@@ -11,6 +11,17 @@
 
 - Environment is derived from request host: `sandbox.*` / `dev.*` → sandbox; otherwise production.
 - Home use expected; shared IPs (office, NAT) may hit the IP limit.
+
+## Limits (verification code request — POST /request-verification-code)
+
+| Limit           | Default | Config key |
+|----------------|---------|------------|
+| Per IP / hour  | 10      | `RATE_LIMIT_VERIFICATION_CODE_IP_PER_HOUR` |
+| Per email / hour | 5    | `RATE_LIMIT_VERIFICATION_CODE_EMAIL_PER_HOUR` |
+
+- Prevents anyone from spamming codes to a victim address or burning mail quota.
+- Counters are stored in cache (key includes calendar hour); no DB tables.
+- **429** with `error_code`: `verification_code_ip_limit_exceeded` or `verification_code_email_limit_exceeded`.
 
 ## Allowed email providers
 
@@ -23,9 +34,11 @@ Other addresses receive `400 email_provider_not_supported`.
 
 ## API
 
-- **POST /api/escrow-tokens/create**  
+- **POST /v1/escrow-tokens/request-verification-code**  
+  Body: `{ "email": "user@example.com" }`. Email must be from a supported provider. Rate limited per IP (per hour) and per email (per hour). Returns 429 if limit exceeded.
+- **POST /v1/escrow-tokens/create**  
   Body must include `email` (required). The email is used for quota and must belong to a supported provider.
-- **429** with `error_code`: `email_quota_exceeded` or `ip_quota_exceeded`.
+- **429** with `error_code`: `email_quota_exceeded`, `ip_quota_exceeded`, `verification_code_ip_limit_exceeded`, or `verification_code_email_limit_exceeded`.
 - **400** with `error_code`: `email_provider_not_supported` if the email domain is neither in `email_providers` nor the sender domain from config.
 
 ## Database
