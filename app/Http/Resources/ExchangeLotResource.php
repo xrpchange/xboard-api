@@ -36,6 +36,7 @@ class ExchangeLotResource extends JsonResource
             'status' => $status,
             'crypto_currency_id' => $this->crypto_currency_id,
             'to_crypto_code' => $this->relationLoaded('cryptoCurrency') && $this->cryptoCurrency ? $this->cryptoCurrency->code : null,
+            'to_crypto_display' => $this->relationLoaded('cryptoCurrency') && $this->cryptoCurrency ? self::formatCryptoCodeForDisplay($this->cryptoCurrency->code) : null,
             'wallet_address' => $this->wallet_address ?? '',
             'bank_id' => $this->bank_id,
             'bank_name' => $this->relationLoaded('bank') && $this->bank ? $this->bank->name : null,
@@ -52,5 +53,17 @@ class ExchangeLotResource extends JsonResource
             'created_at' => $this->created_at?->toISOString() ?? now()->toISOString(),
             'expires_at' => $this->expires_at?->toISOString() ?? '',
         ];
+    }
+
+    /**
+     * Format crypto code for display: e.g. usdt_tron → USDT (Tron).
+     */
+    private static function formatCryptoCodeForDisplay(string $code): string
+    {
+        if (str_contains($code, '_')) {
+            $parts = explode('_', $code, 2);
+            return strtoupper($parts[0]) . ' (' . ucfirst(strtolower($parts[1])) . ')';
+        }
+        return strtoupper($code);
     }
 }

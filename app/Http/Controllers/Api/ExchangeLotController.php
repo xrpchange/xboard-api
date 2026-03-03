@@ -251,6 +251,29 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * GET /exchange-lots/{id}/details — extended lot info (separate request).
+     * Currently returns banks from which seller accepts payments; structure is extensible for future arrays (e.g. remaining amount).
+     */
+    public function details(ExchangeLot $lot): JsonResponse
+    {
+        $lot->load(['banks']);
+        $banks = $lot->banks->map(fn (Bank $bank) => [
+            'id' => $bank->id,
+            'name' => $bank->name,
+            'swift_code' => $bank->swift_code,
+        ])->values()->all();
+
+        $data = [
+            'banks' => $banks,
+        ];
+
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+        ]);
+    }
+
+    /**
      * @OA\Post(
      *     path="/exchange-lots",
      *     summary="Create exchange lot",
@@ -707,6 +730,8 @@ class ExchangeLotController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'message' => 'required|string|max:10000',
+            'buyer_locale' => 'nullable|string|max:10',
+            'selected_amount' => 'nullable|numeric|min:0',
         ]);
 
         if ($validator->fails()) {
@@ -716,7 +741,7 @@ class ExchangeLotController extends Controller
             ], 422);
         }
 
-        $lot->load(['cryptoCurrency', 'node']);
+        $lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency', 'banks']);
         $currency = $lot->cryptoCurrency?->code ?? 'crypto';
         $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $currency);
 
@@ -793,7 +818,10 @@ class ExchangeLotController extends Controller
         $fromName = 'Buyer';
 
         $messageText = $request->input('message', '');
-        $subject = $this->getDealMessageSubject($lot);
+        $buyerLocale = $request->input('buyer_locale', 'en');
+        $selectedAmount = $request->has('selected_amount') ? (float) $request->input('selected_amount') : null;
+        $subject = $this->getDealMessageSubject($lot, $buyerLocale);
+        $body = $this->getDealMessageBody($lot, $buyerLocale, $messageText, $selectedAmount);
 
         Log::info('[exchange-lots] sendMessageToSeller: sending mail', [
             'lot_id' => $lot->id,
@@ -804,7 +832,7 @@ class ExchangeLotController extends Controller
         ]);
 
         try {
-            Mail::raw($messageText, function ($message) use ($sellerEmail, $fromAddress, $fromName, $subject) {
+            Mail::raw($body, function ($message) use ($sellerEmail, $fromAddress, $fromName, $subject) {
                 $message->to($sellerEmail);
                 $message->subject($subject);
                 $message->from($fromAddress, $fromName);
@@ -832,11 +860,11 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * Subject line for "deal message" email, localized to seller's locale (stored in lot).
+     * Subject line for "deal message" email, localized to buyer's locale (so seller sees subject in buyer's language).
      */
-    private function getDealMessageSubject(ExchangeLot $lot): string
+    private function getDealMessageSubject(ExchangeLot $lot, string $buyerLocale): string
     {
-        $locale = $lot->seller_locale ?? 'en';
+        $locale = $buyerLocale ?: 'en';
         $templates = [
             'ru' => 'Сообщение по сделке — Лот #%s',
             'fr' => 'Message de deal — Lot #%s',
@@ -848,5 +876,138 @@ class ExchangeLotController extends Controller
         ];
         $template = $templates[$locale] ?? $templates['en'];
         return sprintf($template, $lot->id);
+    }
+
+    /**
+     * Format currency code for display in emails and UI: e.g. usdt_tron → USDT (Tron).
+     */
+    private function formatCurrencyForDisplay(string $code): string
+    {
+        if ($code === '') {
+            return $code;
+        }
+        if (str_contains($code, '_')) {
+            $parts = explode('_', $code, 2);
+            $token = strtoupper($parts[0]);
+            $network = ucfirst(strtolower($parts[1]));
+
+            return "{$token} ({$network})";
+        }
+
+        return strtoupper($code);
+    }
+
+    /**
+     * Email body: deal summary (same info as on Deal screen) in buyer's language, then buyer's message.
+     * Labels localized by buyer_locale; no seller language in body.
+     */
+    private function getDealMessageBody(ExchangeLot $lot, string $buyerLocale, string $buyerMessage, ?float $selectedAmount): string
+    {
+        $locale = $buyerLocale ?: 'en';
+        $strings = $this->getDealEmailStrings($locale);
+
+        $fromSym = $this->formatCurrencyForDisplay($lot->from_currency ?? '');
+        $toSym = $this->formatCurrencyForDisplay($lot->to_currency ?? '');
+        $buyAmounts = $lot->buy_amounts ?? [];
+        $sellAmount = (float) $lot->sell_amount;
+        $rate = isset($lot->rate) && (float) $lot->rate > 0
+            ? (float) $lot->rate
+            : ($sellAmount > 0 && count($buyAmounts) === 1 ? $buyAmounts[0] / $sellAmount : 0);
+        $minAmount = (float) $lot->buy_amount_min;
+        $maxAmount = (float) $lot->buy_amount_max;
+        $aml = $lot->aml;
+        $amlLabel = $strings['aml'];
+        $amlNotConsidered = $strings['aml_not_considered'];
+        $amlText = $aml !== null ? "{$amlLabel}: {$aml}%" : "{$amlLabel}: {$amlNotConsidered}";
+
+        $lines = [
+            $strings['summary_title'],
+            '',
+            $strings['pair'] . ': ' . $fromSym . ' → ' . $toSym,
+            $strings['pay_range'] . ': ' . sprintf('%.2f', $minAmount) . '–' . sprintf('%.2f', $maxAmount) . ' ' . $toSym,
+        ];
+        if (count($buyAmounts) > 1 && $rate > 0) {
+            $lines[] = $strings['rate'] . ': 1 ' . $fromSym . ' = ' . $rate . ' ' . $toSym;
+            if ($selectedAmount !== null && $selectedAmount > 0) {
+                $receiveAmount = $selectedAmount / $rate;
+                $totalStr = $maxAmount >= 1 && $maxAmount == (int) $maxAmount ? sprintf('%.0f', $maxAmount) : sprintf('%.2f', $maxAmount);
+                $payStr = $selectedAmount >= 1 && $selectedAmount == (int) $selectedAmount ? sprintf('%.0f', $selectedAmount) : sprintf('%.2f', $selectedAmount);
+                $receiveStr = $receiveAmount >= 1 && $receiveAmount == (int) $receiveAmount ? sprintf('%.0f', $receiveAmount) : rtrim(rtrim(sprintf('%.6f', $receiveAmount), '0'), '.');
+                $lines[] = sprintf($strings['for_amount_you_get'], $payStr, $toSym, $totalStr, $toSym, $receiveStr, $fromSym);
+            }
+        }
+        $lines[] = $amlText;
+        $lines[] = $strings['lot_id'] . ': ' . $lot->id;
+        if ($lot->relationLoaded('banks') && $lot->banks->isNotEmpty()) {
+            $bankNames = $lot->banks->map(function (Bank $b) {
+                $swift = $b->swift_code ? " ({$b->swift_code})" : '';
+                return $b->name . $swift;
+            })->values()->all();
+            $lines[] = $strings['accept_from_banks'] . ': ' . implode(', ', $bankNames);
+        }
+        $lines[] = '';
+        $lines[] = $strings['buyer_message'];
+        $lines[] = $buyerMessage;
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Localized strings for deal summary email (buyer's language).
+     *
+     * @return array<string, string>
+     */
+    private function getDealEmailStrings(string $locale): array
+    {
+        $en = [
+            'summary_title' => 'Deal summary (buyer\'s view)',
+            'pair' => 'Pair',
+            'pay_range' => 'Pay range',
+            'rate' => 'Rate',
+            'for_amount_you_get' => 'For %s %s (of %s %s): you get %s %s',
+            'aml' => 'AML',
+            'aml_not_considered' => '—',
+            'lot_id' => 'Lot ID',
+            'accept_from_banks' => 'Accept from banks',
+            'buyer_message' => 'Buyer\'s message:',
+        ];
+        $ru = [
+            'summary_title' => 'Сводка по сделке (вид покупателя)',
+            'pair' => 'Пара',
+            'pay_range' => 'Диапазон оплаты',
+            'rate' => 'Курс',
+            'for_amount_you_get' => 'За %s %s (из %s %s): получите %s %s',
+            'aml' => 'AML',
+            'aml_not_considered' => '—',
+            'lot_id' => 'ID лота',
+            'accept_from_banks' => 'Принимает платежи с банков',
+            'buyer_message' => 'Сообщение покупателя:',
+        ];
+        $fr = [
+            'summary_title' => 'Résumé du deal (vue acheteur)',
+            'pair' => 'Paire',
+            'pay_range' => 'Fourchette de paiement',
+            'rate' => 'Taux',
+            'for_amount_you_get' => 'Pour %s %s (sur %s %s) : vous recevez %s %s',
+            'aml' => 'AML',
+            'aml_not_considered' => '—',
+            'lot_id' => 'ID du lot',
+            'accept_from_banks' => 'Accepte les virements depuis les banques',
+            'buyer_message' => 'Message de l\'acheteur :',
+        ];
+        $he = [
+            'summary_title' => 'סיכום עסקה (תצוגת קונה)',
+            'pair' => 'צמד',
+            'pay_range' => 'טווח תשלום',
+            'rate' => 'שער',
+            'for_amount_you_get' => 'עבור %s %s (מתוך %s %s): תקבל %s %s',
+            'aml' => 'AML',
+            'aml_not_considered' => '—',
+            'lot_id' => 'מזהה מנה',
+            'accept_from_banks' => 'מקבל תשלומים מהבנקים',
+            'buyer_message' => 'הודעת הקונה:',
+        ];
+        $all = ['en' => $en, 'ru' => $ru, 'fr' => $fr, 'he' => $he];
+        return $all[$locale] ?? $en;
     }
 } 
