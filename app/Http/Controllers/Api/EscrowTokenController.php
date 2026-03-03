@@ -143,7 +143,7 @@ class EscrowTokenController extends BaseApiController
      *         required=true,
      *         @OA\JsonContent(
      *             required={"crypto_type", "email"},
-     *             @OA\Property(property="crypto_type", type="string", example="xrp", description="Cryptocurrency type (xrp, btc, xmr)"),
+     *             @OA\Property(property="crypto_type", type="string", example="usdt_tron", description="Cryptocurrency type; validated by Core"),
      *             @OA\Property(property="amount", type="number", example=10, description="Optional amount"),
      *             @OA\Property(property="email", type="string", example="user@gmail.com", description="Email from a supported provider (for rate limiting)")
      *         )
@@ -170,7 +170,7 @@ class EscrowTokenController extends BaseApiController
     public function create(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'crypto_type' => 'required|string|in:xrp,btc,xmr',
+            'crypto_type' => 'required|string',
             'amount' => 'nullable|numeric|min:0',
             'email' => 'required|string|email',
             'verification_code' => 'required|string|size:6',
