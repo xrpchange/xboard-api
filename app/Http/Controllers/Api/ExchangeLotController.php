@@ -62,6 +62,7 @@ class ExchangeLotController extends Controller
             'is_test' => $request->get('is_test'),
             'test_group' => $request->get('test_group'),
             'main_group' => $request->get('main_group'),
+            'aml_max' => $request->get('aml_max'),
             'include_inactive' => $request->get('include_inactive'),
             'wallet_address_count' => $walletCount,
         ]);
@@ -145,6 +146,13 @@ class ExchangeLotController extends Controller
                     ->orWhereDoesntHave('banks');
             });
         }
+        // AML: when aml_max is set, only lots with AML filled and <= threshold (exclude lots with null AML)
+        if ($request->filled('aml_max')) {
+            $amlMax = (int) $request->aml_max;
+            if ($amlMax >= 0 && $amlMax <= 100) {
+                $query->whereNotNull('aml')->where('aml', '<=', $amlMax);
+            }
+        }
         $walletAddresses = $request->input('wallet_address') ?? $request->input('wallet_address[]');
         $hashes = [];
         if (!empty($walletAddresses)) {
@@ -180,6 +188,7 @@ class ExchangeLotController extends Controller
             'bank_id' => $request->filled('bank_id'),
             'accept_from_bank_swift' => $request->filled('accept_from_bank_swift'),
             'accept_from_bank_id' => $request->filled('accept_from_bank_id'),
+            'aml_max' => $request->filled('aml_max'),
             'is_test' => $request->has('is_test'),
             'test_group' => $request->filled('test_group'),
             'main_group' => $request->filled('main_group'),
@@ -375,7 +384,35 @@ class ExchangeLotController extends Controller
         $bankIds = $validated['bank_ids'] ?? null;
         unset($validated['bank_ids']);
 
+        // AML: read from raw JSON so "aml": null is never lost (has()/input() can drop null in some setups)
+        $input = \is_array($request->all()) ? $request->all() : [];
+        $raw = $request->getContent();
+        Log::info('[exchange-lots] store AML debug', [
+            'raw_length' => $raw === null ? 0 : strlen($raw),
+            'raw_preview' => $raw ? substr($raw, 0, 200) . (strlen($raw) > 200 ? '...' : '') : '',
+            'input_has_aml' => array_key_exists('aml', $input),
+            'input_aml_value' => array_key_exists('aml', $input) ? $input['aml'] : 'KEY_MISSING',
+        ]);
+        if ($raw !== '' && $raw !== null) {
+            $decoded = json_decode($raw, true);
+            Log::info('[exchange-lots] store AML from raw JSON', [
+                'decoded_is_array' => \is_array($decoded),
+                'has_aml_key' => \is_array($decoded) && array_key_exists('aml', $decoded),
+                'aml_raw_value' => \is_array($decoded) && array_key_exists('aml', $decoded) ? $decoded['aml'] : 'N/A',
+            ]);
+            if (\is_array($decoded) && array_key_exists('aml', $decoded)) {
+                $v = $decoded['aml'];
+                $validated['aml'] = ($v === null || $v === '') ? null : (int) $v;
+                Log::info('[exchange-lots] store AML set from raw', ['validated_aml' => $validated['aml']]);
+            }
+        } elseif (array_key_exists('aml', $input)) {
+            $v = $input['aml'];
+            $validated['aml'] = ($v === null || $v === '') ? null : (int) $v;
+            Log::info('[exchange-lots] store AML set from input', ['validated_aml' => $validated['aml']]);
+        }
+
         $lot = ExchangeLot::create($validated);
+        Log::info('[exchange-lots] store lot created', ['lot_id' => $lot->id, 'lot_aml' => $lot->aml]);
         if (!empty($bankIds)) {
             $lot->banks()->sync(array_values(array_unique(array_map('intval', $bankIds))));
         }
@@ -545,10 +582,37 @@ class ExchangeLotController extends Controller
         if (array_key_exists('seller_locale', $validated) && $validated['seller_locale'] !== null) {
             $updateData['seller_locale'] = $validated['seller_locale'];
         }
-        if (array_key_exists('aml', $validated)) {
-            $updateData['aml'] = $validated['aml'] === null ? null : (int) $validated['aml'];
+        // AML: read from raw JSON so "aml": null is never lost
+        $raw = $request->getContent();
+        $input = \is_array($request->all()) ? $request->all() : [];
+        Log::info('[exchange-lots] update AML debug', [
+            'lot_id' => $lot->id,
+            'raw_length' => $raw === null ? 0 : strlen($raw),
+            'raw_preview' => $raw ? substr($raw, 0, 200) . (strlen($raw) > 200 ? '...' : '') : '',
+            'input_has_aml' => array_key_exists('aml', $input),
+            'input_aml_value' => array_key_exists('aml', $input) ? $input['aml'] : 'KEY_MISSING',
+        ]);
+        if ($raw !== '' && $raw !== null) {
+            $decoded = json_decode($raw, true);
+            Log::info('[exchange-lots] update AML from raw JSON', [
+                'decoded_is_array' => \is_array($decoded),
+                'has_aml_key' => \is_array($decoded) && array_key_exists('aml', $decoded),
+                'aml_raw_value' => \is_array($decoded) && array_key_exists('aml', $decoded) ? $decoded['aml'] : 'N/A',
+            ]);
+            if (\is_array($decoded) && array_key_exists('aml', $decoded)) {
+                $v = $decoded['aml'];
+                $updateData['aml'] = ($v === null || $v === '') ? null : (int) $v;
+                Log::info('[exchange-lots] update AML set from raw', ['updateData_aml' => $updateData['aml']]);
+            }
+        } else {
+            if (array_key_exists('aml', $input)) {
+                $v = $input['aml'];
+                $updateData['aml'] = ($v === null || $v === '') ? null : (int) $v;
+                Log::info('[exchange-lots] update AML set from input', ['updateData_aml' => $updateData['aml']]);
+            }
         }
         $lot->update($updateData);
+        Log::info('[exchange-lots] update done', ['lot_id' => $lot->id, 'lot_aml_after' => $lot->fresh()->aml]);
 
         if (array_key_exists('bank_ids', $validated)) {
             $bankIds = $validated['bank_ids'] ?? [];
