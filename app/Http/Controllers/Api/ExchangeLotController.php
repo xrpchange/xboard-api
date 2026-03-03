@@ -290,6 +290,7 @@ class ExchangeLotController extends Controller
             'test_group' => 'nullable|string|max:128',  // plain text from client, hashed before storing
             'main_group' => 'nullable|string|max:128',  // plain text from client, hashed before storing
             'note' => 'nullable|string|max:65535',
+            'seller_locale' => 'required|string|max:10',
             'aml' => 'nullable|integer|min:0|max:100',
             'expires_at' => 'nullable|date',
         ]);
@@ -457,6 +458,7 @@ class ExchangeLotController extends Controller
             'test_group' => 'nullable|string|max:128',
             'main_group' => 'nullable|string|max:128',
             'note' => 'nullable|string|max:65535',
+            'seller_locale' => 'nullable|string|max:10',
             'aml' => 'nullable|integer|min:0|max:100',
         ]);
 
@@ -540,6 +542,9 @@ class ExchangeLotController extends Controller
             ? hash('sha256', trim($validated['main_group']))
             : null;
         $updateData['note'] = $validated['note'] ?? null;
+        if (array_key_exists('seller_locale', $validated) && $validated['seller_locale'] !== null) {
+            $updateData['seller_locale'] = $validated['seller_locale'];
+        }
         if (array_key_exists('aml', $validated)) {
             $updateData['aml'] = $validated['aml'] === null ? null : (int) $validated['aml'];
         }
@@ -672,6 +677,8 @@ class ExchangeLotController extends Controller
         }
 
         $tokenData = $request->input('escrow_token_data');
+        $requesterWallet = '';
+        $requesterCurrency = '';
         if (is_array($tokenData)) {
             $requesterWallet = $tokenData['wallet_address'] ?? '';
             $requesterCurrency = $tokenData['currency'] ?? '';
@@ -687,10 +694,42 @@ class ExchangeLotController extends Controller
             }
         }
 
+        // Message must be sent from buyer's mailbox only (no noreply fallback)
+        $cache = $request->input('escrow_token_cache');
+        $tokenHash = $cache && is_object($cache) ? ($cache->token_hash ?? null) : null;
+        if ($requesterWallet === '' || $requesterCurrency === '' || $tokenHash === null || $tokenHash === '') {
+            Log::warning('[exchange-lots] sendMessageToSeller: missing buyer identity (wallet/currency/token)', [
+                'lot_id' => $lot->id,
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Buyer identity (escrow token) required to send message.',
+                'error_code' => 'buyer_mailbox_required',
+            ], 400);
+        }
+
+        $buyerMailbox = $this->lotMailboxService->ensureMailbox(
+            $requesterWallet,
+            $tokenHash,
+            $requesterCurrency
+        );
+        if ($buyerMailbox === null || empty($buyerMailbox['email'])) {
+            Log::warning('[exchange-lots] sendMessageToSeller: could not ensure buyer mailbox', [
+                'lot_id' => $lot->id,
+                'currency' => $requesterCurrency,
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Could not create or find buyer mailbox. Cannot send message.',
+                'error_code' => 'buyer_mailbox_required',
+            ], 400);
+        }
+
+        $fromAddress = $buyerMailbox['email'];
+        $fromName = 'Buyer';
+
         $messageText = $request->input('message', '');
-        $fromAddress = config('mail.from.address', 'noreply@' . ($lot->node?->domain ?? 'xdexboard.com'));
-        $fromName = config('mail.from.name', 'XBoard');
-        $subject = 'Deal message — Lot #' . $lot->id;
+        $subject = $this->getDealMessageSubject($lot);
 
         Log::info('[exchange-lots] sendMessageToSeller: sending mail', [
             'lot_id' => $lot->id,
@@ -701,7 +740,7 @@ class ExchangeLotController extends Controller
         ]);
 
         try {
-            Mail::raw($messageText, function ($message) use ($sellerEmail, $lot, $fromAddress, $fromName, $subject) {
+            Mail::raw($messageText, function ($message) use ($sellerEmail, $fromAddress, $fromName, $subject) {
                 $message->to($sellerEmail);
                 $message->subject($subject);
                 $message->from($fromAddress, $fromName);
@@ -726,5 +765,24 @@ class ExchangeLotController extends Controller
             'success' => true,
             'message' => 'Message sent to seller.'
         ]);
+    }
+
+    /**
+     * Subject line for "deal message" email, localized to seller's locale (stored in lot).
+     */
+    private function getDealMessageSubject(ExchangeLot $lot): string
+    {
+        $locale = $lot->seller_locale ?? 'en';
+        $templates = [
+            'ru' => 'Сообщение по сделке — Лот #%s',
+            'fr' => 'Message de deal — Lot #%s',
+            'he' => 'הודעת עסקה — לוט #%s',
+            'de' => 'Deal-Nachricht — Lot #%s',
+            'es' => 'Mensaje de deal — Lote #%s',
+            'ar' => 'رسالة صفقة — لوت #%s',
+            'en' => 'Deal message — Lot #%s',
+        ];
+        $template = $templates[$locale] ?? $templates['en'];
+        return sprintf($template, $lot->id);
     }
 } 

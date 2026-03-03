@@ -46,6 +46,7 @@ class ExchangeLotResource extends JsonResource
                 ? $this->banks->pluck('name')->values()->all()
                 : [],
             'note' => $this->note ?? '',
+            'seller_locale' => $this->seller_locale ?? '',
             'payment_purpose' => $this->payment_purpose ?? '',
             'aml' => $this->aml !== null ? (int) $this->aml : null,
             'created_at' => $this->created_at?->toISOString() ?? now()->toISOString(),
