@@ -651,7 +651,19 @@ class ExchangeLotController extends Controller
         $currency = $lot->cryptoCurrency?->code ?? 'crypto';
         $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $currency);
 
+        Log::info('[exchange-lots] sendMessageToSeller: attempt', [
+            'lot_id' => $lot->id,
+            'wallet_address' => $lot->wallet_address,
+            'currency' => $currency,
+            'seller_email' => $sellerEmail ?: '(none)',
+        ]);
+
         if (!$sellerEmail) {
+            Log::warning('[exchange-lots] sendMessageToSeller: no seller mailbox', [
+                'lot_id' => $lot->id,
+                'wallet_address' => $lot->wallet_address,
+                'currency' => $currency,
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'No seller mailbox for this lot. Cannot send message.',
@@ -676,12 +688,28 @@ class ExchangeLotController extends Controller
         }
 
         $messageText = $request->input('message', '');
+        $fromAddress = config('mail.from.address', 'noreply@' . ($lot->node?->domain ?? 'xdexboard.com'));
+        $fromName = config('mail.from.name', 'XBoard');
+        $subject = 'Deal message — Lot #' . $lot->id;
+
+        Log::info('[exchange-lots] sendMessageToSeller: sending mail', [
+            'lot_id' => $lot->id,
+            'to' => $sellerEmail,
+            'from' => $fromAddress,
+            'subject' => $subject,
+            'message_length' => strlen($messageText),
+        ]);
+
         try {
-            Mail::raw($messageText, function ($message) use ($sellerEmail, $lot) {
+            Mail::raw($messageText, function ($message) use ($sellerEmail, $lot, $fromAddress, $fromName, $subject) {
                 $message->to($sellerEmail);
-                $message->subject('Deal message — Lot #' . $lot->id);
-                $message->from(config('mail.from.address', 'noreply@' . ($lot->node?->domain ?? 'xdexboard.com')), config('mail.from.name', 'XBoard'));
+                $message->subject($subject);
+                $message->from($fromAddress, $fromName);
             });
+            Log::info('[exchange-lots] sendMessageToSeller: mail sent successfully', [
+                'lot_id' => $lot->id,
+                'to' => $sellerEmail,
+            ]);
         } catch (\Exception $e) {
             Log::warning('[exchange-lots] sendMessageToSeller: failed to send mail', [
                 'lot_id' => $lot->id,

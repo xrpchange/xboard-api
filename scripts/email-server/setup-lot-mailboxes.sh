@@ -39,7 +39,8 @@ hosts = ${LOT_DB_HOST}
 user = ${LOT_POSTFIX_DB_USER}
 password = ${LOT_POSTFIX_DB_PASS}
 dbname = ${LOT_DB_NAME}
-query = SELECT CONCAT('/var/mail/vhosts/', domain, '/', local_part, '/') FROM lot_mailboxes WHERE CONCAT(local_part, '@', domain) = '%s' LIMIT 1
+# Result must be path RELATIVE to virtual_mailbox_base (/var/mail/vhosts) — do not include base in query
+query = SELECT CONCAT(domain, '/', local_part, '/') FROM lot_mailboxes WHERE CONCAT(local_part, '@', domain) = '%s' LIMIT 1
 EOF
 chmod 640 "$POSTFIX_CF"
 chown root:postfix "$POSTFIX_CF"
