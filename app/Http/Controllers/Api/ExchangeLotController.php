@@ -12,6 +12,7 @@ use App\Services\EscrowTokenValidationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -611,6 +612,91 @@ class ExchangeLotController extends Controller
         return response()->json([
             'success' => true,
             'data' => \App\Http\Resources\ExchangeLotResource::make($lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']))
+        ]);
+    }
+
+    /**
+     * Send a message to the seller (lot owner). Used when buyer taps "Start deal".
+     * Rejects if the requester is the seller (same escrow token / mailbox).
+     *
+     * @OA\Post(
+     *     path="/exchange-lots/{lot}/send-message",
+     *     summary="Send message to seller",
+     *     tags={"Exchange Lots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(required={"message"}, @OA\Property(property="message", type="string"))
+     *     ),
+     *     @OA\Response(response=200, description="Message sent"),
+     *     @OA\Response(response=400, description="Cannot send to yourself / no seller mailbox"),
+     *     @OA\Response(response=401, description="Unauthorized"),
+     *     @OA\Response(response=404, description="Lot not found")
+     * )
+     */
+    public function sendMessageToSeller(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'message' => 'required|string|max:10000',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $lot->load(['cryptoCurrency', 'node']);
+        $currency = $lot->cryptoCurrency?->code ?? 'crypto';
+        $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $currency);
+
+        if (!$sellerEmail) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No seller mailbox for this lot. Cannot send message.',
+                'error_code' => 'no_seller_mailbox',
+            ], 400);
+        }
+
+        $tokenData = $request->input('escrow_token_data');
+        if (is_array($tokenData)) {
+            $requesterWallet = $tokenData['wallet_address'] ?? '';
+            $requesterCurrency = $tokenData['currency'] ?? '';
+            if ($requesterWallet !== '' && $requesterCurrency !== '') {
+                $requesterMailboxEmail = $this->lotMailboxService->getMailboxEmailForAddress($requesterWallet, $requesterCurrency);
+                if ($requesterMailboxEmail !== null && strcasecmp($requesterMailboxEmail, $sellerEmail) === 0) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Cannot send message to yourself. This is your lot.',
+                        'error_code' => 'cannot_send_to_yourself',
+                    ], 400);
+                }
+            }
+        }
+
+        $messageText = $request->input('message', '');
+        try {
+            Mail::raw($messageText, function ($message) use ($sellerEmail, $lot) {
+                $message->to($sellerEmail);
+                $message->subject('Deal message — Lot #' . $lot->id);
+                $message->from(config('mail.from.address', 'noreply@' . ($lot->node?->domain ?? 'xdexboard.com')), config('mail.from.name', 'XBoard'));
+            });
+        } catch (\Exception $e) {
+            Log::warning('[exchange-lots] sendMessageToSeller: failed to send mail', [
+                'lot_id' => $lot->id,
+                'to' => $sellerEmail,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send message: ' . $e->getMessage()
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Message sent to seller.'
         ]);
     }
 } 
