@@ -114,6 +114,7 @@ Route::prefix('v1')->group(function () {
     // Exchange lots — list and show are public (no escrow token required; anyone can browse)
     Route::prefix('exchange-lots')->group(function () {
         Route::get('/', [ExchangeLotController::class, 'index']);
+        Route::get('/{lot}/details', [ExchangeLotController::class, 'details']);
         Route::get('/{lot}', [ExchangeLotController::class, 'show']);
     });
 
