@@ -242,6 +242,7 @@ class LotMailboxService
         $tmp = $path . '/tmp';
         Log::info('[lot-mailbox] Attempting to create Maildir', ['path' => $path]);
         if (is_dir($path)) {
+            $this->ensureTrashMaildir($path);
             Log::info('[lot-mailbox] Maildir already exists', ['path' => $path]);
             return;
         }
@@ -249,6 +250,7 @@ class LotMailboxService
             @mkdir($cur, 0750, true);
             @mkdir($new, 0750, true);
             @mkdir($tmp, 0750, true);
+            $this->ensureTrashMaildir($path);
             Log::info('[lot-mailbox] Created Maildir on disk', ['path' => $path]);
         } else {
             Log::warning('[lot-mailbox] Failed to create Maildir (check path and permissions)', [
@@ -256,5 +258,20 @@ class LotMailboxService
                 'base' => $base,
             ]);
         }
+    }
+
+    /**
+     * Ensure .Trash Maildir exists so IMAP clients (Canary, Outlook) can assign \Trash for delete/move.
+     */
+    private function ensureTrashMaildir(string $maildirPath): void
+    {
+        $trashPath = $maildirPath . '/.Trash';
+        if (is_dir($trashPath)) {
+            return;
+        }
+        @mkdir($trashPath, 0750, true);
+        @mkdir($trashPath . '/cur', 0750, true);
+        @mkdir($trashPath . '/new', 0750, true);
+        @mkdir($trashPath . '/tmp', 0750, true);
     }
 }

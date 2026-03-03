@@ -53,12 +53,14 @@
 ├── usdt_tron_tdjputgwmqx6mcfd5ax9yerzkyca2hpltm/   ← одна папка на ящик
 │   ├── cur/
 │   ├── new/
-│   └── tmp/
+│   ├── tmp/
+│   └── .Trash/          ← Корзина (cur, new, tmp); создаётся API при создании ящика
 ├── xmr_4abc123...
 │   ├── cur/
 │   ├── new/
 │   └── tmp/
 ```
+**Корзина (Trash):** чтобы в IMAP-клиентах (Canary, Outlook) можно было удалять письма в Корзину, на сервере создаётся папка `.Trash` (Maildir) внутри каждого ящика. API создаёт её при создании Maildir (если задан `LOT_MAILBOX_MAILDIR_BASE`). Для уже существующих ящиков папку можно создать вручную: `mkdir -p .../local_part/.Trash/{cur,new,tmp}` и выставить владельца `vmail:vmail`. В Dovecot в namespace уже объявлен `mailbox Trash { special_use = \Trash }`.
 
 **Сколько папок стирать:** по одной на каждый ящик. Количество папок = количество записей в `lot_mailboxes`. Каждая папка — это `{local_part}` (например `usdt_tron_tdjputgwmqx6mcfd5ax9yerzkyca2hpltm`).
 
