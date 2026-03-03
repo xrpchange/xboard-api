@@ -35,12 +35,18 @@ class ExchangeLotResource extends JsonResource
             'rate' => (float) $rate,
             'status' => $status,
             'crypto_currency_id' => $this->crypto_currency_id,
+            'to_crypto_code' => $this->relationLoaded('cryptoCurrency') && $this->cryptoCurrency ? $this->cryptoCurrency->code : null,
             'wallet_address' => $this->wallet_address ?? '',
             'bank_id' => $this->bank_id,
+            'bank_name' => $this->relationLoaded('bank') && $this->bank ? $this->bank->name : null,
             'bank_ids' => $this->relationLoaded('banks')
                 ? $this->banks->pluck('id')->values()->all()
                 : [],
+            'bank_names' => $this->relationLoaded('banks')
+                ? $this->banks->pluck('name')->values()->all()
+                : [],
             'note' => $this->note ?? '',
+            'payment_purpose' => $this->payment_purpose ?? '',
             'aml' => $this->aml !== null ? (int) $this->aml : null,
             'created_at' => $this->created_at?->toISOString() ?? now()->toISOString(),
             'expires_at' => $this->expires_at?->toISOString() ?? '',
