@@ -60,3 +60,62 @@ On the API server, ensure mail is sent via the host that runs Postfix (or the sa
 - If API uses SMTP to server@xrpchange.site: check `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_ENCRYPTION` and that Postfix (or the MTA on that host) accepts submissions (e.g. submission port, auth).
 
 After changing config, restart the PHP/queue workers so the new config is loaded.
+
+## 4. Typical Postfix errors (lot mailboxes)
+
+### 4.1 `bad string length 0 < 1: dbname =` (smtpd fatal)
+
+**Symptom:** In `/var/log/mail.log`: `fatal: /etc/postfix/mysql-virtual-mailbox-lot.cf: bad string length 0 < 1: dbname =`. Postfix smtpd fails to start or throttles; SMTP connections time out (e.g. API gets "Connection to mail.xdexboard.com:587 timed out").
+
+**Cause:** The `dbname` parameter in `/etc/postfix/mysql-virtual-mailbox-lot.cf` is missing or empty (e.g. after a manual edit or a script that only changed the `query` line).
+
+**Fix:** Add or restore the line in `/etc/postfix/mysql-virtual-mailbox-lot.cf`:
+```bash
+dbname = xboard
+```
+Then reload Postfix: `sudo systemctl reload postfix`.
+
+### 4.2 MySQL lookup: `Can't connect to local MySQL server through socket` / `451 4.3.0 Temporary lookup failure`
+
+**Symptom:** In `/var/log/mail.log`: `connect to mysql server localhost: Can't connect to local MySQL server through socket '/var/run/mysqld/mysqld.sock' (2)` and `mysql:.../mysql-virtual-mailbox-lot.cf lookup error`. RCPT TO returns `451 4.3.0 Temporary lookup failure`. MySQL is running and reachable (e.g. via phpMyAdmin).
+
+**Cause:** Postfix **smtpd** runs in **chroot** (see `master.cf`: `chroot = y`). Inside the chroot the process cannot see the MySQL Unix socket at `/var/run/mysqld/mysqld.sock`. Using `hosts = localhost` forces the MySQL client to use the socket.
+
+**Fix:** In `/etc/postfix/mysql-virtual-mailbox-lot.cf` use TCP instead of the socket:
+```bash
+hosts = 127.0.0.1
+```
+(Keep `user`, `password`, `dbname`, and `query` as they are.) Then reload Postfix: `sudo systemctl reload postfix`. The setup script `scripts/email-server/setup-lot-mailboxes.sh` uses `127.0.0.1` by default for this reason.
+
+### 4.3 Maildir: `Permission denied` / duplicate path (e.g. `/var/mail/vhosts//var/mail/vhosts/...`)
+
+**Symptom:** In `/var/log/mail.log`: delivery failed, path like `/var/mail/vhosts//var/mail/vhosts/domain/...` or "create maildir file ... Permission denied".
+
+**Cause:** The MySQL map for `virtual_mailbox_maps` must return a path **relative** to `virtual_mailbox_base` (e.g. `/var/mail/vhosts`). If the query returns the full path including the base, Postfix concatenates base + result and gets a wrong path.
+
+**Fix:** In `/etc/postfix/mysql-virtual-mailbox-lot.cf` the query must return only `domain/local_part/`:
+```text
+query = SELECT CONCAT(domain, '/', local_part, '/') FROM lot_mailboxes WHERE CONCAT(local_part, '@', domain) = '%s' LIMIT 1
+```
+Not: `SELECT CONCAT('/var/mail/vhosts/', domain, '/', local_part, '/') ...`  
+Then reload Postfix: `sudo systemctl reload postfix`.
+
+### 4.4 IMAP client (Canary, etc.) shows empty Inbox for lot mailbox
+
+**Symptom:** Postfix delivers to maildir (`status=sent (delivered to maildir)` in `/var/log/mail.log`), files appear in `/var/mail/vhosts/domain/local_part/new/` and `cur/`, but the IMAP client does not show any messages for that account.
+
+**Cause A — SQL userdb has no `mail`:** Dovecot uses a global `mail_location` (often `mbox:~/mail:INBOX=/var/mail/%u`). For users from the lot_mailboxes SQL, the actual messages are in a **Maildir** at the user's `home` path. Without overriding the location per user, Dovecot looks at the wrong place.
+
+**Fix A:** In `/etc/dovecot/dovecot-sql-lot.conf`, the `user_query` must return a `mail` field so Dovecot uses Maildir at home:
+```text
+user_query = SELECT CONCAT(local_part, '@', domain) AS user, 'vmail' AS uid, 'vmail' AS gid, CONCAT('/var/mail/vhosts/', domain, '/', local_part) AS home, 'maildir:~/' AS mail FROM lot_mailboxes WHERE local_part = '%n' AND domain = '%d'
+```
+Then restart Dovecot: `sudo systemctl restart dovecot`.
+
+**Cause B — Static userdb is first and has no `mail`:** In `/etc/dovecot/dovecot.conf` (or included config) the **first** userdb may be a static one, e.g. `userdb { driver = static; args = uid=vmail gid=vmail home=/var/mail/vhosts/%d/%n }`. It applies to all virtual users and does not set `mail=`, so Dovecot falls back to the global `mail_location` (mbox). The lot_mailboxes SQL userdb is queried later, but the first userdb already supplied `home` and no `mail`, so the effective location stays mbox.
+
+**Fix B:** Add `mail=maildir:~/` to that **static** userdb's `args` in `/etc/dovecot/dovecot.conf`:
+```text
+args = uid=vmail gid=vmail home=/var/mail/vhosts/%d/%n mail=maildir:~/
+```
+Then restart Dovecot: `sudo systemctl restart dovecot`. Reconnect the IMAP client (e.g. remove and re-add the account in Canary/Outlook) and sync. See also `docs/LOT_MAILBOX_AND_IMAP_CHAT.md` (Dovecot config for lot mailboxes).

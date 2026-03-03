@@ -26,7 +26,8 @@ LOT_POSTFIX_DB_USER="${LOT_POSTFIX_DB_USER:-postfix}"
 LOT_POSTFIX_DB_PASS="${LOT_POSTFIX_DB_PASS:?Set LOT_POSTFIX_DB_PASS (MySQL password for postfix)}"
 LOT_DOVECOT_DB_USER="${LOT_DOVECOT_DB_USER:-dovecot}"
 LOT_DOVECOT_DB_PASS="${LOT_DOVECOT_DB_PASS:?Set LOT_DOVECOT_DB_PASS (MySQL password for dovecot)}"
-: "${LOT_DB_HOST:=localhost}"
+# Use 127.0.0.1 (TCP) not localhost (socket): Postfix smtpd runs in chroot and cannot see MySQL socket
+: "${LOT_DB_HOST:=127.0.0.1}"
 : "${LOT_DB_NAME:=xboard}"
 
 # 3. Postfix MySQL config
@@ -66,7 +67,8 @@ driver = mysql
 connect = host=${LOT_DB_HOST} dbname=${LOT_DB_NAME} user=${LOT_DOVECOT_DB_USER} password=${LOT_DOVECOT_DB_PASS}
 default_pass_scheme = BLF-CRYPT
 password_query = SELECT CONCAT(local_part, '@', domain) AS user, password_hash AS password FROM lot_mailboxes WHERE local_part = '%n' AND domain = '%d'
-user_query = SELECT CONCAT(local_part, '@', domain) AS user, 'vmail' AS uid, 'vmail' AS gid, CONCAT('/var/mail/vhosts/', domain, '/', local_part) AS home FROM lot_mailboxes WHERE local_part = '%n' AND domain = '%d'
+# mail=maildir:~/ so Dovecot uses Maildir at home (not global mbox); required for lot mailboxes
+user_query = SELECT CONCAT(local_part, '@', domain) AS user, 'vmail' AS uid, 'vmail' AS gid, CONCAT('/var/mail/vhosts/', domain, '/', local_part) AS home, 'maildir:~/' AS mail FROM lot_mailboxes WHERE local_part = '%n' AND domain = '%d'
 EOF
 chmod 640 "$DOVECOT_CF"
 chown root:dovecot "$DOVECOT_CF"

@@ -4,8 +4,10 @@
 # See docs/LOT_MAILBOX_AND_IMAP_CHAT.md
 
 driver = mysql
-connect = host=localhost dbname=xboard user=dovecot password=YOUR_DOVECOT_DB_PASSWORD
+# Use 127.0.0.1 (TCP), not localhost: Dovecot may not see MySQL socket in some setups
+connect = host=127.0.0.1 dbname=xboard user=dovecot password=YOUR_DOVECOT_DB_PASSWORD
 default_pass_scheme = BLF-CRYPT
 
 password_query = SELECT CONCAT(local_part, '@', domain) AS user, password_hash AS password FROM lot_mailboxes WHERE local_part = '%n' AND domain = '%d'
-user_query = SELECT CONCAT(local_part, '@', domain) AS user, 'vmail' AS uid, 'vmail' AS gid, CONCAT('/var/mail/vhosts/', domain, '/', local_part) AS home FROM lot_mailboxes WHERE local_part = '%n' AND domain = '%d'
+# mail=maildir:~/ so Dovecot uses Maildir at home (overrides global mbox); required for lot mailboxes
+user_query = SELECT CONCAT(local_part, '@', domain) AS user, 'vmail' AS uid, 'vmail' AS gid, CONCAT('/var/mail/vhosts/', domain, '/', local_part) AS home, 'maildir:~/' AS mail FROM lot_mailboxes WHERE local_part = '%n' AND domain = '%d'

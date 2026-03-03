@@ -2,10 +2,11 @@
 # Copy to /etc/postfix/mysql-virtual-mailbox-lot.cf and adjust
 # Add to main.cf: virtual_mailbox_maps = hash:/etc/postfix/virtual-mailbox-maps mysql:/etc/postfix/mysql-virtual-mailbox-lot.cf
 # See docs/LOT_MAILBOX_AND_IMAP_CHAT.md
+# Use 127.0.0.1 (TCP), not localhost: Postfix smtpd runs in chroot and cannot use MySQL socket.
 
-hosts = localhost
+hosts = 127.0.0.1
 user = postfix
 password = YOUR_POSTFIX_DB_PASSWORD
 dbname = xboard
-
-query = SELECT CONCAT('/var/mail/vhosts/', domain, '/', local_part, '/') FROM lot_mailboxes WHERE CONCAT(local_part, '@', domain) = '%s' LIMIT 1
+# Path must be RELATIVE to virtual_mailbox_base (/var/mail/vhosts)
+query = SELECT CONCAT(domain, '/', local_part, '/') FROM lot_mailboxes WHERE CONCAT(local_part, '@', domain) = '%s' LIMIT 1

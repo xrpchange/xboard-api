@@ -6,10 +6,10 @@ listen = *
 mail_location = maildir:/var/mail/vhosts/%d/%n
 mail_privileged_group = mail
 
-# Virtual users
+# Virtual users (include mail=maildir:~/ so IMAP shows Maildir at home; else clients see empty Inbox)
 userdb {
     driver = static
-    args = uid=vmail gid=vmail home=/var/mail/vhosts/%d/%n
+    args = uid=vmail gid=vmail home=/var/mail/vhosts/%d/%n mail=maildir:~/
 }
 
 passdb {

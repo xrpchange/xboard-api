@@ -84,6 +84,11 @@ scripts/email-server/
 - **Полная настройка сервера:** [`docs/EMAIL_SERVER_SETUP.md`](../../docs/EMAIL_SERVER_SETUP.md)
 - **SPF, DKIM, DMARC (доставка, защита от спама):** [`docs/MAIL_SPF_DKIM_DMARC.md`](../../docs/MAIL_SPF_DKIM_DMARC.md)
 
+## Типичные ошибки (Postfix / lot mailboxes)
+
+- **Postfix не принимает письма, таймаут по 25/587** — см. раздел 4 в [`docs/CHECK_POSTFIX_DEAL_MESSAGE.md`](../../docs/CHECK_POSTFIX_DEAL_MESSAGE.md): пустой `dbname`, `hosts = localhost` (нужен `127.0.0.1` из‑за chroot), неверный путь в `query` (должен быть относительный).
+- **В IMAP-клиенте (Canary) пустая папка у ящика лота** — Dovecot должен использовать Maildir в home. Два варианта: (1) в `user_query` в `/etc/dovecot/dovecot-sql-lot.conf` добавить `'maildir:~/' AS mail`; (2) если первым в конфиге идёт статический userdb с `home=/var/mail/vhosts/%d/%n`, в его `args` добавить `mail=maildir:~/`. См. раздел 4.4 в `CHECK_POSTFIX_DEAL_MESSAGE.md` и раздел «В IMAP-клиенте не видно писем» в [`docs/LOT_MAILBOX_AND_IMAP_CHAT.md`](../../docs/LOT_MAILBOX_AND_IMAP_CHAT.md).
+
 ## Поддержка
 
 При проблемах проверьте:
