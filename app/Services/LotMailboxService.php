@@ -137,6 +137,23 @@ class LotMailboxService
     }
 
     /**
+     * Get seller mailbox email for a lot (by wallet_address and currency).
+     * Used when sending a message to the seller — e.g. "start deal" notification.
+     *
+     * @return string|null Full email (local_part@domain) or null if mailbox not found
+     */
+    public function getMailboxEmailForAddress(string $walletAddress, string $currency): ?string
+    {
+        $normalizedAddress = $this->normalizeAddress($walletAddress, $currency);
+        if ($normalizedAddress === null) {
+            return null;
+        }
+        $localPart = $this->buildLocalPart($currency, $normalizedAddress);
+        $mailbox = LotMailbox::where('local_part', $localPart)->where('domain', $this->domain)->first();
+        return $mailbox ? $mailbox->email : null;
+    }
+
+    /**
      * Try to delete mailbox when escrow token is removed. Non-blocking — failures are logged only.
      */
     public function deleteByToken(string $walletAddress, string $tokenHash, string $currency): bool
