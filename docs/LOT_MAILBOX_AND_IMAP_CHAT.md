@@ -209,6 +209,12 @@ $this->lotMailboxService->cleanupMailbox($lot->wallet_address, $lot->cryptoCurre
    - `postfix-mysql-lot-mailboxes.cf.example` → `/etc/postfix/mysql-virtual-mailbox-lot.cf`
    - `dovecot-sql-lot-mailboxes.conf.example` → `/etc/dovecot/dovecot-sql-lot.conf`
 
+   **Важно для Dovecot (IMAP):** в `user_query` в `/etc/dovecot/dovecot-sql-lot.conf` должно быть поле **`'maildir:~/' AS mail`**. Иначе Dovecot использует глобальный `mail_location` (часто mbox), письма ящиков лотов лежат в Maildir в `home`, и в клиенте (Canary и др.) папка «Входящие» остаётся пустой. Пример строки:
+   ```text
+   user_query = SELECT ... AS home, 'maildir:~/' AS mail FROM lot_mailboxes WHERE ...
+   ```
+   Скрипт `setup-lot-mailboxes.sh` и пример `dovecot-sql-lot-mailboxes.conf.example` уже содержат это поле.
+
 5. **Автоматическая настройка**:
    ```bash
    sudo ./scripts/email-server/setup-lot-mailboxes.sh
@@ -261,6 +267,22 @@ sudo ufw reload
 ```
 
 После изменений снова проверьте снаружи `openssl s_client -connect mail.xdexboard.com:993`.
+
+### В IMAP-клиенте (Canary и др.) не видно писем в ящике лота
+
+Вход по логину/паролю проходит, но папка «Входящие» пустая, хотя Postfix доставил письма в maildir (в логах `status=sent (delivered to maildir)`).
+
+**Причина 1 — в SQL userdb нет поля `mail`:** для пользователей из `lot_mailboxes` Dovecot должен использовать **Maildir в каталоге home**, а не глобальный `mail_location` (часто mbox). В `user_query` в `/etc/dovecot/dovecot-sql-lot.conf` должно быть поле **`'maildir:~/' AS mail`**.
+
+**Исправление 1:** в `user_query` добавить (или проверить наличие) `, 'maildir:~/' AS mail` перед `FROM lot_mailboxes`. Полная строка — см. `configs/dovecot-sql-lot-mailboxes.conf.example`. Затем `sudo systemctl restart dovecot`.
+
+**Причина 2 — первым в конфиге идёт статический userdb без `mail`:** в `/etc/dovecot/dovecot.conf` первый блок `userdb` может быть статическим, например `args = uid=vmail gid=vmail home=/var/mail/vhosts/%d/%n`. Он срабатывает для всех виртуальных пользователей и не задаёт `mail=`, поэтому Dovecot подставляет глобальный `mail_location` (mbox). Userdb из lot_mailboxes подключается позже, но «побеждает» первый — без `mail` письма не отображаются.
+
+**Исправление 2:** в этом **статическом** userdb в `/etc/dovecot/dovecot.conf` в `args` добавить **`mail=maildir:~/`**:
+```text
+args = uid=vmail gid=vmail home=/var/mail/vhosts/%d/%n mail=maildir:~/
+```
+Затем `sudo systemctl restart dovecot`. В клиенте переподключить ящик (удалить и добавить аккаунт заново или обновить папки).
 
 ---
 
