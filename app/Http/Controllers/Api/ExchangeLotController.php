@@ -11,6 +11,7 @@ use App\Models\FiatCurrency;
 use App\Services\EscrowTokenValidationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
@@ -174,6 +175,13 @@ class ExchangeLotController extends Controller
             if (!empty($hashes)) {
                 $query->whereIn('wallet_hash', $hashes);
             }
+        }
+
+        // Public search: exclude lots that have a buyer in deal (buyer_lot_email set)
+        if (empty($hashes)) {
+            $query->where(function ($q) {
+                $q->whereNull('buyer_lot_email')->orWhere('buyer_lot_email', '');
+            });
         }
 
         // Sorting
@@ -733,6 +741,7 @@ class ExchangeLotController extends Controller
             'message' => 'required|string|max:10000',
             'buyer_locale' => 'nullable|string|max:10',
             'selected_amount' => 'nullable|numeric|min:0',
+            'message_type' => 'nullable|string|in:start_deal,buyer_exited',
         ]);
 
         if ($validator->fails()) {
@@ -769,6 +778,7 @@ class ExchangeLotController extends Controller
         $tokenData = $request->input('escrow_token_data');
         $requesterWallet = '';
         $requesterCurrency = '';
+        $requesterMailboxEmail = null;
         if (is_array($tokenData)) {
             $requesterWallet = $tokenData['wallet_address'] ?? '';
             $requesterCurrency = $tokenData['currency'] ?? '';
@@ -782,6 +792,36 @@ class ExchangeLotController extends Controller
                     ], 400);
                 }
             }
+        }
+
+        $messageType = $request->input('message_type');
+
+        // start_deal: atomically set buyer_lot_email only if currently NULL/empty (avoid race)
+        if ($messageType === 'start_deal' && $requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
+            $updated = DB::table('exchange_lots')
+                ->where('id', $lot->id)
+                ->where(function ($q) {
+                    $q->whereNull('buyer_lot_email')->orWhere('buyer_lot_email', '');
+                })
+                ->update(['buyer_lot_email' => $requesterMailboxEmail]);
+            if ($updated === 0) {
+                Log::warning('[exchange-lots] sendMessageToSeller: lot already has buyer', ['lot_id' => $lot->id]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Another buyer has already started a deal on this lot.',
+                    'error_code' => 'lot_taken',
+                ], 409);
+            }
+            Log::info('[exchange-lots] sendMessageToSeller: buyer_lot_email set', ['lot_id' => $lot->id, 'buyer_lot_email' => $requesterMailboxEmail]);
+        }
+
+        // buyer_exited: clear buyer_lot_email only for this buyer
+        if ($messageType === 'buyer_exited' && $requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
+            DB::table('exchange_lots')
+                ->where('id', $lot->id)
+                ->where('buyer_lot_email', $requesterMailboxEmail)
+                ->update(['buyer_lot_email' => null]);
+            Log::info('[exchange-lots] sendMessageToSeller: buyer_lot_email cleared', ['lot_id' => $lot->id]);
         }
 
         // Send from noreply@ with app name (XBoard) — template email, not shown in app chat
