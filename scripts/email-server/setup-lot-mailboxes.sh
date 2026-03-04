@@ -46,7 +46,7 @@ EOF
 chmod 640 "$POSTFIX_CF"
 chown root:postfix "$POSTFIX_CF"
 
-# 4. Add mysql map to virtual_mailbox_maps in main.cf
+# 4. main.cf: virtual_mailbox_maps and virtual_mailbox_limit (10 MB per mailbox)
 MAIN_CF="/etc/postfix/main.cf"
 if ! grep -q "mysql:${POSTFIX_CF}" "$MAIN_CF" 2>/dev/null; then
   echo "Adding mysql map to virtual_mailbox_maps in $MAIN_CF..."
@@ -55,6 +55,10 @@ if ! grep -q "mysql:${POSTFIX_CF}" "$MAIN_CF" 2>/dev/null; then
   else
     echo "virtual_mailbox_maps = mysql:${POSTFIX_CF}" >> "$MAIN_CF"
   fi
+fi
+if ! grep -q "^virtual_mailbox_limit\s*=" "$MAIN_CF" 2>/dev/null; then
+  echo "Adding virtual_mailbox_limit = 10485760 (10 MB) in $MAIN_CF..."
+  echo "virtual_mailbox_limit = 10485760" >> "$MAIN_CF"
 fi
 
 # 5. Dovecot SQL config
