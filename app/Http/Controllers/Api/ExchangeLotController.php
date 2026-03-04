@@ -709,6 +709,7 @@ class ExchangeLotController extends Controller
 
     /**
      * Send a message to the seller (lot owner). Used when buyer taps "Start deal".
+     * Email is sent from noreply@ with app name (XBoard); suitable for a template, not for app chat.
      * Rejects if the requester is the seller (same escrow token / mailbox).
      *
      * @OA\Post(
@@ -783,39 +784,9 @@ class ExchangeLotController extends Controller
             }
         }
 
-        // Message must be sent from buyer's mailbox only (no noreply fallback)
-        $cache = $request->input('escrow_token_cache');
-        $tokenHash = $cache && is_object($cache) ? ($cache->token_hash ?? null) : null;
-        if ($requesterWallet === '' || $requesterCurrency === '' || $tokenHash === null || $tokenHash === '') {
-            Log::warning('[exchange-lots] sendMessageToSeller: missing buyer identity (wallet/currency/token)', [
-                'lot_id' => $lot->id,
-            ]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Buyer identity (escrow token) required to send message.',
-                'error_code' => 'buyer_mailbox_required',
-            ], 400);
-        }
-
-        $buyerMailbox = $this->lotMailboxService->ensureMailbox(
-            $requesterWallet,
-            $tokenHash,
-            $requesterCurrency
-        );
-        if ($buyerMailbox === null || empty($buyerMailbox['email'])) {
-            Log::warning('[exchange-lots] sendMessageToSeller: could not ensure buyer mailbox', [
-                'lot_id' => $lot->id,
-                'currency' => $requesterCurrency,
-            ]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Could not create or find buyer mailbox. Cannot send message.',
-                'error_code' => 'buyer_mailbox_required',
-            ], 400);
-        }
-
-        $fromAddress = $buyerMailbox['email'];
-        $fromName = 'Buyer';
+        // Send from noreply@ with app name (XBoard) — template email, not shown in app chat
+        $fromAddress = config('mail.from.address', 'noreply@xdexboard.com');
+        $fromName = config('mail.from.name', 'XBoard');
 
         $messageText = $request->input('message', '');
         $buyerLocale = $request->input('buyer_locale', 'en');
