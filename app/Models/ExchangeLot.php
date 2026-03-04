@@ -48,11 +48,15 @@ class ExchangeLot extends Model
         'note',
         'seller_locale',
         'buyer_lot_email',
+        'seller_notification_sent_at',
+        'seller_viewed_deal_at',
         'aml',
         'expires_at',
     ];
 
     protected $casts = [
+        'seller_notification_sent_at' => 'datetime',
+        'seller_viewed_deal_at' => 'datetime',
         'sell_amount' => 'decimal:8',
         'buy_amount_min' => 'decimal:8',
         'buy_amount_max' => 'decimal:8',

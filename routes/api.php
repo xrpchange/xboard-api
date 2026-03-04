@@ -139,11 +139,14 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
     Route::post('/lot-mailbox/delete', [LotMailboxController::class, 'delete']);
 
     Route::prefix('exchange-lots')->group(function () {
+        Route::get('/{lot}/deal-messages', [ExchangeLotController::class, 'dealMessages']);
         Route::post('/', [ExchangeLotController::class, 'store']);
         Route::post('/{lot}/update', [ExchangeLotController::class, 'update']);
         Route::post('/{lot}/delete', [ExchangeLotController::class, 'destroy']);
         Route::post('/{lot}/set-active', [ExchangeLotController::class, 'setActive']);
         Route::post('/{lot}/send-message', [ExchangeLotController::class, 'sendMessageToSeller']);
+        Route::post('/{lot}/send-message-to-buyer', [ExchangeLotController::class, 'sendMessageToBuyer']);
+        Route::post('/{lot}/seller-viewed-deal', [ExchangeLotController::class, 'sellerViewedDeal']);
     });
 
     // Buy triggers
