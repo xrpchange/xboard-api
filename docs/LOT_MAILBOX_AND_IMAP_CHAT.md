@@ -515,6 +515,18 @@ sudo postmap /etc/postfix/exempt_senders
 
 ---
 
+## Кодирование тела писем (deal messages)
+
+Письма по сделкам (sendMessageToSeller, sendMessageToBuyer) отправляются через `Mail::raw($body, ...)`. Тело — UTF-8 (в т.ч. кириллица, локализованные строки).
+
+- **Транспорт (Laravel/Symfony Mailer)** по умолчанию может выставлять `Content-Transfer-Encoding: quoted-printable` для нетекстовых символов, поэтому в сыром EML тело может приходить в виде `=D1=BE=88...` (QP).
+- **Клиент** при чтении писем через IMAP получает сырой EML, извлекает тело, декодирует Quoted-Printable (см. `DealImapReader.decodeQuotedPrintable`) и затем разбирает префиксы («Buyer (sent):», «Message from seller (Lot #X):» и т.д.).
+- **Отладка:** в клиенте включены логи в `DealImapReader`: перед декодированием пишется превью сырого тела (`rawBodyPreview`), после декодирования — превью расшифрованного текста (`afterDecodePreview`) и превью итогового сообщения чата (`bodyTextPreview`). Логи видны в logcat: `adb logcat -d | findstr "DealImapReader"` (или при включённом LogCollector в приложении).
+
+**Вариант «декодировать на сервере»:** сейчас сервер только формирует и отправляет письмо; декодирование QP не требуется на сервере — письмо уходит в SMTP уже в UTF-8, а QP применяет сам транспорт для передачи по 7-bit. Чтобы в ящике клиента тело приходило без QP (например, `Content-Transfer-Encoding: 8bit` или `base64`), в API можно явно задать тело письма через Symfony Mime (например, `TextPart` с `encoding: '8bit'` или `'base64'`). Тогда клиенту не придётся декодировать QP (но текущая клиентская декодировка остаётся корректной и для QP, и для уже раскодированного текста).
+
+---
+
 ## Связанные документы
 
 - `docs/EMAIL_SERVER_SETUP.md` — текущая настройка почтового сервера

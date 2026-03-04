@@ -145,12 +145,156 @@ class LotMailboxService
     public function getMailboxEmailForAddress(string $walletAddress, string $currency): ?string
     {
         $normalizedAddress = $this->normalizeAddress($walletAddress, $currency);
-        if ($normalizedAddress === null) {
+        $localPart = $normalizedAddress !== null ? $this->buildLocalPart($currency, $normalizedAddress) : null;
+        $mailbox = $localPart !== null ? LotMailbox::where('local_part', $localPart)->where('domain', $this->domain)->first() : null;
+        $email = $mailbox ? $mailbox->email : null;
+
+        Log::info('[lot-mailbox] getMailboxEmailForAddress', [
+            'wallet_address_len' => strlen($walletAddress),
+            'wallet_address_preview' => substr($walletAddress, 0, 80) . (strlen($walletAddress) > 80 ? '...' : ''),
+            'currency' => $currency,
+            'normalized_address' => $normalizedAddress !== null ? substr($normalizedAddress, 0, 40) . (strlen($normalizedAddress) > 40 ? '...' : '') : null,
+            'local_part' => $localPart,
+            'found_email' => $email,
+        ]);
+
+        return $email;
+    }
+
+    /**
+     * Get Maildir filesystem path for a mailbox by its email address.
+     *
+     * @return string|null path (e.g. /var/mail/vhosts/domain/local_part) or null if not found
+     */
+    public function getMaildirPathByEmail(string $email): ?string
+    {
+        $email = trim($email);
+        if ($email === '' || !str_contains($email, '@')) {
             return null;
         }
-        $localPart = $this->buildLocalPart($currency, $normalizedAddress);
-        $mailbox = LotMailbox::where('local_part', $localPart)->where('domain', $this->domain)->first();
-        return $mailbox ? $mailbox->email : null;
+        $parts = explode('@', $email, 2);
+        $localPart = $parts[0];
+        $domainPart = $parts[1] ?? $this->domain;
+        $mailbox = LotMailbox::where('local_part', $localPart)->where('domain', $domainPart)->first();
+        if (!$mailbox) {
+            return null;
+        }
+        $base = $this->maildirBase ?? config('services.lot_mailbox.maildir_base');
+        if (empty($base)) {
+            return null;
+        }
+        return rtrim($base, '/') . '/' . $domainPart . '/' . $localPart;
+    }
+
+    /**
+     * List deal messages from a mailbox Maildir (for chat thread). Scans cur/ and new/, filters by lot id in subject/body.
+     *
+     * @param string $maildirPath full path to mailbox Maildir
+     * @param string $lotId lot id (e.g. "123")
+     * @param bool $requesterIsSeller true if the requester is the seller (lot owner)
+     * @return array<int, array{date: string, body: string, from_me: bool}> sorted by date ascending
+     */
+    public function getDealMessages(string $maildirPath, string $lotId, bool $requesterIsSeller): array
+    {
+        $candidates = [];
+        foreach (['new', 'cur'] as $folder) {
+            $dir = $maildirPath . '/' . $folder;
+            if (!is_dir($dir)) {
+                continue;
+            }
+            foreach (glob($dir . '/*') ?: [] as $file) {
+                if (!is_file($file)) {
+                    continue;
+                }
+                $content = @file_get_contents($file);
+                if ($content === false) {
+                    continue;
+                }
+                $hasLotId = stripos($content, $lotId) !== false;
+                if (!$hasLotId) {
+                    continue;
+                }
+                $subjectLine = null;
+                if (preg_match('/^Subject:\s*(.+?)(?=\r?\n(?![\s\t])|\z)/ms', $content, $m)) {
+                    $subjectLine = preg_replace('/\r?\n[\s\t]+/', ' ', trim($m[1]));
+                    $subjectLine = $this->decodeMimeHeader($subjectLine);
+                }
+                if ($subjectLine !== null && stripos($subjectLine, $lotId) === false) {
+                    continue;
+                }
+                $body = $this->extractBodyFromMaildirMessage($content);
+                $fromSeller = $this->isMessageFromSeller($body, $lotId);
+                $from_me = $fromSeller === $requesterIsSeller;
+                $messageBody = $this->extractMessageTextFromBody($body, $lotId, $fromSeller);
+                $date = date('c', filemtime($file));
+                $candidates[] = [
+                    'date' => $date,
+                    'body' => $messageBody,
+                    'from_me' => $from_me,
+                ];
+            }
+        }
+        usort($candidates, fn ($a, $b) => strcmp($a['date'], $b['date']));
+        return array_values($candidates);
+    }
+
+    private function extractBodyFromMaildirMessage(string $raw): string
+    {
+        $parts = preg_split('/\r?\n\r?\n/', $raw, 2);
+        return $parts[1] ?? '';
+    }
+
+    private function isMessageFromSeller(string $body, string $lotId): bool
+    {
+        if (stripos($body, 'Buyer (sent):') === 0) {
+            return false;
+        }
+        $prefix = 'Message from seller (Lot #' . $lotId . '):';
+        return stripos($body, $prefix) === 0 || str_contains($body, 'Message from seller (Lot #');
+    }
+
+    /**
+     * Extract the actual message text from email body (after "Buyer's message:" or "Message from seller (Lot #X):" or "Buyer (sent):").
+     */
+    private function extractMessageTextFromBody(string $body, string $lotId, bool $fromSeller): string
+    {
+        if (stripos($body, 'Buyer (sent):') === 0) {
+            return trim(substr($body, strlen('Buyer (sent):')));
+        }
+        if ($fromSeller) {
+            $prefix = 'Message from seller (Lot #' . $lotId . '):';
+            $pos = stripos($body, $prefix);
+            if ($pos !== false) {
+                return trim(substr($body, $pos + strlen($prefix)));
+            }
+        }
+        foreach (["Buyer's message:", "Сообщение покупателя:", "Message de l'acheteur :"] as $needle) {
+            $pos = stripos($body, $needle);
+            if ($pos !== false) {
+                return trim(substr($body, $pos + strlen($needle)));
+            }
+        }
+        return $body;
+    }
+
+    /**
+     * Write a copy of a buyer-sent message into the buyer's Maildir so they see it in their deal thread.
+     */
+    public function writeBuyerSentCopyToMailbox(string $buyerMailboxEmail, string $lotId, string $messageText): bool
+    {
+        $path = $this->getMaildirPathByEmail($buyerMailboxEmail);
+        if ($path === null || !is_dir($path)) {
+            return false;
+        }
+        $newDir = $path . '/new';
+        if (!is_dir($newDir)) {
+            return false;
+        }
+        $subject = 'Deal message — Lot #' . $lotId;
+        $body = "Buyer (sent):\n\n" . $messageText;
+        $raw = "Subject: " . $subject . "\n\n" . $body;
+        $filename = $newDir . '/' . (string) (time() . '.' . gethostname() . '.' . getmypid() . '.eml');
+        return (bool) @file_put_contents($filename, $raw);
     }
 
     /**

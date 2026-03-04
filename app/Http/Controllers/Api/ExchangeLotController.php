@@ -797,6 +797,8 @@ class ExchangeLotController extends Controller
         $messageType = $request->input('message_type');
 
         // start_deal: atomically set buyer_lot_email only if currently NULL/empty (avoid race)
+        // Also ensure buyer's mailbox exists; return mailbox config so client can read messages via IMAP
+        $buyerMailboxConfig = null;
         if ($messageType === 'start_deal' && $requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
             $updated = DB::table('exchange_lots')
                 ->where('id', $lot->id)
@@ -811,6 +813,22 @@ class ExchangeLotController extends Controller
                     'message' => 'Another buyer has already started a deal on this lot.',
                     'error_code' => 'lot_taken',
                 ], 409);
+            }
+            $publicPart = $request->header('X-Escrow-Token') ?? $request->input('escrow_token');
+            if ($publicPart && is_string($publicPart)) {
+                $decoded = json_decode($publicPart, true);
+                $tokenHash = isset($decoded['token_hash']) ? trim((string) $decoded['token_hash']) : '';
+                if ($tokenHash !== '') {
+                    try {
+                        $buyerMailboxConfig = $this->lotMailboxService->ensureMailbox($publicPart, $tokenHash, $requesterCurrency);
+                    } catch (\Throwable $e) {
+                        Log::warning('[exchange-lots] sendMessageToSeller: ensureMailbox for buyer failed (non-blocking)', [
+                            'lot_id' => $lot->id,
+                            'buyer_email' => $requesterMailboxEmail,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
             }
             Log::info('[exchange-lots] sendMessageToSeller: buyer_lot_email set', ['lot_id' => $lot->id, 'buyer_lot_email' => $requesterMailboxEmail]);
         }
@@ -848,10 +866,16 @@ class ExchangeLotController extends Controller
                 $message->subject($subject);
                 $message->from($fromAddress, $fromName);
             });
+            if ($requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
+                $this->lotMailboxService->writeBuyerSentCopyToMailbox($requesterMailboxEmail, (string) $lot->id, $messageText);
+            }
             Log::info('[exchange-lots] sendMessageToSeller: mail sent successfully', [
                 'lot_id' => $lot->id,
                 'to' => $sellerEmail,
             ]);
+            if ($messageType === 'start_deal') {
+                $lot->update(['seller_notification_sent_at' => now()]);
+            }
         } catch (\Exception $e) {
             Log::warning('[exchange-lots] sendMessageToSeller: failed to send mail', [
                 'lot_id' => $lot->id,
@@ -864,9 +888,141 @@ class ExchangeLotController extends Controller
             ], 500);
         }
 
+        $response = [
+            'success' => true,
+            'message' => 'Message sent to seller.',
+        ];
+        if ($buyerMailboxConfig !== null) {
+            $response['mailbox'] = $buyerMailboxConfig;
+        }
+
+        return response()->json($response);
+    }
+
+    /**
+     * Send a message from the seller (lot owner) to the buyer.
+     * Only the seller can call this; email is delivered to the buyer's lot mailbox (buyer_lot_email).
+     *
+     * @OA\Post(
+     *     path="/exchange-lots/{lot}/send-message-to-buyer",
+     *     summary="Send message to buyer (seller only)",
+     *     tags={"Exchange Lots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\RequestBody(required=true, @OA\JsonContent(required={"message"}, @OA\Property(property="message", type="string"))),
+     *     @OA\Response(response=200, description="Message sent"),
+     *     @OA\Response(response=400, description="Not seller / no buyer mailbox"),
+     *     @OA\Response(response=401, description="Unauthorized")
+     * )
+     */
+    public function sendMessageToBuyer(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'message' => 'required|string|max:10000',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $lot->load(['cryptoCurrency']);
+        $currency = $lot->cryptoCurrency?->code ?? 'crypto';
+
+        Log::info('[exchange-lots] sendMessageToBuyer: start', [
+            'lot_id' => $lot->id,
+            'lot_currency' => $currency,
+            'lot_wallet_address_len' => strlen($lot->wallet_address ?? ''),
+            'lot_wallet_address_preview' => $lot->wallet_address ? substr($lot->wallet_address, 0, 120) . (strlen($lot->wallet_address) > 120 ? '...' : '') : null,
+        ]);
+
+        $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $currency);
+
+        if (!$sellerEmail) {
+            Log::warning('[exchange-lots] sendMessageToBuyer: no_seller_mailbox', ['lot_id' => $lot->id]);
+            return response()->json([
+                'success' => false,
+                'message' => 'No seller mailbox for this lot.',
+                'error_code' => 'no_seller_mailbox',
+            ], 400);
+        }
+
+        $buyerEmail = $lot->buyer_lot_email;
+        if (empty($buyerEmail)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No buyer in deal for this lot.',
+                'error_code' => 'no_buyer_in_deal',
+            ], 400);
+        }
+
+        // Use raw public part (same as at lot creation / ensureMailbox) and LOT currency so mailbox lookup matches
+        // (mailbox was created with lot's crypto currency e.g. usdt_tron, not token's "USDT")
+        $publicPart = $request->header('X-Escrow-Token') ?? $request->input('escrow_token') ?? $request->query('escrow_token');
+
+        Log::info('[exchange-lots] sendMessageToBuyer: requester', [
+            'lot_id' => $lot->id,
+            'has_public_part' => $publicPart !== null && $publicPart !== '',
+            'lot_currency' => $currency,
+            'seller_email' => $sellerEmail,
+        ]);
+
+        $requesterMailboxEmail = null;
+        if ($publicPart !== null && $publicPart !== '' && $currency !== '') {
+            $requesterMailboxEmail = $this->lotMailboxService->getMailboxEmailForAddress($publicPart, $currency);
+        }
+
+        Log::info('[exchange-lots] sendMessageToBuyer: comparison', [
+            'lot_id' => $lot->id,
+            'requester_mailbox_email' => $requesterMailboxEmail,
+            'seller_email' => $sellerEmail,
+            'match' => $requesterMailboxEmail !== null && strcasecmp(trim($requesterMailboxEmail), trim($sellerEmail)) === 0,
+        ]);
+
+        if ($requesterMailboxEmail === null || strcasecmp(trim($requesterMailboxEmail), trim($sellerEmail)) !== 0) {
+            Log::warning('[exchange-lots] sendMessageToBuyer: not_seller', [
+                'lot_id' => $lot->id,
+                'seller_mailbox' => $sellerEmail,
+                'requester_mailbox' => $requesterMailboxEmail,
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Only the seller (lot owner) can send a message to the buyer.',
+                'error_code' => 'not_seller',
+            ], 403);
+        }
+
+        $messageText = $request->input('message', '');
+        $subject = $this->getDealMessageSubject($lot, 'en');
+        $body = "Message from seller (Lot #{$lot->id}):\n\n" . $messageText;
+
+        try {
+            Mail::raw($body, function ($message) use ($buyerEmail, $subject) {
+                $message->to($buyerEmail);
+                $message->subject($subject);
+                $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
+            });
+        } catch (\Exception $e) {
+            Log::warning('[exchange-lots] sendMessageToBuyer: failed to send mail', [
+                'lot_id' => $lot->id,
+                'to' => $buyerEmail,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send message: ' . $e->getMessage()
+            ], 500);
+        }
+
+        Log::info('[exchange-lots] sendMessageToBuyer: mail sent', [
+            'lot_id' => $lot->id,
+            'to' => $buyerEmail,
+        ]);
+
         return response()->json([
             'success' => true,
-            'message' => 'Message sent to seller.'
+            'message' => 'Message sent to buyer.',
         ]);
     }
 
@@ -880,25 +1036,67 @@ class ExchangeLotController extends Controller
      *     @OA\Response(response=200, description="delivered and read flags")
      * )
      */
+    /**
+     * Get deal message delivery/read status for "Seller notification status".
+     * No mail reading: delivered = we sent the start_deal email; read = seller's client reported view.
+     */
     public function dealMessageStatus(ExchangeLot $lot): \Illuminate\Http\JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'delivered' => $lot->seller_notification_sent_at !== null,
+                'read' => $lot->seller_viewed_deal_at !== null,
+            ],
+        ]);
+    }
+
+    /**
+     * Seller (lot owner) reports that they viewed the deal screen. Sets read=true for buyer's status.
+     * Called by seller's client when they open the deal screen / load messages via IMAP.
+     */
+    public function sellerViewedDeal(Request $request, ExchangeLot $lot): JsonResponse
     {
         $lot->load(['cryptoCurrency']);
         $currency = $lot->cryptoCurrency?->code ?? 'crypto';
-        $status = $this->lotMailboxService->getDealMessageStatus(
-            $lot->wallet_address ?? '',
-            $currency,
-            $lot->id
-        );
-        if ($status === null) {
-            return response()->json([
-                'success' => true,
-                'data' => ['delivered' => false, 'read' => false],
-            ]);
+        $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $currency);
+        if (!$sellerEmail) {
+            return response()->json(['success' => false, 'message' => 'No seller mailbox.'], 400);
         }
+        $publicPart = $request->header('X-Escrow-Token') ?? $request->input('escrow_token') ?? $request->query('escrow_token');
+        if (!$publicPart || !$currency) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized.'], 401);
+        }
+        $requesterMailboxEmail = $this->lotMailboxService->getMailboxEmailForAddress($publicPart, $currency);
+        if ($requesterMailboxEmail === null || strcasecmp(trim($requesterMailboxEmail), trim($sellerEmail)) !== 0) {
+            return response()->json(['success' => false, 'message' => 'Only the seller can report viewed.'], 403);
+        }
+        $lot->update(['seller_viewed_deal_at' => now()]);
+        return response()->json(['success' => true, 'message' => 'OK']);
+    }
+
+    /**
+     * Get deal chat messages (thread) for the authenticated user (seller or buyer).
+     * Reads from the requester's mailbox Maildir; returns messages with date, body, from_me.
+     *
+     * @OA\Get(
+     *     path="/exchange-lots/{lot}/deal-messages",
+     *     summary="Deal messages (chat thread)",
+     *     tags={"Exchange Lots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Response(response=200, description="List of messages")
+     * )
+     */
+    /**
+     * @deprecated Reading is done on the client via IMAP only. This endpoint returns 410.
+     */
+    public function dealMessages(Request $request, ExchangeLot $lot): JsonResponse
+    {
         return response()->json([
-            'success' => true,
-            'data' => $status,
-        ]);
+            'success' => false,
+            'message' => 'Use IMAP on the client to read messages. This endpoint is deprecated.',
+            'error_code' => 'use_imap_on_client',
+        ], 410);
     }
 
     /**
