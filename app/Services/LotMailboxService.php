@@ -154,6 +154,91 @@ class LotMailboxService
     }
 
     /**
+     * Get deal message delivery/read status by scanning seller's Maildir (IMAP backend).
+     * Looks for the most recent message whose Subject contains "Lot #{$lotId}".
+     * delivered = message found in INBOX (cur/ or new/); read = message in cur/ with \Seen flag (filename contains ",S").
+     *
+     * @return array{delivered: bool, read: bool}|null null if mailbox/path not available
+     */
+    public function getDealMessageStatus(string $walletAddress, string $currency, string $lotId): ?array
+    {
+        $normalizedAddress = $this->normalizeAddress($walletAddress, $currency);
+        if ($normalizedAddress === null) {
+            return null;
+        }
+        $localPart = $this->buildLocalPart($currency, $normalizedAddress);
+        $base = $this->maildirBase ?? config('services.lot_mailbox.maildir_base');
+        if (empty($base)) {
+            Log::info('[lot-mailbox] getDealMessageStatus: maildir_base not configured');
+            return null;
+        }
+        $path = rtrim($base, '/') . '/' . $this->domain . '/' . $localPart;
+        if (!is_dir($path)) {
+            return ['delivered' => false, 'read' => false];
+        }
+        // Subject contains "Lot #{$lotId}" (en) or "Лот #{$lotId}" (ru); match by lot id (decode MIME Subject if needed)
+        $candidates = [];
+        foreach (['new', 'cur'] as $folder) {
+            $dir = $path . '/' . $folder;
+            if (!is_dir($dir)) {
+                continue;
+            }
+            foreach (glob($dir . '/*') ?: [] as $file) {
+                if (!is_file($file)) {
+                    continue;
+                }
+                $content = @file_get_contents($file, false, null, 0, 8192);
+                if ($content === false) {
+                    continue;
+                }
+                $subjectLine = null;
+                // Subject can be folded (continued on next line with space/tab); extract full header
+                if (preg_match('/^Subject:\s*(.+?)(?=\r?\n(?![\s\t])|\z)/ms', $content, $m)) {
+                    $subjectLine = preg_replace('/\r?\n[\s\t]+/', ' ', trim($m[1]));
+                    $subjectLine = $this->decodeMimeHeader($subjectLine);
+                }
+                $hasLotId = stripos($content, $lotId) !== false
+                    || ($subjectLine !== null && stripos($subjectLine, $lotId) !== false);
+                if (!$hasLotId) {
+                    continue;
+                }
+                $basename = basename($file);
+                // Maildir/Dovecot: cur/ + filename has :2,FLAGS with S (Seen); e.g. :2,S or :2,RS
+                $flagsPart = preg_match('/:2,([^\s]+)$/', $basename, $flagsMatch) ? $flagsMatch[1] : '';
+                $seen = $folder === 'cur' && (
+                    str_contains(strtoupper($flagsPart), 'S')
+                    || str_contains($basename, ':2,S')
+                );
+                $candidates[] = [
+                    'file' => $file,
+                    'mtime' => filemtime($file),
+                    'in_cur' => $folder === 'cur',
+                    'seen' => $seen,
+                ];
+            }
+        }
+        if (empty($candidates)) {
+            Log::info('[lot-mailbox] getDealMessageStatus: no matching message', ['lot_id' => $lotId, 'path' => $path]);
+            return ['delivered' => false, 'read' => false];
+        }
+        usort($candidates, fn ($a, $b) => $b['mtime'] <=> $a['mtime']);
+        $latest = $candidates[0];
+        $read = $latest['in_cur'] && $latest['seen'];
+        Log::info('[lot-mailbox] getDealMessageStatus', [
+            'lot_id' => $lotId,
+            'path' => $path,
+            'file' => basename($latest['file']),
+            'in_cur' => $latest['in_cur'],
+            'seen' => $latest['seen'],
+            'read_result' => $read,
+        ]);
+        return [
+            'delivered' => true,
+            'read' => $read,
+        ];
+    }
+
+    /**
      * Try to delete mailbox when escrow token is removed. Non-blocking — failures are logged only.
      */
     public function deleteByToken(string $walletAddress, string $tokenHash, string $currency): bool
@@ -193,6 +278,16 @@ class LotMailboxService
         }
         // Fallback: treat as plain address (e.g. single string)
         return $this->sanitizeLocalPart($walletAddress);
+    }
+
+    /**
+     * Decode MIME encoded-word in headers (e.g. =?UTF-8?B?RGVhbCBtZXNzYWdl...?=).
+     * Used so we can find lotId in Subject when it is encoded.
+     */
+    private function decodeMimeHeader(string $value): string
+    {
+        $decoded = @iconv_mime_decode($value, ICONV_MIME_DECODE_CONTINUE_ON_ERROR, 'UTF-8');
+        return $decoded !== false ? $decoded : $value;
     }
 
     /**

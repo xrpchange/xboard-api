@@ -24,12 +24,12 @@ You should see one of:
 
 If you see "mail sent successfully", the failure is after Laravel (e.g. Postfix or delivery).
 
-## 2. Postfix logs (on server@xrpchange.site)
+## 2. Postfix logs (on mail server)
 
 SSH to the mail server and inspect Postfix:
 
 ```bash
-ssh server@xrpchange.site
+ssh root@xrpchange.site
 
 # Recent mail log (typical paths)
 sudo tail -200 /var/log/mail.log
