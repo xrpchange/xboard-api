@@ -113,6 +113,8 @@
 
 Настройки берутся из `config/services.php` → `lot_mailbox`.
 
+**Лимит размера ящика (10 МБ):** на почтовом сервере в Postfix задаётся `virtual_mailbox_limit = 10485760` (10 МБ). При превышении лимита доставка в ящик отклоняется. См. `scripts/email-server/configs/postfix-main.cf.example`.
+
 ---
 
 ## Клиент (xboard-client)

@@ -51,6 +51,9 @@ non_smtpd_milters = inet:localhost:8891
 # Message size limit (10MB)
 message_size_limit = 10485760
 
+# Per-mailbox size limit (10 MB) — virtual mailboxes (e.g. lot mailboxes)
+virtual_mailbox_limit = 10485760
+
 # Mailbox settings
 home_mailbox = Maildir/
 
