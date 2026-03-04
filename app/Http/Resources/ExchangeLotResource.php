@@ -28,6 +28,8 @@ class ExchangeLotResource extends JsonResource
             'node_domain' => $this->relationLoaded('node') ? ($this->node?->domain ?? null) : null,
             'from_currency' => $this->from_currency ?? '',
             'to_currency' => $this->to_currency ?? '',
+            'from_currency_type' => self::currencyTypeForLotSide($this, 'from'),
+            'to_currency_type' => self::currencyTypeForLotSide($this, 'to'),
             'sell_amount' => (float) $this->sell_amount,
             'buy_amount_min' => (float) $this->buy_amount_min,
             'buy_amount_max' => (float) $this->buy_amount_max,
@@ -53,6 +55,33 @@ class ExchangeLotResource extends JsonResource
             'created_at' => $this->created_at?->toISOString() ?? now()->toISOString(),
             'expires_at' => $this->expires_at?->toISOString() ?? '',
         ];
+    }
+
+    /**
+     * Currency type for amount formatting: "fiat" | "stablecoin" | "crypto".
+     * Fiat and stablecoin use 2 decimals; crypto uses 8.
+     */
+    private static function currencyTypeForLotSide($lot, string $side): string
+    {
+        if ($side === 'from') {
+            if ($lot->from_fiat_currency_id) {
+                return 'fiat';
+            }
+            if ($lot->relationLoaded('fromCryptoCurrency') && $lot->fromCryptoCurrency) {
+                return $lot->fromCryptoCurrency->is_native ? 'crypto' : 'stablecoin';
+            }
+            return 'crypto';
+        }
+        if ($lot->to_fiat_currency_id) {
+            return 'fiat';
+        }
+        if ($lot->relationLoaded('toCryptoCurrency') && $lot->toCryptoCurrency) {
+            return $lot->toCryptoCurrency->is_native ? 'crypto' : 'stablecoin';
+        }
+        if ($lot->relationLoaded('cryptoCurrency') && $lot->cryptoCurrency) {
+            return $lot->cryptoCurrency->is_native ? 'crypto' : 'stablecoin';
+        }
+        return 'crypto';
     }
 
     /**
