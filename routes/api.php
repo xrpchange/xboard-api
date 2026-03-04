@@ -115,6 +115,7 @@ Route::prefix('v1')->group(function () {
     Route::prefix('exchange-lots')->group(function () {
         Route::get('/', [ExchangeLotController::class, 'index']);
         Route::get('/{lot}/details', [ExchangeLotController::class, 'details']);
+        Route::get('/{lot}/deal-message-status', [ExchangeLotController::class, 'dealMessageStatus']);
         Route::get('/{lot}', [ExchangeLotController::class, 'show']);
     });
 

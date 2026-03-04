@@ -831,6 +831,37 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * Get deal message delivery/read status (IMAP/Maildir). Used by buyer after "Start deal" to show indicator.
+     *
+     * @OA\Get(
+     *     path="/exchange-lots/{lot}/deal-message-status",
+     *     summary="Deal message status (delivery/read)",
+     *     tags={"Exchange Lots"},
+     *     @OA\Response(response=200, description="delivered and read flags")
+     * )
+     */
+    public function dealMessageStatus(ExchangeLot $lot): \Illuminate\Http\JsonResponse
+    {
+        $lot->load(['cryptoCurrency']);
+        $currency = $lot->cryptoCurrency?->code ?? 'crypto';
+        $status = $this->lotMailboxService->getDealMessageStatus(
+            $lot->wallet_address ?? '',
+            $currency,
+            $lot->id
+        );
+        if ($status === null) {
+            return response()->json([
+                'success' => true,
+                'data' => ['delivered' => false, 'read' => false],
+            ]);
+        }
+        return response()->json([
+            'success' => true,
+            'data' => $status,
+        ]);
+    }
+
+    /**
      * Subject line for "deal message" email, localized to buyer's locale (so seller sees subject in buyer's language).
      */
     private function getDealMessageSubject(ExchangeLot $lot, string $buyerLocale): string
