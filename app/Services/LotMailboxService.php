@@ -317,8 +317,8 @@ class LotMailboxService
             return false;
         }
         $subject = 'Deal message — Lot #' . $lotId;
-        $body = "Buyer (sent):\n\n" . $messageText;
-        $raw = "Subject: " . $subject . "\n\n" . $body;
+        $body = $messageText;
+        $raw = "From: " . $buyerMailboxEmail . "\nSubject: " . $subject . "\n\n" . $body;
         $filename = $newDir . '/' . (string) (time() . '.' . gethostname() . '.' . getmypid() . '.eml');
         return (bool) @file_put_contents($filename, $raw);
     }

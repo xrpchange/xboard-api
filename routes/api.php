@@ -132,6 +132,16 @@ Route::prefix('v1')->group(function () {
     });
 });
 
+// Test-only: send to buyer (APP_ENV != production).
+if (!app()->environment('production')) {
+    Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)->group(function () {
+        Route::post('/test/send-to-buyer', [ExchangeLotController::class, 'testSendToBuyer']);
+    });
+    Route::prefix('v1')->group(function () {
+        Route::post('/test/send-to-buyer-by-email', [ExchangeLotController::class, 'testSendToBuyerByEmail']);
+    });
+}
+
 // Protected routes (with escrow token authentication)
 Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)->group(function () {
     // Exchange board

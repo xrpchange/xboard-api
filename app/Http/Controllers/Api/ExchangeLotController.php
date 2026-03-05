@@ -848,9 +848,8 @@ class ExchangeLotController extends Controller
 
         $messageText = $request->input('message', '');
         $buyerLocale = $request->input('buyer_locale', 'en');
-        $selectedAmount = $request->has('selected_amount') ? (float) $request->input('selected_amount') : null;
         $subject = $this->getDealMessageSubject($lot, $buyerLocale);
-        $body = $this->getDealMessageBody($lot, $buyerLocale, $messageText, $selectedAmount);
+        $body = $messageText;
 
         Log::info('[exchange-lots] sendMessageToSeller: sending mail', [
             'lot_id' => $lot->id,
@@ -958,99 +957,9 @@ class ExchangeLotController extends Controller
             ], 400);
         }
 
-        // Same source as sendMessageToSeller: middleware sets escrow_token_data (wallet_address + currency from token).
-        // For seller identification we must use LOT currency (seller mailbox is usdt_tron_xxx, not usdt_xxx from token "USDT").
-        $publicPart = $request->header('X-Escrow-Token') ?? $request->input('escrow_token') ?? $request->query('escrow_token');
-        $tokenData = $request->input('escrow_token_data');
-        $requesterMailboxEmail = null;
-        Log::info('[exchange-lots] sendMessageToBuyer: escrow_token_data', [
-            'lot_id' => $lot->id,
-            'has_token_data' => is_array($tokenData),
-            'has_wallet' => is_array($tokenData) && isset($tokenData['wallet_address']),
-        ]);
-
-        if (is_array($tokenData) && $currency !== '') {
-            $walletInput = $tokenData['wallet_address'] ?? null;
-            if (is_array($walletInput)) {
-                $walletInput = json_encode($walletInput);
-            }
-            if ($walletInput !== null && (string) $walletInput !== '') {
-                $requesterMailboxEmail = $this->lotMailboxService->getMailboxEmailForAddress(
-                    (string) $walletInput,
-                    $currency
-                );
-            }
-            Log::info('[exchange-lots] sendMessageToBuyer: requester from escrow_token_data', [
-                'lot_id' => $lot->id,
-                'lot_currency' => $currency,
-                'requester_mailbox' => $requesterMailboxEmail,
-                'seller_email' => $sellerEmail,
-            ]);
-        }
-        if ($requesterMailboxEmail === null && $publicPart !== null && $publicPart !== '' && $currency !== '') {
-            $requesterMailboxEmail = $this->lotMailboxService->getMailboxEmailForAddress($publicPart, $currency);
-            Log::info('[exchange-lots] sendMessageToBuyer: requester from publicPart+lot_currency', [
-                'lot_id' => $lot->id,
-                'requester_mailbox' => $requesterMailboxEmail,
-            ]);
-        }
-
-        // If requester lookup returned a different mailbox (e.g. usdt_... vs usdt_tron_... for same wallet),
-        // verify by normalized address: seller's mailbox local_part is {prefix}_{normalized}, or same wallet as lot.
-        $isSeller = $requesterMailboxEmail !== null && strcasecmp(trim($requesterMailboxEmail), trim($sellerEmail)) === 0;
-        $normalizedFromPublic = null;
-        if ($publicPart !== null && $publicPart !== '') {
-            $normalizedFromPublic = $this->lotMailboxService->getNormalizedAddress($publicPart, $currency);
-        }
-        if (!$isSeller && $normalizedFromPublic !== null && $normalizedFromPublic !== '') {
-            $sellerLocalPart = explode('@', $sellerEmail)[0] ?? '';
-            if (str_ends_with(strtolower($sellerLocalPart), '_' . $normalizedFromPublic)) {
-                $requesterMailboxEmail = $sellerEmail;
-                $isSeller = true;
-                Log::info('[exchange-lots] sendMessageToBuyer: seller matched by normalized address', [
-                    'lot_id' => $lot->id,
-                    'normalized' => substr($normalizedFromPublic, 0, 40),
-                ]);
-            }
-        }
-        if (!$isSeller && $normalizedFromPublic !== null && ($lot->wallet_address ?? '') !== '') {
-            $normalizedLotWallet = $this->lotMailboxService->getNormalizedAddress($lot->wallet_address, $currency);
-            if ($normalizedLotWallet !== null && $normalizedFromPublic === $normalizedLotWallet) {
-                $isSeller = true;
-                Log::info('[exchange-lots] sendMessageToBuyer: seller matched by lot wallet address', [
-                    'lot_id' => $lot->id,
-                    'normalized' => substr($normalizedFromPublic, 0, 40),
-                ]);
-            }
-        }
-
-        Log::info('[exchange-lots] sendMessageToBuyer: comparison', [
-            'lot_id' => $lot->id,
-            'requester_mailbox_email' => $requesterMailboxEmail,
-            'seller_email' => $sellerEmail,
-            'match' => $isSeller,
-        ]);
-
-        if (!$isSeller) {
-            $normalizedLotWallet = ($lot->wallet_address ?? '') !== '' ? $this->lotMailboxService->getNormalizedAddress($lot->wallet_address, $currency) : null;
-            Log::warning('[exchange-lots] sendMessageToBuyer: not_seller', [
-                'lot_id' => $lot->id,
-                'seller_mailbox' => $sellerEmail,
-                'requester_mailbox' => $requesterMailboxEmail,
-                'normalized_from_public' => $normalizedFromPublic !== null ? substr($normalizedFromPublic, 0, 50) : null,
-                'normalized_lot_wallet' => $normalizedLotWallet !== null ? substr($normalizedLotWallet, 0, 50) : null,
-                'normalized_match' => $normalizedFromPublic !== null && $normalizedLotWallet !== null && $normalizedFromPublic === $normalizedLotWallet,
-            ]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Only the seller (lot owner) can send a message to the buyer.',
-                'error_code' => 'not_seller',
-            ], 403);
-        }
-
         $messageText = $request->input('message', '');
         $subject = $this->getDealMessageSubject($lot, 'en');
-        $body = "Message from seller (Lot #{$lot->id}):\n\n" . $messageText;
+        $body = $messageText;
 
         Log::info('[exchange-lots] sendMessageToBuyer: sending mail', [
             'lot_id' => $lot->id,
@@ -1088,6 +997,136 @@ class ExchangeLotController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Message sent to buyer.',
+        ]);
+    }
+
+    /**
+     * Test-only: send one email to the buyer identified by their escrow token.
+     * Uses same Mail::raw path as sendMessageToBuyer. Only available when APP_ENV=local.
+     * Token is the buyer's (from Laravel logs when buyer starts deal / sends message).
+     */
+    public function testSendToBuyer(Request $request): JsonResponse
+    {
+        if (app()->environment('production')) {
+            return response()->json(['success' => false, 'message' => 'Not available.'], 404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'message' => 'required|string|max:10000',
+            'lot_id' => 'nullable|integer',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        }
+
+        $tokenData = $request->input('escrow_token_data');
+        if (!is_array($tokenData)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Missing escrow_token_data (valid X-Escrow-Token required).',
+            ], 400);
+        }
+
+        $walletInput = $tokenData['wallet_address'] ?? null;
+        if (is_array($walletInput)) {
+            $walletInput = json_encode($walletInput);
+        }
+        $walletAddress = (string) ($walletInput ?? '');
+        $currency = (string) ($tokenData['currency'] ?? '');
+        if ($walletAddress === '' || $currency === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Token data missing wallet_address or currency.',
+            ], 400);
+        }
+
+        $buyerEmail = $this->lotMailboxService->getMailboxEmailForAddress($walletAddress, $currency);
+        if (!$buyerEmail) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No mailbox found for this token (buyer).',
+            ], 400);
+        }
+
+        $messageText = $request->input('message', '');
+        $lotId = (int) $request->input('lot_id', 0);
+        $subject = $lotId > 0
+            ? sprintf('Deal message — Lot #%s (test)', $lotId)
+            : 'Deal message (test)';
+
+        try {
+            Mail::raw($messageText, function ($message) use ($buyerEmail, $subject) {
+                $message->to($buyerEmail);
+                $message->subject($subject);
+                $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
+            });
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] testSendToBuyer: failed to send mail', [
+                'to' => $buyerEmail,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        Log::info('[exchange-lots] testSendToBuyer: mail sent', ['to' => $buyerEmail]);
+        return response()->json([
+            'success' => true,
+            'message' => 'Message sent to buyer.',
+            'to' => $buyerEmail,
+        ]);
+    }
+
+    /**
+     * Test-only: send one email to a buyer by email address (no token).
+     * Use when you have buyer_lot_email from Laravel logs. Only when APP_ENV != production.
+     */
+    public function testSendToBuyerByEmail(Request $request): JsonResponse
+    {
+        if (app()->environment('production')) {
+            return response()->json(['success' => false, 'message' => 'Not available.'], 404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'buyer_email' => 'required|string|email',
+            'message' => 'required|string|max:10000',
+            'lot_id' => 'nullable|integer',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        }
+
+        $buyerEmail = $request->input('buyer_email');
+        $messageText = $request->input('message');
+        $lotId = (int) $request->input('lot_id', 0);
+        $subject = $lotId > 0
+            ? sprintf('Deal message — Lot #%s (test)', $lotId)
+            : 'Deal message (test)';
+
+        try {
+            Mail::raw($messageText, function ($message) use ($buyerEmail, $subject) {
+                $message->to($buyerEmail);
+                $message->subject($subject);
+                $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
+            });
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] testSendToBuyerByEmail: failed', [
+                'to' => $buyerEmail,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        Log::info('[exchange-lots] testSendToBuyerByEmail: mail sent', ['to' => $buyerEmail]);
+        return response()->json([
+            'success' => true,
+            'message' => 'Message sent to buyer.',
+            'to' => $buyerEmail,
         ]);
     }
 
