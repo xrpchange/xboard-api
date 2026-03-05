@@ -147,6 +147,23 @@ class LotMailboxService
         $normalizedAddress = $this->normalizeAddress($walletAddress, $currency);
         $localPart = $normalizedAddress !== null ? $this->buildLocalPart($currency, $normalizedAddress) : null;
         $mailbox = $localPart !== null ? LotMailbox::where('local_part', $localPart)->where('domain', $this->domain)->first() : null;
+
+        // Fallback: mailbox may have been created with a different currency prefix (e.g. usdt_tron vs usdt).
+        // Find any mailbox whose local_part ends with _normalizedAddress; prefer one matching $currency.
+        if ($mailbox === null && $normalizedAddress !== null && $normalizedAddress !== '') {
+            $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $normalizedAddress);
+            $candidates = LotMailbox::where('domain', $this->domain)
+                ->where('local_part', 'like', '%\_' . $escaped)
+                ->get();
+            if ($candidates->count() === 1) {
+                $mailbox = $candidates->first();
+            } elseif ($candidates->count() > 1) {
+                $currencyPrefix = preg_replace('/[^a-z0-9_]/', '', strtolower($currency)) ?: 'crypto';
+                $preferred = $candidates->first(fn ($m) => str_starts_with(strtolower($m->local_part), $currencyPrefix . '_'));
+                $mailbox = $preferred ?? $candidates->first();
+            }
+        }
+
         $email = $mailbox ? $mailbox->email : null;
 
         Log::info('[lot-mailbox] getMailboxEmailForAddress', [
@@ -159,6 +176,15 @@ class LotMailboxService
         ]);
 
         return $email;
+    }
+
+    /**
+     * Get normalized address for a wallet (same logic as mailbox lookup).
+     * Used to compare requester token with seller mailbox when currency prefix may differ.
+     */
+    public function getNormalizedAddress(string $walletAddress, string $currency): ?string
+    {
+        return $this->normalizeAddress($walletAddress, $currency);
     }
 
     /**
