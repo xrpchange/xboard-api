@@ -305,6 +305,7 @@ class LotMailboxService
 
     /**
      * Write a copy of a buyer-sent message into the buyer's Maildir so they see it in their deal thread.
+     * Subject MUST include lot number so the client can open the right lot from a notification.
      */
     public function writeBuyerSentCopyToMailbox(string $buyerMailboxEmail, string $lotId, string $messageText): bool
     {
