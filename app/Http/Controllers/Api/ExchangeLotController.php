@@ -467,6 +467,10 @@ class ExchangeLotController extends Controller
                     'lot_id' => $lot->id,
                     'email' => $mailbox['email'] ?? null,
                 ]);
+                $sellerEmail = $mailbox['email'] ?? null;
+                if ($sellerEmail !== null && $sellerEmail !== '') {
+                    $lot->update(['seller_lot_email' => $sellerEmail]);
+                }
             } else {
                 Log::debug('[exchange-lots] Lot mailbox not created (normalize failed or disabled)', ['lot_id' => $lot->id]);
             }
@@ -754,6 +758,14 @@ class ExchangeLotController extends Controller
         $lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency', 'banks']);
         $currency = $lot->cryptoCurrency?->code ?? 'crypto';
         $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $currency);
+        // Fallback for exported/imported lots: use DB field when mailbox lookup fails (e.g. lot_mailboxes not imported)
+        if (!$sellerEmail && !empty($lot->seller_lot_email)) {
+            $sellerEmail = (string) $lot->seller_lot_email;
+            Log::info('[exchange-lots] sendMessageToSeller: using seller_lot_email from DB (mailbox lookup had no match)', [
+                'lot_id' => $lot->id,
+                'seller_lot_email' => $sellerEmail,
+            ]);
+        }
 
         Log::info('[exchange-lots] sendMessageToSeller: attempt', [
             'lot_id' => $lot->id,
@@ -938,6 +950,9 @@ class ExchangeLotController extends Controller
         ]);
 
         $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $currency);
+        if (!$sellerEmail && !empty($lot->seller_lot_email)) {
+            $sellerEmail = (string) $lot->seller_lot_email;
+        }
 
         if (!$sellerEmail) {
             Log::warning('[exchange-lots] sendMessageToBuyer: no_seller_mailbox', ['lot_id' => $lot->id]);
@@ -1156,6 +1171,7 @@ class ExchangeLotController extends Controller
 
     /**
      * Subject line for "deal message" email, localized to buyer's locale (so seller sees subject in buyer's language).
+     * MUST include lot number (id) in subject so the client can parse it when opening from notification (e.g. IDLE).
      */
     private function getDealMessageSubject(ExchangeLot $lot, string $buyerLocale): string
     {
@@ -1170,7 +1186,7 @@ class ExchangeLotController extends Controller
             'en' => 'Deal message — Lot #%s',
         ];
         $template = $templates[$locale] ?? $templates['en'];
-        return sprintf($template, $lot->id);
+        return sprintf($template, (string) $lot->id);
     }
 
     /**

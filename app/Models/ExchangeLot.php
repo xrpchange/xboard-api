@@ -48,6 +48,7 @@ class ExchangeLot extends Model
         'note',
         'seller_locale',
         'buyer_lot_email',
+        'seller_lot_email',
         'aml',
         'expires_at',
     ];
