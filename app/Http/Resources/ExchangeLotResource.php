@@ -51,6 +51,7 @@ class ExchangeLotResource extends JsonResource
             'note' => $this->note ?? '',
             'seller_locale' => $this->seller_locale ?? '',
             'buyer_lot_email' => $this->buyer_lot_email ? (string) $this->buyer_lot_email : null,
+            'seller_lot_email' => $this->seller_lot_email ? (string) $this->seller_lot_email : null,
             'payment_purpose' => $this->payment_purpose ?? '',
             'aml' => $this->aml !== null ? (int) $this->aml : null,
             'created_at' => $this->created_at?->toISOString() ?? now()->toISOString(),
