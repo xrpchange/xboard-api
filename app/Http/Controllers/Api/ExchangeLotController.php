@@ -812,12 +812,17 @@ class ExchangeLotController extends Controller
         // Also ensure buyer's mailbox exists; return mailbox config so client can read messages via IMAP
         $buyerMailboxConfig = null;
         if ($messageType === 'start_deal' && $requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
+            $updateData = ['buyer_lot_email' => $requesterMailboxEmail];
+            $selectedAmount = $request->input('selected_amount');
+            if (is_numeric($selectedAmount) && (float) $selectedAmount > 0) {
+                $updateData['buyer_selected_amount'] = (float) $selectedAmount;
+            }
             $updated = DB::table('exchange_lots')
                 ->where('id', $lot->id)
                 ->where(function ($q) {
                     $q->whereNull('buyer_lot_email')->orWhere('buyer_lot_email', '');
                 })
-                ->update(['buyer_lot_email' => $requesterMailboxEmail]);
+                ->update($updateData);
             if ($updated === 0) {
                 Log::warning('[exchange-lots] sendMessageToSeller: lot already has buyer', ['lot_id' => $lot->id]);
                 return response()->json([
