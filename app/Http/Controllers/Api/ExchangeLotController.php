@@ -674,6 +674,15 @@ class ExchangeLotController extends Controller
      */
     public function destroy(ExchangeLot $lot): JsonResponse
     {
+        $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($buyerEmail !== '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot delete lot: a buyer has started a deal on this lot. Wait for the deal to end or for the buyer to exit.',
+                'error_code' => 'lot_has_active_deal',
+            ], 422);
+        }
+
         $lot->delete();
 
         return response()->json([
@@ -935,6 +944,7 @@ class ExchangeLotController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'message' => 'required|string|max:10000',
+            'message_type' => 'nullable|string|in:seller_exited',
         ]);
 
         if ($validator->fails()) {
@@ -944,6 +954,7 @@ class ExchangeLotController extends Controller
             ], 422);
         }
 
+        $messageType = $request->input('message_type');
         $lot->load(['cryptoCurrency']);
         $currency = $lot->cryptoCurrency?->code ?? 'crypto';
 
@@ -980,6 +991,14 @@ class ExchangeLotController extends Controller
         $messageText = $request->input('message', '');
         $subject = $this->getDealMessageSubject($lot, 'en');
         $body = $messageText;
+
+        // seller_exited: send notification to buyer then clear buyer_lot_email so the lot can accept new deals
+        if ($messageType === 'seller_exited') {
+            DB::table('exchange_lots')
+                ->where('id', $lot->id)
+                ->update(['buyer_lot_email' => null]);
+            Log::info('[exchange-lots] sendMessageToBuyer: buyer_lot_email cleared (seller_exited)', ['lot_id' => $lot->id]);
+        }
 
         Log::info('[exchange-lots] sendMessageToBuyer: sending mail', [
             'lot_id' => $lot->id,
