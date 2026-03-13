@@ -8,6 +8,7 @@ use App\Models\Country;
 use App\Models\CryptoCurrency;
 use App\Models\ExchangeLot;
 use App\Models\FiatCurrency;
+use App\Models\Transaction;
 use App\Services\EscrowTokenValidationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -1036,6 +1037,153 @@ class ExchangeLotController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Message sent to buyer.',
+        ]);
+    }
+
+    /**
+     * Create a deal transaction and send payment details email to the buyer (seller only).
+     * Subject is human-readable; structured tag is in X-XBoard-Deal-Tag header (JSON).
+     * See docs/DEAL_EMAIL_SUBJECT_TAG.md.
+     *
+     * @OA\Post(
+     *     path="/exchange-lots/{lot}/send-payment-details",
+     *     summary="Send payment details to buyer (seller only)",
+     *     tags={"Exchange Lots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\RequestBody(required=true, @OA\JsonContent(
+     *         required={"payment_type"},
+     *         @OA\Property(property="payment_type", type="string", enum={"crypto","bank"}),
+     *         @OA\Property(property="address", type="string", description="Crypto address (when payment_type=crypto)"),
+     *         @OA\Property(property="crypto_type", type="string", description="e.g. xmr, xrp (when payment_type=crypto)"),
+     *         @OA\Property(property="bank_swift", type="string", description="Bank SWIFT (when payment_type=bank, preferred)"),
+     *         @OA\Property(property="bank_id", type="integer", description="Bank id (when payment_type=bank)"),
+     *         @OA\Property(property="bank_data", type="string", description="Free-form transfer details (card, phone, etc.)")
+     *     )),
+     *     @OA\Response(response=200, description="Transaction created, email sent"),
+     *     @OA\Response(response=400, description="No buyer / validation error"),
+     *     @OA\Response(response=401, description="Unauthorized")
+     * )
+     */
+    public function sendPaymentDetails(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'payment_type' => 'required|string|in:crypto,bank',
+            'address' => 'required_if:payment_type,crypto|nullable|string|max:500',
+            'crypto_type' => 'required_if:payment_type,crypto|nullable|string|max:30',
+            'bank_swift' => 'nullable|string|max:20',
+            'bank_id' => 'nullable|integer|exists:banks,id',
+            'bank_data' => 'nullable|string|max:5000',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $paymentType = $request->input('payment_type');
+        if ($paymentType === 'bank' && !$request->filled('bank_swift') && !$request->filled('bank_id')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'For bank payment provide bank_swift or bank_id.',
+                'error_code' => 'validation_error',
+            ], 422);
+        }
+
+        $lot->load(['cryptoCurrency', 'bank']);
+        $currency = $lot->cryptoCurrency?->code ?? 'crypto';
+        $buyerEmail = $lot->buyer_lot_email;
+        if (empty($buyerEmail)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No buyer in deal for this lot.',
+                'error_code' => 'no_buyer_in_deal',
+            ], 400);
+        }
+
+        $amount = $lot->buyer_selected_amount > 0
+            ? (float) $lot->buyer_selected_amount
+            : (float) $lot->sell_amount;
+
+        $txHash = 'pd-' . $lot->id . '-' . now()->format('YmdHis') . '-' . bin2hex(random_bytes(4));
+        $txHash = substr($txHash, 0, 64);
+
+        $transaction = Transaction::create([
+            'tx_hash' => $txHash,
+            'tx_type' => 'sale',
+            'from_address' => 'buyer',
+            'to_address' => 'seller',
+            'amount' => $amount,
+            'exchange_lot_id' => $lot->id,
+            'status' => 'pending',
+            'is_test' => (bool) $lot->is_test,
+            'test_group' => $lot->test_group,
+        ]);
+
+        $tag = [
+            't' => 'payment_details',
+            'lot_id' => (int) $lot->id,
+            'tx_id' => (int) $transaction->id,
+        ];
+        if ($paymentType === 'crypto') {
+            $tag['crypto'] = trim((string) $request->input('crypto_type', ''));
+            $tag['address'] = trim((string) $request->input('address', ''));
+        } else {
+            if ($request->filled('bank_swift')) {
+                $tag['bank_swift'] = trim((string) $request->bank_swift);
+            }
+            if ($request->filled('bank_id')) {
+                $tag['bank_id'] = (int) $request->bank_id;
+            }
+            if ($request->filled('bank_data')) {
+                $tag['bank_data'] = trim((string) $request->bank_data);
+            }
+        }
+        $tagJson = json_encode($tag, JSON_UNESCAPED_UNICODE);
+
+        $subject = 'Payment details — Lot #' . $lot->id;
+        $bodyLines = [
+            'Payment details for Lot #' . $lot->id . '.',
+            '',
+            $paymentType === 'crypto'
+                ? ('Send ' . $amount . ' ' . ($tag['crypto'] ?? '') . ' to address: ' . ($tag['address'] ?? ''))
+                : ('Bank transfer details (Lot #' . $lot->id . ').'),
+            '',
+            $request->input('message', '') ?: 'See details above.',
+        ];
+        $body = implode("\n", $bodyLines);
+
+        Log::info('[exchange-lots] sendPaymentDetails: sending mail', [
+            'lot_id' => $lot->id,
+            'transaction_id' => $transaction->id,
+            'to' => $buyerEmail,
+            'payment_type' => $paymentType,
+        ]);
+
+        try {
+            Mail::raw($body, function ($message) use ($buyerEmail, $subject, $tagJson) {
+                $message->to($buyerEmail);
+                $message->subject($subject);
+                $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
+                $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
+            });
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] sendPaymentDetails: failed to send mail', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send email: ' . $e->getMessage(),
+                'error_code' => 'mail_failed',
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payment details sent to buyer.',
+            'transaction_id' => $transaction->id,
         ]);
     }
 
