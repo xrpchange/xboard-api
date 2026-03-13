@@ -161,6 +161,18 @@ class ExchangeLot extends Model
         return $this->hasMany(Transaction::class);
     }
 
+    /**
+     * Sum of completed sale amounts for this lot (from transactions table).
+     * Use for "sold amount" / "remaining = sell_amount - sold_amount".
+     */
+    public function getSoldAmountAttribute(): float
+    {
+        return (float) $this->transactions()
+            ->where('tx_type', 'sale')
+            ->where('status', 'completed')
+            ->sum('amount');
+    }
+
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
