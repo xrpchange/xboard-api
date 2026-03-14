@@ -1598,8 +1598,13 @@ class ExchangeLotController extends Controller
         if (!$isSeller && !$isBuyer) {
             return response()->json(['success' => false, 'message' => 'Not authorized to read this chat.'], 403);
         }
-        $messages = DealChatMessage::where('exchange_lot_id', $lot->id)
-            ->orderBy('created_at')
+        $query = DealChatMessage::where('exchange_lot_id', $lot->id);
+        if ($isSeller) {
+            $query->whereNull('deleted_by_seller_at');
+        } else {
+            $query->whereNull('deleted_by_buyer_at');
+        }
+        $messages = $query->orderBy('created_at')
             ->get()
             ->map(fn (DealChatMessage $m) => [
                 'id' => $m->id,
@@ -1612,8 +1617,9 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * Mark all chat messages for the lot as cleared (soft delete). Call when user clears mailbox.
-     * Chat is not physically deleted; records get deleted_at set.
+     * Mark chat messages as cleared for this requester only (per-side soft delete).
+     * Seller clearing sets deleted_by_seller_at (messages hidden only for seller).
+     * Buyer clearing sets deleted_by_buyer_at (messages hidden only for buyer).
      */
     public function markChatCleared(Request $request, ExchangeLot $lot): JsonResponse
     {
@@ -1629,9 +1635,9 @@ class ExchangeLotController extends Controller
         if (!$isSeller && !$isBuyer) {
             return response()->json(['success' => false, 'message' => 'Not authorized to clear this chat.'], 403);
         }
-        // Soft delete: sets deleted_at (DealChatMessage uses SoftDeletes). GET chat-messages excludes deleted_at IS NOT NULL.
-        $count = DealChatMessage::where('exchange_lot_id', $lot->id)->delete();
-        Log::info('[exchange-lots] markChatCleared', ['lot_id' => $lot->id, 'soft_deleted' => $count]);
+        $column = $isSeller ? 'deleted_by_seller_at' : 'deleted_by_buyer_at';
+        $count = DealChatMessage::where('exchange_lot_id', $lot->id)->whereNull($column)->update([$column => now()]);
+        Log::info('[exchange-lots] markChatCleared', ['lot_id' => $lot->id, 'by' => $isSeller ? 'seller' : 'buyer', 'count' => $count]);
         return response()->json(['success' => true, 'message' => 'Chat marked as cleared.', 'count' => $count]);
     }
 

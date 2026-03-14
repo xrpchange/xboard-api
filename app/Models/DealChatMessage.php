@@ -4,17 +4,15 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Deal chat message. Written when API sends deal-related email (mail as event).
  * Client reads from this table for dialog; X-XBoard-Deal-Tag stored in deal_tag.
- * When mailbox is cleared, records are soft-deleted (deleted_at set), not removed.
+ * Clearing is per-side: seller clearing sets deleted_by_seller_at (hidden only for seller);
+ * buyer clearing sets deleted_by_buyer_at (hidden only for buyer).
  */
 class DealChatMessage extends Model
 {
-    use SoftDeletes;
-
     protected $fillable = [
         'exchange_lot_id',
         'sender_side',
@@ -22,6 +20,11 @@ class DealChatMessage extends Model
         'to_email',
         'body',
         'deal_tag',
+    ];
+
+    protected $casts = [
+        'deleted_by_seller_at' => 'datetime',
+        'deleted_by_buyer_at' => 'datetime',
     ];
 
     public function exchangeLot(): BelongsTo

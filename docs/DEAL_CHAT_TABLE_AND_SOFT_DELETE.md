@@ -1,4 +1,4 @@
-# Deal chat table and soft delete (clearing mailbox)
+# Deal chat table and per-side soft delete (clearing mailbox)
 
 **Status:** Implemented (API + client).  
 **Related:** `docs/LOT_MAILBOX_AND_IMAP_CHAT.md`, `docs/DEAL_EMAIL_SUBJECT_TAG.md`.
@@ -9,7 +9,7 @@
 
 Deal messages between buyer and seller are stored in the API database in the **`deal_chat_messages`** table. The API writes a row whenever it sends a deal-related email (send message to seller/buyer, payment details). The client can read the chat from this table (e.g. on opening the deal screen) and use IMAP as an event source for real-time updates.
 
-When the user **clears the mailbox** (deletes all messages in the deal mailbox via the client), the chat is **not** physically deleted. Records are only **marked as deleted** by setting **`deleted_at`** (soft delete). Deleted = `deleted_at IS NOT NULL`; non-deleted = `deleted_at IS NULL`. This keeps history for support/audit and allows restoring or inspecting cleared chats if needed.
+When the user **clears the mailbox** (deletes all messages in the deal mailbox via the client), the chat is **not** physically deleted. Records are **marked as cleared per side**: **`deleted_by_seller_at`** and **`deleted_by_buyer_at`**. When the **seller** clears, only `deleted_by_seller_at` is set — messages disappear only for the seller; the buyer still sees them. When the **buyer** clears, only `deleted_by_buyer_at` is set — messages disappear only for the buyer; the seller still sees them. This keeps history for support/audit and allows each side to clear their own view independently.
 
 ---
 
@@ -26,10 +26,10 @@ When the user **clears the mailbox** (deletes all messages in the deal mailbox v
 | `deal_tag`        | text         | X-XBoard-Deal-Tag header value (JSON), e.g. `start_deal`, `buyer_exited`, `payment_details`. |
 | `created_at`      | timestamp    | When the message was created. |
 | `updated_at`      | timestamp    | Last update. |
-| **`deleted_at`**  | timestamp    | **Nullable.** Set when chat is “cleared”; record is then excluded from normal queries (soft delete). Deleted = `deleted_at IS NOT NULL`; non-deleted = `deleted_at IS NULL`. |
+| **`deleted_at`**  | timestamp    | **Nullable.** Set when chat is “cleared”; (Legacy; unused.) Previously used for global soft delete. |
 
 - Index: `(exchange_lot_id, created_at)` for listing messages by lot.
-- Model: `App\Models\DealChatMessage` with `SoftDeletes` trait.
+- Model: `App\Models\DealChatMessage` (no `SoftDeletes`; filtering uses the two per-side columns).
 
 ---
 
@@ -45,12 +45,12 @@ Each insert uses the same `body`, `deal_tag`, and sender/recipient as the sent e
 
 ---
 
-## Soft delete (clearing mailbox)
+## Per-side soft delete (clearing mailbox)
 
-- **Behaviour:** When the user clears the deal mailbox in the client, the client calls **`POST /v1/exchange-lots/{lot}/mark-chat-cleared`**. The API does **not** delete rows from `deal_chat_messages`. It only sets **`deleted_at`** on all messages for that lot (Laravel soft delete: `DealChatMessage::where('exchange_lot_id', $lot->id)->delete()`).
+- **Behaviour:** When the user clears the deal mailbox in the client, the client calls **`POST /v1/exchange-lots/{lot}/mark-chat-cleared`**. The API sets **`deleted_by_seller_at`** (if requester is seller) or **`deleted_by_buyer_at`** (if buyer) on all messages for that lot. The other side's view is unchanged.
 - **Auth:** Requester must be seller or buyer for this lot (validated via escrow token: `wallet_address` for seller, `token_hash` vs `buyer_escrow_token_hash` for buyer). Returns 403 if not authorized.
-- **Response:** `{ "success": true, "message": "Chat marked as cleared.", "count": N }` where `N` is the number of rows soft-deleted.
-- **Reading chat:** `GET /v1/exchange-lots/{lot}/chat-messages` returns only rows where `deleted_at` is null (Laravel’s default scope for soft-deleted models). So after “clear mailbox”, the chat list is empty for that lot until new messages are sent.
+- **Response:** `{ "success": true, "message": "Chat marked as cleared.", "count": N }` where `N` is the number of rows updated.
+- **Reading chat:** `GET /v1/exchange-lots/{lot}/chat-messages` returns only rows where **`deleted_by_seller_at` IS NULL** (seller) or **`deleted_by_buyer_at` IS NULL** (buyer) (Laravel’s default scope for soft-deleted models). So after “clear mailbox”, the chat list is empty for that lot until new messages are sent.
 
 ---
 
@@ -58,8 +58,8 @@ Each insert uses the same `body`, `deal_tag`, and sender/recipient as the sent e
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET    | `/v1/exchange-lots/{lot}/chat-messages` | List deal chat messages for the lot (excluding soft-deleted). Requires escrow token (seller or buyer). |
-| POST   | `/v1/exchange-lots/{lot}/mark-chat-cleared` | Mark all chat messages for the lot as cleared (set `deleted_at`). Call when user clears mailbox. Same auth as above. |
+| GET    | `/v1/exchange-lots/{lot}/chat-messages` | List deal chat messages for the lot (excluding rows cleared by this side: seller sees where `deleted_by_seller_at` IS NULL, buyer where `deleted_by_buyer_at` IS NULL). Requires escrow token (seller or buyer). |
+| POST   | `/v1/exchange-lots/{lot}/mark-chat-cleared` | Mark all chat messages as cleared **for this requester only** (set `deleted_by_seller_at` or `deleted_by_buyer_at`). Call when user clears mailbox. Same auth as above. |
 
 Both require the `ValidateEscrowToken` middleware and a valid escrow token for the requesting side (seller or buyer for that lot).
 
@@ -73,13 +73,13 @@ Both require the `ValidateEscrowToken` middleware and a valid escrow token for t
   2. Then it runs **`deleteAllMessagesInMailboxInbox(mb)`** (IMAP delete).
   3. Then it reloads messages (e.g. `loadMessages()`).
 
-So the server marks the chat as cleared (soft delete) when the user clears the mailbox; the client does not delete chat rows on the server, only triggers the mark.
+So the server marks the chat as cleared **for that side only** when the user clears the mailbox; the client does not delete chat rows on the server, only triggers the mark.
 
 ---
 
-## Migration
+## Migrations
 
-Migration: `database/migrations/2026_03_14_000001_create_deal_chat_messages_table.php`.  
-Creates the table including `$table->softDeletes()` for `deleted_at`.
+- **Create table:** `database/migrations/2026_03_14_000001_create_deal_chat_messages_table.php` — creates the table (including legacy `deleted_at` from `softDeletes()`).
+- **Per-side columns:** `database/migrations/2026_03_15_000001_add_deleted_by_seller_buyer_to_deal_chat_messages.php` — adds `deleted_by_seller_at` and `deleted_by_buyer_at`.
 
-Run: `php artisan migrate` (or migrate that file specifically).
+Run: `php artisan migrate`.
