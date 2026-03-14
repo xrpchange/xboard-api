@@ -1131,12 +1131,14 @@ class ExchangeLotController extends Controller
         }
         if ($sellerEmail) {
             try {
+                $tagJson = json_encode(['t' => 'buyer_exited', 'lot_id' => $lot->id]);
                 Mail::raw(
                     'The buyer has left the deal for Lot #' . $lot->id . '.',
-                    function ($message) use ($sellerEmail, $lot) {
+                    function ($message) use ($sellerEmail, $lot, $tagJson) {
                         $message->to($sellerEmail);
                         $message->subject('Buyer left the deal — Lot #' . $lot->id);
                         $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
+                        $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
                     }
                 );
             } catch (\Throwable $e) {

@@ -36,8 +36,9 @@ Other server-set fields may be added (e.g. `amount`, `currency`) in the same JSO
 | Value               | Description |
 |---------------------|-------------|
 | `payment_details`   | Seller sent payment instructions: either crypto address or bank + bank_data. Buyer uses this to pay and can call Core `reservation-by-transaction` with `tx_id`, `crypto`, `address` when checking reservation. |
+| `buyer_exited`      | Buyer cancelled the deal (e.g. via buyer-cancel-deal). Email is sent **to the seller**. Tag includes `lot_id`. The seller app, when it sees a message with this tag in the deal mailbox, unblocks the "Exit deal" button so the seller can close the deal. |
 
-Future types (e.g. one or two more) can be added without changing the format.
+Other types may be added without changing the format.
 
 ---
 
@@ -56,6 +57,11 @@ Future types (e.g. one or two more) can be added without changing the format.
 **Fiat (bank_id when swift not used):**
 ```json
 {"t":"payment_details","lot_id":42,"tx_id":103,"bank_id":5,"bank_data":"Full account details..."}
+```
+
+**Buyer exited (email to seller):**
+```json
+{"t":"buyer_exited","lot_id":42}
 ```
 
 ---
