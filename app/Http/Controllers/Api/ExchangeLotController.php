@@ -1161,8 +1161,7 @@ class ExchangeLotController extends Controller
         }
 
         $transactions = Transaction::where('exchange_lot_id', $lot->id)->where('buyer_lot_email', $lot->buyer_lot_email)->get();
-        $coreUrl = $this->getCoreApiUrl();
-        $coreKey = $this->getCoreApiKey();
+        [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($escrowToken);
         $timeout = (int) config('services.core.timeout', 10);
         $cryptoType = $lot->cryptoCurrency?->code ?? 'xmr';
 
@@ -1304,6 +1303,45 @@ class ExchangeLotController extends Controller
             ? (float) $lot->buyer_selected_amount
             : (float) $lot->sell_amount;
 
+        $sellerEscrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+
+        // First create reservation in Core (reserves amount on escrow token). Server error (e.g. insufficient balance) is returned to client.
+        // Use Core URL from token environment (EscrowTokenValidationService) so sandbox/prod and salt match token creation.
+        if (!empty($sellerEscrowToken) && is_string($sellerEscrowToken)) {
+            [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
+            $timeout = (int) config('services.core.timeout', 10);
+            $req = Http::timeout($timeout);
+            if ($coreKey !== '') {
+                $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+            }
+            $reservationPayload = [
+                'exchange_lot_id' => $lot->id,
+                'reserved_amount' => $amount,
+                'escrow_token' => $sellerEscrowToken,
+                'crypto_type' => $currency,
+                'is_legal_entity' => false,
+            ];
+            if (!empty($lot->buyer_escrow_token_hash)) {
+                $reservationPayload['buyer_escrow_token_hash'] = $lot->buyer_escrow_token_hash;
+            }
+            $reservationResponse = $req->asJson()->post($coreUrl . '/api/reservations', $reservationPayload);
+            if (!$reservationResponse->successful()) {
+                $body = $reservationResponse->json();
+                $message = is_array($body) && isset($body['message']) ? (string) $body['message'] : $reservationResponse->body();
+                $errorCode = is_array($body) && isset($body['error_code']) ? (string) $body['error_code'] : 'reservation_failed';
+                Log::warning('[exchange-lots] sendPaymentDetails: Core reservation failed', [
+                    'lot_id' => $lot->id,
+                    'status' => $reservationResponse->status(),
+                    'message' => $message,
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'error_code' => $errorCode,
+                ], $reservationResponse->status() >= 500 ? 502 : $reservationResponse->status());
+            }
+        }
+
         $txHash = 'pd-' . $lot->id . '-' . now()->format('YmdHis') . '-' . bin2hex(random_bytes(4));
         $txHash = substr($txHash, 0, 64);
 
@@ -1327,11 +1365,9 @@ class ExchangeLotController extends Controller
             'test_group' => $lot->test_group,
         ]);
 
-        $sellerEscrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
         if (!empty($sellerEscrowToken) && is_string($sellerEscrowToken)) {
             try {
-                $coreUrl = $this->getCoreApiUrl();
-                $coreKey = $this->getCoreApiKey();
+                [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
                 $timeout = (int) config('services.core.timeout', 10);
                 $req = Http::timeout($timeout);
                 if ($coreKey !== '') {
@@ -1614,6 +1650,41 @@ class ExchangeLotController extends Controller
                 'deal_tag' => $m->deal_tag,
             ]);
         return response()->json(['success' => true, 'messages' => $messages]);
+    }
+
+    /**
+     * Get deal message delivery/read status for the buyer: has the seller received and read the start_deal message?
+     * API scans seller's Maildir (wallet_address from lot). Buyer polls this to show "Delivering / Delivered / Read".
+     * Requester must be seller or buyer (same auth as chatMessages).
+     */
+    public function dealMessageStatus(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        $tokenData = $request->input('escrow_token_data', []);
+        $requesterWallet = is_array($tokenData) ? ($tokenData['wallet_address'] ?? '') : '';
+        $tokenHash = is_array($tokenData) && isset($tokenData['token_hash']) ? trim((string) $tokenData['token_hash']) : '';
+        $lot->load(['cryptoCurrency']);
+        $lotWalletRaw = $lot->wallet_address !== null ? (json_decode((string) $lot->wallet_address, true)['wallet_address'] ?? $lot->wallet_address) : null;
+        $requesterWalletStr = $this->normalizeWalletAddressForComparison($requesterWallet);
+        $lotWalletStr = $lotWalletRaw !== null ? $this->normalizeWalletAddressForComparison($lotWalletRaw) : '';
+        $isSeller = $requesterWalletStr !== '' && $lotWalletStr !== '' && hash_equals($lotWalletStr, $requesterWalletStr);
+        $isBuyer = $tokenHash !== '' && $lot->buyer_escrow_token_hash !== null && strcasecmp(trim((string) $lot->buyer_escrow_token_hash), $tokenHash) === 0;
+        if (!$isSeller && !$isBuyer) {
+            return response()->json(['success' => false, 'message' => 'Not authorized.'], 403);
+        }
+        $walletAddress = (string) ($lot->wallet_address ?? '');
+        $currency = $lot->cryptoCurrency?->code ?? 'crypto';
+        if ($walletAddress === '') {
+            return response()->json(['success' => true, 'delivered' => false, 'read' => false]);
+        }
+        $status = $this->lotMailboxService->getDealMessageStatus($walletAddress, $currency, (string) $lot->id);
+        if ($status === null) {
+            return response()->json(['success' => true, 'delivered' => false, 'read' => false]);
+        }
+        return response()->json([
+            'success' => true,
+            'delivered' => (bool) ($status['delivered'] ?? false),
+            'read' => (bool) ($status['read'] ?? false),
+        ]);
     }
 
     /**

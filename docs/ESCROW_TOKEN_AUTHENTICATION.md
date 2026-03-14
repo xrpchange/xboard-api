@@ -124,6 +124,25 @@ Route::middleware(['escrow.token'])->group(function () {
    - `last_used_at` is updated on every use
    - **Note:** Once token is validated and added to cache, it remains valid forever (no re-validation needed)
 
+## Calling Core API: URL by token environment
+
+**Rule:** When the API calls Core for an operation that involves an escrow token, it must use the **Core URL for the token’s environment** (sandbox or production), not the request host. Otherwise the token’s `token_hash` was computed with one Core’s salt and would fail validation on another.
+
+- **Token field:** The escrow token (public part) contains `environment`: `"sandbox"`, `"production"`, or `"prod"`.
+- **Service:** `EscrowTokenValidationService::getCoreUrlAndKeyForToken(string $escrowToken): array` returns `[coreUrl, coreKey]` from the token’s environment (same logic as validation).
+- **Config:** `environment === 'production'` (or `'prod'`) → `config('services.core_production.url')` and `.key`; otherwise → `config('services.core.url')` and `.key`. Fallback URLs if config is empty: `https://api.core.xdexboard.com` / `https://sandbox.api.core.xdexboard.com`.
+
+**Where this is used in the API:**
+
+| Operation | Controller / flow | Core endpoint |
+|-----------|-------------------|----------------|
+| Validate token | `EscrowTokenValidationService::validateViaCoreApi` | `POST /api/escrow-tokens/validate` |
+| Create reservation | `ExchangeLotController::sendPaymentDetails` (seller token) | `POST /api/reservations` |
+| Set transaction ID on reservation | `ExchangeLotController::sendPaymentDetails` (seller token) | `POST /api/reservations/set-transaction-id` |
+| Cancel reservation (buyer) | `ExchangeLotController::buyerCancelDeal` (buyer token) | `POST /api/cancel-reservation-by-transaction` |
+
+All of these use `getCoreUrlAndKeyForToken($escrowToken)` so the request goes to the same Core (and same salt) as where the token was created.
+
 ## Benefits of Simplified System
 
 ### For Development
@@ -162,9 +181,21 @@ httpClient.post(url) {
 
 ## Configuration
 
-In `config/app.php` or `.env`:
-```php
-CORE_API_URL=https://sandbox.api.core.xdexboard.com
+Core URLs and keys (see also `docs/ENV_XRPCHANGE.md`):
+
+| Variable | Use |
+|----------|-----|
+| `CORE_URL` | Sandbox Core (used when token `environment` is sandbox) |
+| `CORE_KEY` | Sandbox Core API key |
+| `CORE_PRODUCTION_URL` | Production Core (used when token `environment` is production/prod) |
+| `CORE_PRODUCTION_KEY` | Production Core API key |
+
+Example `.env`:
+```ini
+CORE_URL=https://sandbox.api.core.xdexboard.com
+CORE_KEY=your_sandbox_key
+CORE_PRODUCTION_URL=https://api.core.xdexboard.com
+CORE_PRODUCTION_KEY=your_production_key
 ```
 
 ## Logging

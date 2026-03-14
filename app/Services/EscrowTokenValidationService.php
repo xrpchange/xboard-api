@@ -133,8 +133,38 @@ class EscrowTokenValidationService
     }
 
     /**
+     * Get Core API URL and key for the given escrow token (by token environment).
+     * Use this when calling any Core endpoint that operates on this token (reservations, set-transaction-id, cancel-reservation, validate).
+     * Same logic as validateViaCoreApi; see docs/ESCROW_TOKEN_AUTHENTICATION.md.
+     *
+     * @param string $escrowToken Full or public part of escrow token (JSON with environment field)
+     * @return array [0 => string url, 1 => string key]
+     */
+    public function getCoreUrlAndKeyForToken(string $escrowToken): array
+    {
+        $tokenData = json_decode($escrowToken, true);
+        $environment = (is_array($tokenData) && isset($tokenData['environment']))
+            ? $tokenData['environment']
+            : 'sandbox';
+        if (strtolower((string) $environment) === 'prod') {
+            $environment = 'production';
+        }
+        $isProduction = ($environment === 'production');
+        $coreUrl = $isProduction
+            ? config('services.core_production.url')
+            : config('services.core.url');
+        if (empty($coreUrl)) {
+            $coreUrl = $isProduction ? 'https://api.core.xdexboard.com' : 'https://sandbox.api.core.xdexboard.com';
+        }
+        $coreKey = $isProduction
+            ? (string) config('services.core_production.key')
+            : (string) config('services.core.key');
+        return [rtrim((string) $coreUrl, '/'), $coreKey];
+    }
+
+    /**
      * Validate token via Core API
-     * 
+     *
      * @param string $publicPart JSON string with public part of escrow token
      * @return array ['valid' => bool, 'token_data' => array, 'error' => string|null]
      */
@@ -150,7 +180,7 @@ class EscrowTokenValidationService
                     'token_data' => null
                 ];
             }
-            
+
             // Get token_hash from publicPart (it's already there from Core API)
             if (!isset($tokenData['token_hash'])) {
                 return [
@@ -159,38 +189,21 @@ class EscrowTokenValidationService
                     'token_data' => null
                 ];
             }
-            
+
             $tokenHash = strtolower(trim($tokenData['token_hash']));
-            
-            // Determine Core URL based on environment from token (not from HTTP_HOST!)
-            // Token contains 'environment' field: 'sandbox', 'production', or 'prod' (short form)
+
+            [$coreUrl, ] = $this->getCoreUrlAndKeyForToken($publicPart);
             $environment = $tokenData['environment'] ?? 'sandbox';
-            
-            // Normalize 'prod' to 'production' (token may contain shortened form)
-            if (strtolower($environment) === 'prod') {
+            if (strtolower((string) $environment) === 'prod') {
                 $environment = 'production';
             }
-            
-            $isProduction = ($environment === 'production');
-            if ($isProduction) {
-                $coreUrl = config('services.core_production.url');
-            } else {
-                $coreUrl = config('services.core.url'); // sandbox
-            }
-            
-            // Fallback to default if config is missing
-            if (empty($coreUrl)) {
-                $coreUrl = $isProduction
-                    ? 'https://api.core.xdexboard.com'
-                    : 'https://sandbox.api.core.xdexboard.com';
-            }
-            
+
             $validateUrl = "$coreUrl/api/escrow-tokens/validate";
             // Core API теперь принимает открытую часть токена (escrow_token), а не token_hash
             $requestBody = [
                 'escrow_token' => $publicPart
             ];
-            
+
             Log::info('Validating token via Core API', [
                 'token_hash' => substr($tokenHash, 0, 16) . '...',
                 'environment' => $environment, // From token (normalized: 'prod' -> 'production'), not from HTTP_HOST
