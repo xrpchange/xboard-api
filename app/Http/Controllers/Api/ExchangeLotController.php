@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Bank;
 use App\Models\Country;
 use App\Models\CryptoCurrency;
+use App\Models\DealChatMessage;
 use App\Models\ExchangeLot;
 use App\Models\FiatCurrency;
 use App\Models\Transaction;
@@ -922,6 +923,14 @@ class ExchangeLotController extends Controller
             if ($requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
                 $this->lotMailboxService->writeBuyerSentCopyToMailbox($requesterMailboxEmail, (string) $lot->id, $messageText);
             }
+            $this->insertDealChatMessage(
+                $lot,
+                'buyer',
+                $requesterMailboxEmail ?? config('mail.from.address'),
+                $sellerEmail,
+                $body,
+                $tagJson
+            );
             Log::info('[exchange-lots] sendMessageToSeller: mail sent successfully', [
                 'lot_id' => $lot->id,
                 'to' => $sellerEmail,
@@ -1045,11 +1054,18 @@ class ExchangeLotController extends Controller
             'subject' => $subject,
         ]);
 
+        $tagJson = $messageType === 'seller_exited'
+            ? json_encode(['t' => 'seller_exited', 'lot_id' => $lot->id])
+            : null;
+
         try {
-            Mail::raw($body, function ($message) use ($buyerEmail, $subject) {
+            Mail::raw($body, function ($message) use ($buyerEmail, $subject, $tagJson) {
                 $message->to($buyerEmail);
                 $message->subject($subject);
                 $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
+                if ($tagJson !== null) {
+                    $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
+                }
             });
         } catch (\Throwable $e) {
             Log::warning('[exchange-lots] sendMessageToBuyer: failed to send mail', [
@@ -1066,6 +1082,15 @@ class ExchangeLotController extends Controller
                 'message' => 'Failed to send message: ' . $e->getMessage()
             ], 500);
         }
+
+        $this->insertDealChatMessage(
+            $lot,
+            'seller',
+            $sellerEmail,
+            $buyerEmail,
+            $body,
+            $tagJson
+        );
 
         Log::info('[exchange-lots] sendMessageToBuyer: mail sent', [
             'lot_id' => $lot->id,
@@ -1179,14 +1204,23 @@ class ExchangeLotController extends Controller
         if ($sellerEmail) {
             try {
                 $tagJson = json_encode(['t' => 'buyer_exited', 'lot_id' => $lot->id]);
+                $buyerExitedBody = 'The buyer has left the deal for Lot #' . $lot->id . '.';
                 Mail::raw(
-                    'The buyer has left the deal for Lot #' . $lot->id . '.',
+                    $buyerExitedBody,
                     function ($message) use ($sellerEmail, $lot, $tagJson) {
                         $message->to($sellerEmail);
                         $message->subject('Buyer left the deal — Lot #' . $lot->id);
                         $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
                         $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
                     }
+                );
+                $this->insertDealChatMessage(
+                    $lot,
+                    'buyer',
+                    config('mail.from.address'),
+                    $sellerEmail,
+                    $buyerExitedBody,
+                    $tagJson
                 );
             } catch (\Throwable $e) {
                 Log::warning('[exchange-lots] buyerCancelDeal: failed to notify seller', ['lot_id' => $lot->id, 'error' => $e->getMessage()]);
@@ -1365,6 +1399,16 @@ class ExchangeLotController extends Controller
             ], 500);
         }
 
+        $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $lot->cryptoCurrency?->code ?? 'crypto') ?? $lot->seller_lot_email;
+        $this->insertDealChatMessage(
+            $lot,
+            'seller',
+            $sellerEmailForChat ?? config('mail.from.address'),
+            $buyerEmail,
+            $body,
+            $tagJson
+        );
+
         return response()->json([
             'success' => true,
             'message' => 'Payment details sent to buyer.',
@@ -1527,6 +1571,71 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * Normalize wallet_address (string or array from token/lot) for comparison. Lot stores full public part JSON; token_data may have wallet_address as array.
+     */
+    private function normalizeWalletAddressForComparison(mixed $value): string
+    {
+        if (is_array($value)) {
+            return json_encode($value, JSON_UNESCAPED_UNICODE);
+        }
+        return trim((string) $value);
+    }
+
+    /**
+     * Get deal chat messages for the lot. Requester must be seller or buyer (validated by escrow token).
+     */
+    public function chatMessages(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        $tokenData = $request->input('escrow_token_data', []);
+        $requesterWallet = is_array($tokenData) ? ($tokenData['wallet_address'] ?? '') : '';
+        $tokenHash = is_array($tokenData) && isset($tokenData['token_hash']) ? trim((string) $tokenData['token_hash']) : '';
+        $lot->load(['cryptoCurrency']);
+        $lotWalletRaw = $lot->wallet_address !== null ? (json_decode((string) $lot->wallet_address, true)['wallet_address'] ?? $lot->wallet_address) : null;
+        $requesterWalletStr = $this->normalizeWalletAddressForComparison($requesterWallet);
+        $lotWalletStr = $lotWalletRaw !== null ? $this->normalizeWalletAddressForComparison($lotWalletRaw) : '';
+        $isSeller = $requesterWalletStr !== '' && $lotWalletStr !== '' && hash_equals($lotWalletStr, $requesterWalletStr);
+        $isBuyer = $tokenHash !== '' && $lot->buyer_escrow_token_hash !== null && strcasecmp(trim((string) $lot->buyer_escrow_token_hash), $tokenHash) === 0;
+        if (!$isSeller && !$isBuyer) {
+            return response()->json(['success' => false, 'message' => 'Not authorized to read this chat.'], 403);
+        }
+        $messages = DealChatMessage::where('exchange_lot_id', $lot->id)
+            ->orderBy('created_at')
+            ->get()
+            ->map(fn (DealChatMessage $m) => [
+                'id' => $m->id,
+                'date' => $m->created_at->toIso8601String(),
+                'body' => $m->body,
+                'from_me' => $isSeller ? $m->sender_side === 'seller' : $m->sender_side === 'buyer',
+                'deal_tag' => $m->deal_tag,
+            ]);
+        return response()->json(['success' => true, 'messages' => $messages]);
+    }
+
+    /**
+     * Mark all chat messages for the lot as cleared (soft delete). Call when user clears mailbox.
+     * Chat is not physically deleted; records get deleted_at set.
+     */
+    public function markChatCleared(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        $tokenData = $request->input('escrow_token_data', []);
+        $requesterWallet = is_array($tokenData) ? ($tokenData['wallet_address'] ?? '') : '';
+        $tokenHash = is_array($tokenData) && isset($tokenData['token_hash']) ? trim((string) $tokenData['token_hash']) : '';
+        $lot->load(['cryptoCurrency']);
+        $lotWalletRaw = $lot->wallet_address !== null ? (json_decode((string) $lot->wallet_address, true)['wallet_address'] ?? $lot->wallet_address) : null;
+        $requesterWalletStr = $this->normalizeWalletAddressForComparison($requesterWallet);
+        $lotWalletStr = $lotWalletRaw !== null ? $this->normalizeWalletAddressForComparison($lotWalletRaw) : '';
+        $isSeller = $requesterWalletStr !== '' && $lotWalletStr !== '' && hash_equals($lotWalletStr, $requesterWalletStr);
+        $isBuyer = $tokenHash !== '' && $lot->buyer_escrow_token_hash !== null && strcasecmp(trim((string) $lot->buyer_escrow_token_hash), $tokenHash) === 0;
+        if (!$isSeller && !$isBuyer) {
+            return response()->json(['success' => false, 'message' => 'Not authorized to clear this chat.'], 403);
+        }
+        // Soft delete: sets deleted_at (DealChatMessage uses SoftDeletes). GET chat-messages excludes deleted_at IS NOT NULL.
+        $count = DealChatMessage::where('exchange_lot_id', $lot->id)->delete();
+        Log::info('[exchange-lots] markChatCleared', ['lot_id' => $lot->id, 'soft_deleted' => $count]);
+        return response()->json(['success' => true, 'message' => 'Chat marked as cleared.', 'count' => $count]);
+    }
+
+    /**
      * Subject line for "deal message" email, localized to buyer's locale (so seller sees subject in buyer's language).
      * MUST include lot number (id) in subject so the client can parse it when opening from notification (e.g. IDLE).
      */
@@ -1677,6 +1786,34 @@ class ExchangeLotController extends Controller
         ];
         $all = ['en' => $en, 'ru' => $ru, 'fr' => $fr, 'he' => $he];
         return $all[$locale] ?? $en;
+    }
+
+    /**
+     * Write a deal chat message (mail-as-event: when we send email we persist to chat table).
+     */
+    private function insertDealChatMessage(
+        ExchangeLot $lot,
+        string $senderSide,
+        ?string $fromEmail,
+        ?string $toEmail,
+        string $body,
+        ?string $dealTag
+    ): void {
+        try {
+            DealChatMessage::create([
+                'exchange_lot_id' => $lot->id,
+                'sender_side' => $senderSide,
+                'from_email' => $fromEmail,
+                'to_email' => $toEmail,
+                'body' => $body,
+                'deal_tag' => $dealTag,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] insertDealChatMessage failed', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function getCoreApiUrl(): string

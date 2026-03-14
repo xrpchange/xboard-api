@@ -72,7 +72,8 @@ class EscrowTokenValidationService
                         'wallet_address' => $walletAddress,
                         'currency' => $cache->currency,
                         'node_domain' => $cache->node_domain,
-                        'environment' => $cache->environment
+                        'environment' => $cache->environment,
+                        'token_hash' => $cache->token_hash,
                     ],
                     'cache' => $cache
                 ];
@@ -100,15 +101,18 @@ class EscrowTokenValidationService
             }
             
             $walletAddress = $coreValidation['token_data']['wallet_address'] ?? $walletAddress;
-            
+            $coreTokenData = $coreValidation['token_data'] ?? [];
+            $tokenData = array_merge([
+                'wallet_address' => $walletAddress,
+                'currency' => $cache->currency,
+                'node_domain' => $cache->node_domain,
+                'environment' => $cache->environment,
+                'token_hash' => $cache->token_hash,
+            ], is_array($coreTokenData) ? $coreTokenData : []);
+
             return [
                 'valid' => $coreValidation['valid'],
-                'token_data' => $coreValidation['token_data'] ?? [
-                    'wallet_address' => $walletAddress,
-                    'currency' => $cache->currency,
-                    'node_domain' => $cache->node_domain,
-                    'environment' => $cache->environment
-                ],
+                'token_data' => $tokenData,
                 'cache' => $cache,
                 'error' => $coreValidation['error'] ?? null
             ];
