@@ -171,6 +171,10 @@
 
 При удалении эскроу-токена клиент вызывает `POST /v1/lot-mailbox/delete` (best effort). API удаляет запись из `lot_mailboxes`. Maildir на диске не удаляется (не критично).
 
+### Таблица чата и очистка почты (soft delete)
+
+Сообщения сделки сохраняются в таблице **`deal_chat_messages`** (API). При **очистке почты** в клиенте («Clear mailbox») чат **не удаляется**: записи только помечаются удалёнными (`deleted_at`). Клиент вызывает `POST /v1/exchange-lots/{lot}/mark-chat-cleared`; API выставляет `deleted_at` у всех сообщений лота. Подробно: **`docs/DEAL_CHAT_TABLE_AND_SOFT_DELETE.md`**.
+
 ### Очистка писем после завершения сделки
 
 **Вызывать только после успешной финализации сделки.**
@@ -541,3 +545,4 @@ sudo postmap /etc/postfix/exempt_senders
 - `docs/EMAIL_SERVER_SETUP.md` — текущая настройка почтового сервера
 - `docs/IMAP_MONITORING_SETUP.md` — IMAP для верификации платежей
 - **`docs/NOREPLY_MAILBOX_SETUP.md`** — технический рассыльщик noreply@xdexboard.com: настройки только в .env, в lot_mailboxes не добавляется
+- **`docs/DEAL_CHAT_TABLE_AND_SOFT_DELETE.md`** — таблица чата сделки, запись при отправке писем, мягкое удаление при очистке почты

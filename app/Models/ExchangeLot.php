@@ -162,6 +162,11 @@ class ExchangeLot extends Model
         return $this->hasMany(Transaction::class);
     }
 
+    public function dealChatMessages(): HasMany
+    {
+        return $this->hasMany(DealChatMessage::class);
+    }
+
     /**
      * Sum of completed sale amounts for this lot (from transactions table).
      * Use for "sold amount" / "remaining = sell_amount - sold_amount".
