@@ -23,6 +23,8 @@ The subject line is **valid JSON**. Common fields:
 | `bank_swift`| string | cond.    | Bank SWIFT code (same as in lot search; preferred over bank_id). |
 | `bank_id`  | int    | cond.    | Bank id if swift not used (same as in lot search). |
 | `bank_data`| string | no       | Free-form bank transfer details (card, phone, full details). |
+| `selected_amount` | number | no | Buyer-selected amount (e.g. for `start_deal`). |
+| `buyer_locale`    | string | no | Buyer UI locale (e.g. `en`, `ru`) for `start_deal`. |
 
 - For **crypto** payment: `crypto` and `address` are set; the address is stored in `transactions.crypto_address`.
 - For **fiat/bank** payment: `bank_id` is taken from the lot (buyer-selected bank in `exchange_lots`); `bank_data` is the free-form transfer details. These are stored in `transactions.bank_id` and `transactions.bank_details`. No bank selection in the payment-details dialog — the bank is already on the lot.
@@ -35,7 +37,8 @@ Other server-set fields may be added (e.g. `amount`, `currency`) in the same JSO
 
 | Value               | Description |
 |---------------------|-------------|
-| `payment_details`   | Seller sent payment instructions: either crypto address or bank + bank_data. Buyer uses this to pay and can call Core `reservation-by-transaction` with `tx_id`, `crypto`, `address` when checking reservation. |
+| `start_deal`        | Buyer opened the deal (e.g. "Start deal — buyer opened the deal window"). Email is sent **to the seller**. Tag includes `lot_id`; may include `selected_amount` (buyer-selected amount) and `buyer_locale` (e.g. `en`, `ru`) for analytics and UI. |
+| `payment_details`   | Seller sent payment instructions: either crypto address or bank + bank_data. **Email body** = seller's text (what they wrote; e.g. bank requisites). Technical data is in the tag; the client shows the body in chat. Buyer uses tag for Core `reservation-by-transaction` with `tx_id`, `crypto`, `address`. |
 | `buyer_exited`      | Buyer cancelled the deal (e.g. via buyer-cancel-deal). Email is sent **to the seller**. Tag includes `lot_id`. The seller app, when it sees a message with this tag in the deal mailbox, unblocks the "Exit deal" button so the seller can close the deal. |
 
 Other types may be added without changing the format.
@@ -58,6 +61,12 @@ Other types may be added without changing the format.
 ```json
 {"t":"payment_details","lot_id":42,"tx_id":103,"bank_id":5,"bank_data":"Full account details..."}
 ```
+
+**Start deal (email to seller):**
+```json
+{"t":"start_deal","lot_id":42,"selected_amount":100.5,"buyer_locale":"ru"}
+```
+`selected_amount` and `buyer_locale` are optional.
 
 **Buyer exited (email to seller):**
 ```json

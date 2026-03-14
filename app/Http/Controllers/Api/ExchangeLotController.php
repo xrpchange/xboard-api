@@ -865,8 +865,12 @@ class ExchangeLotController extends Controller
             Log::info('[exchange-lots] sendMessageToSeller: buyer_lot_email set', ['lot_id' => $lot->id, 'buyer_lot_email' => $requesterMailboxEmail]);
         }
 
-        // buyer_exited: clear buyer_lot_email only for this buyer
+        // buyer_exited: delete this buyer's transactions then clear buyer_lot_email
         if ($messageType === 'buyer_exited' && $requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
+            $deleted = Transaction::where('exchange_lot_id', $lot->id)
+                ->where('buyer_lot_email', $requesterMailboxEmail)
+                ->delete();
+            Log::info('[exchange-lots] sendMessageToSeller: buyer_exited transactions deleted', ['lot_id' => $lot->id, 'deleted' => $deleted]);
             DB::table('exchange_lots')
                 ->where('id', $lot->id)
                 ->where('buyer_lot_email', $requesterMailboxEmail)
@@ -892,10 +896,28 @@ class ExchangeLotController extends Controller
         ]);
 
         try {
-            Mail::raw($body, function ($message) use ($sellerEmail, $fromAddress, $fromName, $subject) {
+            $tagJson = null;
+            if ($messageType === 'buyer_exited') {
+                $tagJson = json_encode(['t' => 'buyer_exited', 'lot_id' => $lot->id]);
+            } elseif ($messageType === 'start_deal') {
+                $tag = ['t' => 'start_deal', 'lot_id' => $lot->id];
+                $selectedAmount = $request->input('selected_amount');
+                if (is_numeric($selectedAmount) && (float) $selectedAmount > 0) {
+                    $tag['selected_amount'] = (float) $selectedAmount;
+                }
+                $locale = $request->input('buyer_locale');
+                if (is_string($locale) && $locale !== '') {
+                    $tag['buyer_locale'] = $locale;
+                }
+                $tagJson = json_encode($tag);
+            }
+            Mail::raw($body, function ($message) use ($sellerEmail, $fromAddress, $fromName, $subject, $tagJson) {
                 $message->to($sellerEmail);
                 $message->subject($subject);
                 $message->from($fromAddress, $fromName);
+                if ($tagJson !== null) {
+                    $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
+                }
             });
             if ($requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
                 $this->lotMailboxService->writeBuyerSentCopyToMailbox($requesterMailboxEmail, (string) $lot->id, $messageText);
@@ -1063,7 +1085,15 @@ class ExchangeLotController extends Controller
     public function buyerCancelDeal(Request $request, ExchangeLot $lot): JsonResponse
     {
         $escrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+        Log::info('[exchange-lots] buyerCancelDeal: request', [
+            'lot_id' => $lot->id,
+            'has_escrow_token' => !empty($escrowToken) && is_string($escrowToken),
+            'token_from' => $request->has('escrow_token') ? 'body' : ($request->header('X-Escrow-Token') ? 'header' : 'none'),
+            'buyer_escrow_token_hash_set' => !empty($lot->buyer_escrow_token_hash),
+        ]);
+
         if (empty($escrowToken) || !is_string($escrowToken)) {
+            Log::warning('[exchange-lots] buyerCancelDeal: 422 escrow_token missing', ['lot_id' => $lot->id]);
             return response()->json([
                 'success' => false,
                 'message' => 'escrow_token is required (buyer\'s full token).',
@@ -1072,15 +1102,32 @@ class ExchangeLotController extends Controller
         }
 
         if (empty($lot->buyer_escrow_token_hash)) {
+            Log::warning('[exchange-lots] buyerCancelDeal: 404 no buyer linked', ['lot_id' => $lot->id]);
             return response()->json([
                 'success' => false,
                 'message' => 'This lot has no buyer linked for cancellation.',
                 'error_code' => 'no_buyer',
-            ], 400);
+            ], 404);
         }
 
-        $requestorHash = hash('sha256', $escrowToken);
-        if (!hash_equals($lot->buyer_escrow_token_hash, $requestorHash)) {
+        // Same as start_deal: we store token_hash from the public part JSON. Compare using that field, not sha256(body).
+        $decoded = json_decode($escrowToken, true);
+        $requestorHash = null;
+        if (is_array($decoded) && isset($decoded['token_hash']) && is_string($decoded['token_hash'])) {
+            $requestorHash = strtolower(trim($decoded['token_hash']));
+        }
+        if ($requestorHash === null || strlen($requestorHash) > 64) {
+            $requestorHash = hash('sha256', $escrowToken);
+        }
+        $storedHash = strtolower(trim($lot->buyer_escrow_token_hash));
+        if (!hash_equals($storedHash, $requestorHash)) {
+            Log::warning('[exchange-lots] buyerCancelDeal: 403 token hash mismatch', [
+                'lot_id' => $lot->id,
+                'stored_hash_len' => strlen($storedHash),
+                'requestor_hash_len' => strlen($requestorHash),
+                'stored_hash_prefix' => substr($storedHash, 0, 8),
+                'requestor_hash_prefix' => substr($requestorHash, 0, 8),
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Only the buyer can cancel this deal.',
@@ -1184,6 +1231,7 @@ class ExchangeLotController extends Controller
             'address' => 'required_if:payment_type,crypto|nullable|string|max:500',
             'crypto_type' => 'required_if:payment_type,crypto|nullable|string|max:30',
             'bank_data' => 'nullable|string|max:5000',
+            'message' => 'nullable|string|max:10000', // Seller's text shown in chat (e.g. bank requisites as typed)
             'escrow_token' => 'nullable|string|max:10000', // Seller full token: used to set transaction_id on Core reservation
         ]);
 
@@ -1208,6 +1256,9 @@ class ExchangeLotController extends Controller
         $currency = $lot->cryptoCurrency?->code ?? 'crypto';
         $buyerEmail = $lot->buyer_lot_email;
         if (empty($buyerEmail)) {
+            Log::warning('[exchange-lots] sendPaymentDetails: no buyer in deal (e.g. buyer exited)', [
+                'lot_id' => $lot->id,
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'No buyer in deal for this lot.',
@@ -1284,16 +1335,9 @@ class ExchangeLotController extends Controller
         $tagJson = json_encode($tag, JSON_UNESCAPED_UNICODE);
 
         $subject = 'Payment details — Lot #' . $lot->id;
-        $bodyLines = [
-            'Payment details for Lot #' . $lot->id . '.',
-            '',
-            $paymentType === 'crypto'
-                ? ('Send ' . $amount . ' ' . ($tag['crypto'] ?? '') . ' to address: ' . ($tag['address'] ?? ''))
-                : ('Bank transfer details (Lot #' . $lot->id . ').'),
-            '',
-            $request->input('message', '') ?: 'See details above.',
-        ];
-        $body = implode("\n", $bodyLines);
+        // Body = what the seller wrote (shown in chat). Technical data is in X-XBoard-Deal-Tag.
+        $sellerMessage = trim((string) $request->input('message', ''));
+        $body = $sellerMessage !== '' ? $sellerMessage : ('Payment details for Lot #' . $lot->id . '.');
 
         Log::info('[exchange-lots] sendPaymentDetails: sending mail', [
             'lot_id' => $lot->id,
