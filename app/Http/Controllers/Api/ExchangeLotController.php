@@ -13,6 +13,7 @@ use App\Services\EscrowTokenValidationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
@@ -827,6 +828,15 @@ class ExchangeLotController extends Controller
             if (is_numeric($selectedAmount) && (float) $selectedAmount > 0) {
                 $updateData['buyer_selected_amount'] = (float) $selectedAmount;
             }
+            $tokenHash = '';
+            $publicPart = $request->header('X-Escrow-Token') ?? $request->input('escrow_token');
+            if ($publicPart && is_string($publicPart)) {
+                $decoded = json_decode($publicPart, true);
+                $tokenHash = isset($decoded['token_hash']) ? trim((string) $decoded['token_hash']) : '';
+                if ($tokenHash !== '' && strlen($tokenHash) <= 64) {
+                    $updateData['buyer_escrow_token_hash'] = $tokenHash;
+                }
+            }
             $updated = DB::table('exchange_lots')
                 ->where('id', $lot->id)
                 ->where(function ($q) {
@@ -841,20 +851,15 @@ class ExchangeLotController extends Controller
                     'error_code' => 'lot_taken',
                 ], 409);
             }
-            $publicPart = $request->header('X-Escrow-Token') ?? $request->input('escrow_token');
-            if ($publicPart && is_string($publicPart)) {
-                $decoded = json_decode($publicPart, true);
-                $tokenHash = isset($decoded['token_hash']) ? trim((string) $decoded['token_hash']) : '';
-                if ($tokenHash !== '') {
-                    try {
-                        $buyerMailboxConfig = $this->lotMailboxService->ensureMailbox($publicPart, $tokenHash, $requesterCurrency);
-                    } catch (\Throwable $e) {
-                        Log::warning('[exchange-lots] sendMessageToSeller: ensureMailbox for buyer failed (non-blocking)', [
-                            'lot_id' => $lot->id,
-                            'buyer_email' => $requesterMailboxEmail,
-                            'error' => $e->getMessage(),
-                        ]);
-                    }
+            if ($publicPart && is_string($publicPart) && $tokenHash !== '') {
+                try {
+                    $buyerMailboxConfig = $this->lotMailboxService->ensureMailbox($publicPart, $tokenHash, $requesterCurrency);
+                } catch (\Throwable $e) {
+                    Log::warning('[exchange-lots] sendMessageToSeller: ensureMailbox for buyer failed (non-blocking)', [
+                        'lot_id' => $lot->id,
+                        'buyer_email' => $requesterMailboxEmail,
+                        'error' => $e->getMessage(),
+                    ]);
                 }
             }
             Log::info('[exchange-lots] sendMessageToSeller: buyer_lot_email set', ['lot_id' => $lot->id, 'buyer_lot_email' => $requesterMailboxEmail]);
@@ -989,6 +994,17 @@ class ExchangeLotController extends Controller
             ], 400);
         }
 
+        // Block seller_exited only when this buyer has been sent payment details: transactions are linked to buyer
+        // via buyer_lot_email so that (in future) multiple buyers per lot can be supported; we only consider
+        // transactions for the current buyer (lot.buyer_lot_email).
+        if ($messageType === 'seller_exited' && Transaction::where('exchange_lot_id', $lot->id)->where('buyer_lot_email', $lot->buyer_lot_email)->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment details have already been sent for this deal. Only the buyer can cancel the deal now.',
+                'error_code' => 'only_buyer_can_cancel',
+            ], 403);
+        }
+
         $messageText = $request->input('message', '');
         $subject = $this->getDealMessageSubject($lot, 'en');
         $body = $messageText;
@@ -1041,6 +1057,101 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * Buyer cancels the deal: deletes transaction(s) and reservation(s) in Core, clears buyer_lot_email, notifies seller.
+     * Only the buyer (escrow token hash matches lot.buyer_escrow_token_hash) can call this.
+     */
+    public function buyerCancelDeal(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        $escrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+        if (empty($escrowToken) || !is_string($escrowToken)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'escrow_token is required (buyer\'s full token).',
+                'error_code' => 'validation_error',
+            ], 422);
+        }
+
+        if (empty($lot->buyer_escrow_token_hash)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This lot has no buyer linked for cancellation.',
+                'error_code' => 'no_buyer',
+            ], 400);
+        }
+
+        $requestorHash = hash('sha256', $escrowToken);
+        if (!hash_equals($lot->buyer_escrow_token_hash, $requestorHash)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only the buyer can cancel this deal.',
+                'error_code' => 'forbidden',
+            ], 403);
+        }
+
+        $transactions = Transaction::where('exchange_lot_id', $lot->id)->where('buyer_lot_email', $lot->buyer_lot_email)->get();
+        $coreUrl = $this->getCoreApiUrl();
+        $coreKey = $this->getCoreApiKey();
+        $timeout = (int) config('services.core.timeout', 10);
+        $cryptoType = $lot->cryptoCurrency?->code ?? 'xmr';
+
+        foreach ($transactions as $tx) {
+            try {
+                $req = Http::timeout($timeout);
+                if ($coreKey !== '') {
+                    $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+                }
+                $resp = $req->post($coreUrl . '/api/cancel-reservation-by-transaction', [
+                    'transaction_id' => $tx->id,
+                    'escrow_token' => $escrowToken,
+                    'crypto_type' => $cryptoType,
+                ]);
+                if (!$resp->successful()) {
+                    Log::warning('[exchange-lots] buyerCancelDeal: Core cancel-reservation failed', [
+                        'lot_id' => $lot->id,
+                        'transaction_id' => $tx->id,
+                        'status' => $resp->status(),
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('[exchange-lots] buyerCancelDeal: Core request failed', [
+                    'lot_id' => $lot->id,
+                    'transaction_id' => $tx->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        Transaction::where('exchange_lot_id', $lot->id)->where('buyer_lot_email', $lot->buyer_lot_email)->delete();
+        DB::table('exchange_lots')->where('id', $lot->id)->update(['buyer_lot_email' => null]);
+
+        $lot->load(['cryptoCurrency']);
+        $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $lot->cryptoCurrency?->code ?? 'crypto');
+        if (!$sellerEmail && !empty($lot->seller_lot_email)) {
+            $sellerEmail = (string) $lot->seller_lot_email;
+        }
+        if ($sellerEmail) {
+            try {
+                Mail::raw(
+                    'The buyer has left the deal for Lot #' . $lot->id . '.',
+                    function ($message) use ($sellerEmail, $lot) {
+                        $message->to($sellerEmail);
+                        $message->subject('Buyer left the deal — Lot #' . $lot->id);
+                        $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
+                    }
+                );
+            } catch (\Throwable $e) {
+                Log::warning('[exchange-lots] buyerCancelDeal: failed to notify seller', ['lot_id' => $lot->id, 'error' => $e->getMessage()]);
+            }
+        }
+
+        Log::info('[exchange-lots] buyerCancelDeal: deal cancelled', ['lot_id' => $lot->id]);
+        return response()->json([
+            'success' => true,
+            'message' => 'Deal cancelled. Transactions and reservations have been removed.',
+        ]);
+    }
+
+    /**
      * Create a deal transaction and send payment details email to the buyer (seller only).
      * Subject is human-readable; structured tag is in X-XBoard-Deal-Tag header (JSON).
      * See docs/DEAL_EMAIL_SUBJECT_TAG.md.
@@ -1070,9 +1181,8 @@ class ExchangeLotController extends Controller
             'payment_type' => 'required|string|in:crypto,bank',
             'address' => 'required_if:payment_type,crypto|nullable|string|max:500',
             'crypto_type' => 'required_if:payment_type,crypto|nullable|string|max:30',
-            'bank_swift' => 'nullable|string|max:20',
-            'bank_id' => 'nullable|integer|exists:banks,id',
             'bank_data' => 'nullable|string|max:5000',
+            'escrow_token' => 'nullable|string|max:10000', // Seller full token: used to set transaction_id on Core reservation
         ]);
 
         if ($validator->fails()) {
@@ -1083,10 +1193,11 @@ class ExchangeLotController extends Controller
         }
 
         $paymentType = $request->input('payment_type');
-        if ($paymentType === 'bank' && !$request->filled('bank_swift') && !$request->filled('bank_id')) {
+        // Bank is taken from the lot (buyer-selected bank in exchange_lots). We only need bank_data (transfer details).
+        if ($paymentType === 'bank' && $lot->bank_id === null) {
             return response()->json([
                 'success' => false,
-                'message' => 'For bank payment provide bank_swift or bank_id.',
+                'message' => 'Lot has no bank selected for this deal.',
                 'error_code' => 'validation_error',
             ], 422);
         }
@@ -1109,6 +1220,10 @@ class ExchangeLotController extends Controller
         $txHash = 'pd-' . $lot->id . '-' . now()->format('YmdHis') . '-' . bin2hex(random_bytes(4));
         $txHash = substr($txHash, 0, 64);
 
+        $bankId = $paymentType === 'bank' ? $lot->bank_id : null;
+        $bankDetails = $paymentType === 'bank' ? trim((string) $request->input('bank_data', '')) : null;
+        $cryptoAddress = $paymentType === 'crypto' ? trim((string) $request->input('address', '')) : null;
+
         $transaction = Transaction::create([
             'tx_hash' => $txHash,
             'tx_type' => 'sale',
@@ -1116,10 +1231,39 @@ class ExchangeLotController extends Controller
             'to_address' => 'seller',
             'amount' => $amount,
             'exchange_lot_id' => $lot->id,
+            'buyer_lot_email' => $buyerEmail,
+            'bank_id' => $bankId,
+            'bank_details' => $bankDetails,
+            'crypto_address' => $cryptoAddress,
             'status' => 'pending',
             'is_test' => (bool) $lot->is_test,
             'test_group' => $lot->test_group,
         ]);
+
+        $sellerEscrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+        if (!empty($sellerEscrowToken) && is_string($sellerEscrowToken)) {
+            try {
+                $coreUrl = $this->getCoreApiUrl();
+                $coreKey = $this->getCoreApiKey();
+                $timeout = (int) config('services.core.timeout', 10);
+                $req = Http::timeout($timeout);
+                if ($coreKey !== '') {
+                    $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+                }
+                $req->post($coreUrl . '/api/reservations/set-transaction-id', [
+                    'exchange_lot_id' => $lot->id,
+                    'transaction_id' => $transaction->id,
+                    'escrow_token' => $sellerEscrowToken,
+                    'crypto_type' => $currency,
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('[exchange-lots] sendPaymentDetails: Core set-transaction-id failed (non-blocking)', [
+                    'lot_id' => $lot->id,
+                    'transaction_id' => $transaction->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         $tag = [
             't' => 'payment_details',
@@ -1128,16 +1272,11 @@ class ExchangeLotController extends Controller
         ];
         if ($paymentType === 'crypto') {
             $tag['crypto'] = trim((string) $request->input('crypto_type', ''));
-            $tag['address'] = trim((string) $request->input('address', ''));
+            $tag['address'] = $cryptoAddress;
         } else {
-            if ($request->filled('bank_swift')) {
-                $tag['bank_swift'] = trim((string) $request->bank_swift);
-            }
-            if ($request->filled('bank_id')) {
-                $tag['bank_id'] = (int) $request->bank_id;
-            }
-            if ($request->filled('bank_data')) {
-                $tag['bank_data'] = trim((string) $request->bank_data);
+            $tag['bank_id'] = (int) $lot->bank_id;
+            if ($bankDetails !== '') {
+                $tag['bank_data'] = $bankDetails;
             }
         }
         $tagJson = json_encode($tag, JSON_UNESCAPED_UNICODE);
@@ -1492,5 +1631,23 @@ class ExchangeLotController extends Controller
         ];
         $all = ['en' => $en, 'ru' => $ru, 'fr' => $fr, 'he' => $he];
         return $all[$locale] ?? $en;
+    }
+
+    private function getCoreApiUrl(): string
+    {
+        $host = $_SERVER['HTTP_HOST'] ?? '';
+        if (!preg_match('/^(sandbox\.|dev\.)/', $host)) {
+            return rtrim((string) config('services.core_production.url'), '/');
+        }
+        return rtrim((string) config('services.core.url'), '/');
+    }
+
+    private function getCoreApiKey(): string
+    {
+        $host = $_SERVER['HTTP_HOST'] ?? '';
+        if (!preg_match('/^(sandbox\.|dev\.)/', $host)) {
+            return (string) config('services.core_production.key');
+        }
+        return (string) config('services.core.key');
     }
 } 

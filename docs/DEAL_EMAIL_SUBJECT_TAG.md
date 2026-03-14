@@ -24,8 +24,8 @@ The subject line is **valid JSON**. Common fields:
 | `bank_id`  | int    | cond.    | Bank id if swift not used (same as in lot search). |
 | `bank_data`| string | no       | Free-form bank transfer details (card, phone, full details). |
 
-- For **crypto** payment: `crypto` and `address` are set.
-- For **fiat/bank** payment: `bank_swift` (preferred) or `bank_id`, and optionally `bank_data`. Same bank identification as in lot search so admins can parse which bank from the email.
+- For **crypto** payment: `crypto` and `address` are set; the address is stored in `transactions.crypto_address`.
+- For **fiat/bank** payment: `bank_id` is taken from the lot (buyer-selected bank in `exchange_lots`); `bank_data` is the free-form transfer details. These are stored in `transactions.bank_id` and `transactions.bank_details`. No bank selection in the payment-details dialog — the bank is already on the lot.
 
 Other server-set fields may be added (e.g. `amount`, `currency`) in the same JSON.
 
