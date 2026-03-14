@@ -156,6 +156,7 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
         Route::post('/{lot}/send-message', [ExchangeLotController::class, 'sendMessageToSeller']);
         Route::post('/{lot}/send-message-to-buyer', [ExchangeLotController::class, 'sendMessageToBuyer']);
         Route::post('/{lot}/send-payment-details', [ExchangeLotController::class, 'sendPaymentDetails']);
+        Route::post('/{lot}/buyer-cancel-deal', [ExchangeLotController::class, 'buyerCancelDeal']);
     });
 
     // Buy triggers

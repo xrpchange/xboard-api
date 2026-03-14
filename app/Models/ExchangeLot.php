@@ -48,6 +48,7 @@ class ExchangeLot extends Model
         'note',
         'seller_locale',
         'buyer_lot_email',
+        'buyer_escrow_token_hash',
         'buyer_selected_amount',
         'seller_lot_email',
         'aml',
