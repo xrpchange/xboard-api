@@ -26,10 +26,12 @@ API поддерживает отдельную конфигурацию для 
    | `DB_DATABASE` | База данных для XRPChange (может отличаться) |
    | `DB_USERNAME` | Пользователь БД |
    | `DB_PASSWORD` | Пароль БД |
-   | `CORE_URL` | URL Core API для sandbox (напр. `https://sandbox.api.core.xrpchange.site`) |
+   | `CORE_URL` | URL Core API для sandbox (напр. `https://sandbox.api.core.xrpchange.site`). Используется, когда в токене `environment` = sandbox. |
    | `CORE_KEY` | API-ключ Core (sandbox) |
-   | `CORE_PRODUCTION_URL` | URL Core API для production |
+   | `CORE_PRODUCTION_URL` | URL Core API для production. Используется, когда в токене `environment` = production/prod. |
    | `CORE_PRODUCTION_KEY` | API-ключ Core (production) |
+
+   Выбор URL по полю `environment` токена описан в `docs/ESCROW_TOKEN_AUTHENTICATION.md` (§ Calling Core API: URL by token environment).
    | `PAYMENT_VERIFICATION_EMAIL` | Email для верификации платежей |
 
 3. Файл `.env.xrpchange` не должен попадать в git (добавьте в `.gitignore` при необходимости).

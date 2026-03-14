@@ -158,6 +158,7 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
         Route::post('/{lot}/send-payment-details', [ExchangeLotController::class, 'sendPaymentDetails']);
         Route::post('/{lot}/buyer-cancel-deal', [ExchangeLotController::class, 'buyerCancelDeal']);
         Route::get('/{lot}/chat-messages', [ExchangeLotController::class, 'chatMessages']);
+        Route::get('/{lot}/deal-message-status', [ExchangeLotController::class, 'dealMessageStatus']);
         Route::post('/{lot}/mark-chat-cleared', [ExchangeLotController::class, 'markChatCleared']);
     });
 
