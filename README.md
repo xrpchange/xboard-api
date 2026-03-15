@@ -71,6 +71,7 @@ php artisan key:generate
 - `PAYMENT_VERIFICATION_EMAIL` - Email address where payment verification emails are forwarded (e.g., `check@xdexboard.com`)
   - This email receives forwarded payment emails for DKIM verification
   - **Required:** Application will not start if this parameter is not set
+- **Core API key** — `CORE_KEY` (sandbox) and `CORE_PRODUCTION_KEY` (production). Required for API-only Core endpoints (token creation, delete reservation). Must match Core config `[api] CORE_API_KEY`. See [docs/CORE_API_KEY_AND_API_ONLY_ENDPOINTS.md](docs/CORE_API_KEY_AND_API_ONLY_ENDPOINTS.md).
 
 **Client mode configuration:**
 - `APP_DEFAULT_ENVIRONMENT` - Default environment mode suggested to client applications (default: `sandbox`)
