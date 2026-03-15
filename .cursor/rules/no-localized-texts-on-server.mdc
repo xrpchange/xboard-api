@@ -1,0 +1,13 @@
+---
+description: No localized texts on the server — localization is client-only
+alwaysApply: true
+---
+
+# No localized texts on the server
+
+**The API (xboard-api) must never contain localized user-facing texts.**
+
+- **No language-specific strings in backend code:** Do not add arrays or maps of translations (e.g. by locale: en, ru, fr) in PHP. Do not build email bodies, error messages, or any user-visible text from server-side locale tables.
+- **Client is responsible for localization:** All user-facing text (UI labels, email content that the user sees, error messages shown in the app) must be defined and localized in the client (e.g. xboard-client localization strings). The server may accept a locale or language from the client and store it (e.g. for analytics or preferences), but must not use it to select or generate localized text.
+- **Server may use fixed English (or a single language) for technical messages only:** If the server must send an email or return a message, use a single fixed language (e.g. English) for technical/system content only, or have the client send the already-localized text in the request body (e.g. message body for emails) so the server just forwards it.
+- **When adding features that need localized text:** Implement the text and its translations in the client; pass the chosen text from client to API when needed (e.g. in request body), or keep content generation on the client side.

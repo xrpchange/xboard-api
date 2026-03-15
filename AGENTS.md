@@ -10,6 +10,7 @@ Start by reading:
 - `./docs/` folder — detailed information about endpoints, database schemas, and integrations
 
 Key points:
+- **No localized texts on the server.** All user-facing strings are localized in the client (xboard-client). The API must not contain locale-dependent text (no translation arrays/maps in PHP). See `.cursor/rules/no-localized-texts-on-server.mdc`.
 - Backend: PHP 8+, Laravel. Configuration via `.env` and `config/*.php`, no hardcoded `127.0.0.1`.
 - **NO fallback by host on server:** For `.env.xrpchange` (api.xrpchange.site), `APP_ENV` MUST be set explicitly via Apache `SetEnv` (or equivalent). Do NOT add fallback detection by `HTTP_HOST` or any other implicit method on production.
 - `nodes` table — source of available nodes for clients; keep migrations and schema up to date (including `weight`, `max_connections` if applicable).
