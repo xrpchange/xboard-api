@@ -52,6 +52,8 @@ class ExchangeLot extends Model
         'buyer_selected_amount',
         'seller_lot_email',
         'aml',
+        'buyer_payment_timeout_minutes',
+        'seller_notification_email',
         'expires_at',
     ];
 
@@ -67,6 +69,7 @@ class ExchangeLot extends Model
         'is_active' => 'boolean',
         'is_test' => 'boolean',
         'aml' => 'integer',
+        'buyer_payment_timeout_minutes' => 'integer',
         'expires_at' => 'datetime',
     ];
 

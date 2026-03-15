@@ -55,6 +55,8 @@ class ExchangeLotResource extends JsonResource
             'seller_lot_email' => $this->seller_lot_email ? (string) $this->seller_lot_email : null,
             'payment_purpose' => $this->payment_purpose ?? '',
             'aml' => $this->aml !== null ? (int) $this->aml : null,
+            'buyer_payment_timeout_minutes' => isset($this->buyer_payment_timeout_minutes) ? (int) $this->buyer_payment_timeout_minutes : 30,
+            'seller_notification_email' => $this->seller_notification_email ? (string) $this->seller_notification_email : null,
             'created_at' => $this->created_at?->toISOString() ?? now()->toISOString(),
             'expires_at' => $this->expires_at?->toISOString() ?? '',
         ];

@@ -335,6 +335,8 @@ class ExchangeLotController extends Controller
             'note' => 'nullable|string|max:65535',
             'seller_locale' => 'required|string|max:10',
             'aml' => 'nullable|integer|min:0|max:100',
+            'buyer_payment_timeout_minutes' => 'nullable|integer|in:15,20,30',
+            'seller_notification_email' => 'nullable|string|email|max:255',
             'expires_at' => 'nullable|date',
         ]);
 
@@ -412,6 +414,15 @@ class ExchangeLotController extends Controller
             : null;
         $validated['main_group'] = !empty($validated['main_group'])
             ? hash('sha256', trim($validated['main_group']))
+            : null;
+        $validated['buyer_payment_timeout_minutes'] = isset($validated['buyer_payment_timeout_minutes'])
+            ? (int) $validated['buyer_payment_timeout_minutes']
+            : 30;
+        if (!in_array($validated['buyer_payment_timeout_minutes'], [15, 20, 30], true)) {
+            $validated['buyer_payment_timeout_minutes'] = 30;
+        }
+        $validated['seller_notification_email'] = !empty($validated['seller_notification_email'])
+            ? trim($validated['seller_notification_email'])
             : null;
 
         unset($validated['from_currency'], $validated['to_currency']);
@@ -535,6 +546,8 @@ class ExchangeLotController extends Controller
             'note' => 'nullable|string|max:65535',
             'seller_locale' => 'nullable|string|max:10',
             'aml' => 'nullable|integer|min:0|max:100',
+            'buyer_payment_timeout_minutes' => 'nullable|integer|in:15,20,30',
+            'seller_notification_email' => 'nullable|string|email|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -619,6 +632,15 @@ class ExchangeLotController extends Controller
         $updateData['note'] = $validated['note'] ?? null;
         if (array_key_exists('seller_locale', $validated) && $validated['seller_locale'] !== null) {
             $updateData['seller_locale'] = $validated['seller_locale'];
+        }
+        if (array_key_exists('buyer_payment_timeout_minutes', $validated)) {
+            $mins = (int) ($validated['buyer_payment_timeout_minutes'] ?? 30);
+            $updateData['buyer_payment_timeout_minutes'] = in_array($mins, [15, 20, 30], true) ? $mins : 30;
+        }
+        if (array_key_exists('seller_notification_email', $validated)) {
+            $updateData['seller_notification_email'] = !empty(trim($validated['seller_notification_email'] ?? ''))
+                ? trim($validated['seller_notification_email'])
+                : null;
         }
         // AML: read from raw JSON so "aml": null is never lost
         $raw = $request->getContent();
