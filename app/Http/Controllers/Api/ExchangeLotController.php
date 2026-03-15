@@ -888,16 +888,69 @@ class ExchangeLotController extends Controller
             Log::info('[exchange-lots] sendMessageToSeller: buyer_lot_email set', ['lot_id' => $lot->id, 'buyer_lot_email' => $requesterMailboxEmail]);
         }
 
-        // buyer_exited: delete this buyer's transactions then clear buyer_lot_email
-        if ($messageType === 'buyer_exited' && $requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
+        // buyer_exited: delete reservation in Core, then delete transactions and clear buyer_lot_email.
+        // Run when we have requesterMailboxEmail (from escrow_token_data) OR when we have buyer token that matches lot (client often sends only X-Escrow-Token).
+        $buyerExitedEmailToClear = null;
+        if ($messageType === 'buyer_exited') {
+            if ($requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
+                $buyerExitedEmailToClear = $requesterMailboxEmail;
+            } else {
+                $buyerToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+                if (!empty($buyerToken) && is_string($buyerToken)) {
+                    $decoded = json_decode($buyerToken, true);
+                    $tokenHash = isset($decoded['token_hash']) ? trim((string) $decoded['token_hash']) : '';
+                    $storedHash = $lot->buyer_escrow_token_hash ? trim((string) $lot->buyer_escrow_token_hash) : '';
+                    if ($tokenHash !== '' && $storedHash !== '' && hash_equals(strtolower($storedHash), strtolower($tokenHash))) {
+                        $buyerExitedEmailToClear = $lot->buyer_lot_email;
+                    }
+                }
+            }
+        }
+        if ($buyerExitedEmailToClear !== null) {
+            $buyerToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+            if (!empty($buyerToken) && is_string($buyerToken)) {
+                try {
+                    [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($buyerToken);
+                    $cryptoType = $lot->cryptoCurrency?->code ?? $currency;
+                    if (is_string($cryptoType)) {
+                        $cryptoType = strtolower($cryptoType);
+                    } else {
+                        $cryptoType = 'xmr';
+                    }
+                    $timeout = (int) config('services.core.timeout', 10);
+                    $req = Http::timeout($timeout);
+                    if ($coreKey !== '') {
+                        $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+                    }
+                    $resp = $req->post(rtrim($coreUrl, '/') . '/api/delete-reservation-by-buyer', [
+                        'exchange_lot_id' => (string) $lot->id,
+                        'escrow_token' => $buyerToken,
+                        'crypto_type' => $cryptoType,
+                    ]);
+                    if ($resp->successful()) {
+                        Log::info('[exchange-lots] sendMessageToSeller: buyer_exited Core delete-reservation-by-buyer OK', ['lot_id' => $lot->id]);
+                    } else {
+                        Log::warning('[exchange-lots] sendMessageToSeller: buyer_exited Core delete-reservation-by-buyer failed', [
+                            'lot_id' => $lot->id,
+                            'status' => $resp->status(),
+                            'body' => $resp->body(),
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('[exchange-lots] sendMessageToSeller: buyer_exited Core delete-reservation-by-buyer exception', [
+                        'lot_id' => $lot->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
             $deleted = Transaction::where('exchange_lot_id', $lot->id)
-                ->where('buyer_lot_email', $requesterMailboxEmail)
+                ->where('buyer_lot_email', $buyerExitedEmailToClear)
                 ->delete();
             Log::info('[exchange-lots] sendMessageToSeller: buyer_exited transactions deleted', ['lot_id' => $lot->id, 'deleted' => $deleted]);
             DB::table('exchange_lots')
                 ->where('id', $lot->id)
-                ->where('buyer_lot_email', $requesterMailboxEmail)
-                ->update(['buyer_lot_email' => null]);
+                ->where('buyer_lot_email', $buyerExitedEmailToClear)
+                ->update(['buyer_lot_email' => null, 'buyer_escrow_token_hash' => null]);
             Log::info('[exchange-lots] sendMessageToSeller: buyer_lot_email cleared', ['lot_id' => $lot->id]);
         }
 
@@ -1147,7 +1200,8 @@ class ExchangeLotController extends Controller
         }
 
         $buyerEmail = $lot->buyer_lot_email;
-        if (empty($buyerEmail)) {
+        // When seller exits, we still delete reservation and clear lot even if buyer already left (buyer_lot_email empty).
+        if (empty($buyerEmail) && $messageType !== 'seller_exited') {
             return response()->json([
                 'success' => false,
                 'message' => 'No buyer in deal for this lot.',
@@ -1170,62 +1224,95 @@ class ExchangeLotController extends Controller
         $subject = $this->getDealMessageSubject($lot);
         $body = $messageText;
 
-        // seller_exited: send notification to buyer then clear buyer_lot_email so the lot can accept new deals
+        // seller_exited: delete reservation in Core (release reserved amount), then clear buyer_lot_email
         if ($messageType === 'seller_exited') {
+            $sellerEscrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+            if (!empty($sellerEscrowToken) && is_string($sellerEscrowToken)) {
+                try {
+                    [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
+                    $cryptoType = $lot->cryptoCurrency?->code ?? 'xmr';
+                    $timeout = (int) config('services.core.timeout', 10);
+                    $req = \Illuminate\Support\Facades\Http::timeout($timeout);
+                    if ($coreKey !== '') {
+                        $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+                    }
+                    $resp = $req->post(rtrim($coreUrl, '/') . '/api/delete-reservation', [
+                        'exchange_lot_id' => (string) $lot->id,
+                        'escrow_token' => $sellerEscrowToken,
+                        'crypto_type' => $cryptoType,
+                    ]);
+                    if ($resp->successful()) {
+                        Log::info('[exchange-lots] sendMessageToBuyer: Core delete-reservation OK (seller_exited)', ['lot_id' => $lot->id]);
+                    } else {
+                        Log::warning('[exchange-lots] sendMessageToBuyer: Core delete-reservation failed (seller_exited)', [
+                            'lot_id' => $lot->id,
+                            'status' => $resp->status(),
+                            'body' => $resp->body(),
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('[exchange-lots] sendMessageToBuyer: Core delete-reservation exception (seller_exited)', [
+                        'lot_id' => $lot->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
             DB::table('exchange_lots')
                 ->where('id', $lot->id)
                 ->update(['buyer_lot_email' => null]);
             Log::info('[exchange-lots] sendMessageToBuyer: buyer_lot_email cleared (seller_exited)', ['lot_id' => $lot->id]);
         }
 
-        Log::info('[exchange-lots] sendMessageToBuyer: sending mail', [
-            'lot_id' => $lot->id,
-            'to' => $buyerEmail,
-            'subject' => $subject,
-        ]);
-
         $tagJson = $messageType === 'seller_exited'
             ? json_encode(['t' => 'seller_exited', 'lot_id' => $lot->id])
             : null;
 
-        try {
-            Mail::raw($body, function ($message) use ($buyerEmail, $subject, $tagJson) {
-                $message->to($buyerEmail);
-                $message->subject($subject);
-                $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
-                if ($tagJson !== null) {
-                    $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
-                }
-            });
-        } catch (\Throwable $e) {
-            Log::warning('[exchange-lots] sendMessageToBuyer: failed to send mail', [
+        if (!empty($buyerEmail)) {
+            Log::info('[exchange-lots] sendMessageToBuyer: sending mail', [
                 'lot_id' => $lot->id,
                 'to' => $buyerEmail,
-                'error' => $e->getMessage(),
-                'exception' => get_class($e),
+                'subject' => $subject,
             ]);
-            Log::debug('[exchange-lots] sendMessageToBuyer: exception trace', [
-                'trace' => $e->getTraceAsString(),
+
+            try {
+                Mail::raw($body, function ($message) use ($buyerEmail, $subject, $tagJson) {
+                    $message->to($buyerEmail);
+                    $message->subject($subject);
+                    $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
+                    if ($tagJson !== null) {
+                        $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
+                    }
+                });
+            } catch (\Throwable $e) {
+                Log::warning('[exchange-lots] sendMessageToBuyer: failed to send mail', [
+                    'lot_id' => $lot->id,
+                    'to' => $buyerEmail,
+                    'error' => $e->getMessage(),
+                    'exception' => get_class($e),
+                ]);
+                Log::debug('[exchange-lots] sendMessageToBuyer: exception trace', [
+                    'trace' => $e->getTraceAsString(),
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to send message: ' . $e->getMessage()
+                ], 500);
+            }
+
+            $this->insertDealChatMessage(
+                $lot,
+                'seller',
+                $sellerEmail,
+                $buyerEmail,
+                $body,
+                $tagJson
+            );
+
+            Log::info('[exchange-lots] sendMessageToBuyer: mail sent', [
+                'lot_id' => $lot->id,
+                'to' => $buyerEmail,
             ]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to send message: ' . $e->getMessage()
-            ], 500);
         }
-
-        $this->insertDealChatMessage(
-            $lot,
-            'seller',
-            $sellerEmail,
-            $buyerEmail,
-            $body,
-            $tagJson
-        );
-
-        Log::info('[exchange-lots] sendMessageToBuyer: mail sent', [
-            'lot_id' => $lot->id,
-            'to' => $buyerEmail,
-        ]);
 
         return response()->json([
             'success' => true,
@@ -1295,31 +1382,32 @@ class ExchangeLotController extends Controller
         $timeout = (int) config('services.core.timeout', 10);
         $cryptoType = $lot->cryptoCurrency?->code ?? 'xmr';
 
-        foreach ($transactions as $tx) {
-            try {
-                $req = Http::timeout($timeout);
-                if ($coreKey !== '') {
-                    $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
-                }
-                $resp = $req->post($coreUrl . '/api/cancel-reservation-by-transaction', [
-                    'transaction_id' => $tx->id,
-                    'escrow_token' => $escrowToken,
-                    'crypto_type' => $cryptoType,
-                ]);
-                if (!$resp->successful()) {
-                    Log::warning('[exchange-lots] buyerCancelDeal: Core cancel-reservation failed', [
-                        'lot_id' => $lot->id,
-                        'transaction_id' => $tx->id,
-                        'status' => $resp->status(),
-                    ]);
-                }
-            } catch (\Throwable $e) {
-                Log::warning('[exchange-lots] buyerCancelDeal: Core request failed', [
+        // Delete reservation in Core (works with or without transactions: by exchange_lot_id + buyer token)
+        try {
+            $req = Http::timeout($timeout);
+            if ($coreKey !== '') {
+                $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+            }
+            $resp = $req->post(rtrim($coreUrl, '/') . '/api/delete-reservation-by-buyer', [
+                'exchange_lot_id' => (string) $lot->id,
+                'escrow_token' => $escrowToken,
+                'crypto_type' => $cryptoType,
+            ]);
+            if ($resp->successful()) {
+                Log::info('[exchange-lots] buyerCancelDeal: Core delete-reservation-by-buyer OK', ['lot_id' => $lot->id]);
+            } else {
+                Log::warning('[exchange-lots] buyerCancelDeal: Core delete-reservation-by-buyer failed', [
                     'lot_id' => $lot->id,
-                    'transaction_id' => $tx->id,
-                    'error' => $e->getMessage(),
+                    'status' => $resp->status(),
+                    'body' => $resp->body(),
+                    'core_url' => rtrim($coreUrl, '/') . '/api/delete-reservation-by-buyer',
                 ]);
             }
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] buyerCancelDeal: Core delete-reservation-by-buyer exception', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+            ]);
         }
 
         Transaction::where('exchange_lot_id', $lot->id)->where('buyer_lot_email', $lot->buyer_lot_email)->delete();
@@ -1333,12 +1421,17 @@ class ExchangeLotController extends Controller
         if ($sellerEmail) {
             try {
                 $tagJson = json_encode(['t' => 'buyer_exited', 'lot_id' => $lot->id]);
-                $buyerExitedBody = 'The buyer has left the deal for Lot #' . $lot->id . '.';
+                // No localization on server: body from client. If client sent empty, leave empty (no space in chat/DB).
+                $buyerExitedBody = is_string($request->input('message')) ? trim($request->input('message')) : '';
+                if ($buyerExitedBody === '') {
+                    Log::warning('[exchange-lots] buyerCancelDeal: client sent empty message', ['lot_id' => $lot->id]);
+                }
+                $buyerExitedSubject = is_string($request->input('subject')) ? trim($request->input('subject')) : '';
                 Mail::raw(
                     $buyerExitedBody,
-                    function ($message) use ($sellerEmail, $lot, $tagJson) {
+                    function ($message) use ($sellerEmail, $lot, $tagJson, $buyerExitedSubject, $buyerExitedBody) {
                         $message->to($sellerEmail);
-                        $message->subject('Buyer left the deal — Lot #' . $lot->id);
+                        $message->subject($buyerExitedSubject !== '' ? $buyerExitedSubject : $buyerExitedBody);
                         $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
                         $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
                     }

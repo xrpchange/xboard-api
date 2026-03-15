@@ -17,16 +17,17 @@ class EscrowTokenService
      */
     public function createToken(string $cryptoType, float $amount = 0.0): array
     {
-        // Determine Core URL based on current API host (preserve environment)
+        // Determine Core URL and key based on current API host (preserve environment)
         $host = $_SERVER['HTTP_HOST'] ?? '';
         $coreUrl = config('services.core.url'); // default (sandbox)
+        $coreKey = config('services.core.key');
         
-        // If request came to production API, use production Core
+        // If request came to production API, use production Core URL and key
         if (!preg_match('/^(sandbox\.|dev\.)/', $host)) {
             $coreUrl = config('services.core_production.url');
+            $coreKey = config('services.core_production.key');
         }
         
-        $coreKey = config('services.core.key');
         $timeout = config('services.core.timeout', 10);
 
         try {
