@@ -22,6 +22,17 @@
 - Виртуальные пользователи статичные, Dovecot с `nopassword`
 - См. `docs/EMAIL_SERVER_SETUP.md`. Для доставки исходящей почты (в т.ч. с ящиков лотов) на внешние адреса нужны SPF, DKIM, DMARC — см. `docs/MAIL_SPF_DKIM_DMARC.md`.
 
+#### Запрет подмены отправителя (sender login mismatch)
+
+Чтобы пользователь почтового клиента не мог отправлять письма «от имени» чужого адреса, на сервере включена проверка Postfix:
+
+- **smtpd_sender_login_maps** — карта «адрес отправителя → разрешённый SASL-логин»:
+  - статичный файл `hash:/etc/postfix/sender_login_maps`: `noreply@xdexboard.com`, `check@xdexboard.com` (каждый только со своим логином);
+  - MySQL `mysql:/etc/postfix/mysql-sender-login-lot.cf`: ящики из `lot_mailboxes` (логин = полный адрес ящика).
+- **smtpd_sender_restrictions** включает **reject_sender_login_mismatch** перед `permit_sasl_authenticated`: если MAIL FROM не совпадает с разрешённым для данного логина, письмо отклоняется.
+
+При появлении новых служебных отправителей (не из `lot_mailboxes`) их нужно добавить в `/etc/postfix/sender_login_maps` и выполнить `sudo postmap hash:/etc/postfix/sender_login_maps && sudo systemctl reload postfix`.
+
 ### Требуемые изменения
 
 #### 1. Хранение учёток в БД
