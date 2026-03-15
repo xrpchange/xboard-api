@@ -906,8 +906,7 @@ class ExchangeLotController extends Controller
         $fromName = config('mail.from.name', 'XBoard');
 
         $messageText = $request->input('message', '');
-        $buyerLocale = $request->input('buyer_locale', 'en');
-        $subject = $this->getDealMessageSubject($lot, $buyerLocale);
+        $subject = $this->getDealMessageSubject($lot);
         $body = $messageText;
 
         Log::info('[exchange-lots] sendMessageToSeller: sending mail', [
@@ -943,7 +942,7 @@ class ExchangeLotController extends Controller
                 }
             });
             if ($requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
-                $this->lotMailboxService->writeBuyerSentCopyToMailbox($requesterMailboxEmail, (string) $lot->id, $messageText);
+                $this->lotMailboxService->writeBuyerSentCopyToMailbox($requesterMailboxEmail, (string) $lot->id, $body);
             }
             $this->insertDealChatMessage(
                 $lot,
@@ -982,6 +981,115 @@ class ExchangeLotController extends Controller
         }
 
         return response()->json($response);
+    }
+
+    /**
+     * Send a test "buyer entered deal" notification. Client sends localized subject and body (no server-side localization).
+     *
+     * @OA\Post(
+     *     path="/exchange-lots/{lot}/send-test-notification-email",
+     *     summary="Send test notification email (seller only)",
+     *     tags={"Exchange Lots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\RequestBody(@OA\JsonContent(
+     *         required={"body"},
+     *         @OA\Property(property="to_email", type="string"),
+     *         @OA\Property(property="subject", type="string"),
+     *         @OA\Property(property="body", type="string", description="Localized message body from client")
+     *     )),
+     *     @OA\Response(response=200, description="Test email sent"),
+     *     @OA\Response(response=400, description="No recipient email"),
+     *     @OA\Response(response=422, description="Missing body")
+     * )
+     */
+    public function sendTestNotificationEmail(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        $toEmail = $request->input('to_email');
+        if (is_string($toEmail) && trim($toEmail) !== '') {
+            $toEmail = trim($toEmail);
+        } else {
+            $toEmail = $lot->seller_notification_email ? trim((string) $lot->seller_notification_email) : null;
+        }
+        if (!$toEmail || !filter_var($toEmail, FILTER_VALIDATE_EMAIL)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No valid recipient email. Set to_email in request or lot.seller_notification_email.',
+            ], 400);
+        }
+
+        $body = $request->input('body');
+        if (!is_string($body) || trim($body) === '') {
+            return response()->json(['success' => false, 'message' => 'Body is required.'], 422);
+        }
+        $body = trim($body);
+        $subject = $request->input('subject');
+        $subject = is_string($subject) && trim($subject) !== '' ? trim($subject) : sprintf('Deal message — Lot #%s', (string) $lot->id);
+
+        $fromAddress = config('mail.from.address', 'noreply@xdexboard.com');
+        $fromName = config('mail.from.name', 'XBoard');
+        $tagJson = json_encode(['t' => 'start_deal', 'lot_id' => $lot->id]);
+
+        try {
+            Mail::raw($body, function ($message) use ($toEmail, $fromAddress, $fromName, $subject, $body, $tagJson) {
+                $message->to($toEmail);
+                $message->subject($subject);
+                $message->from($fromAddress, $fromName);
+                $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
+            });
+            Log::info('[exchange-lots] sendTestNotificationEmail: sent', ['lot_id' => $lot->id, 'to' => $toEmail]);
+            return response()->json(['success' => true, 'message' => 'Test notification email sent.']);
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] sendTestNotificationEmail: failed', [
+                'lot_id' => $lot->id,
+                'to' => $toEmail,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send test email: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Send a test "buyer entered deal" notification when no lot is selected (e.g. create form). Client sends localized subject and body.
+     * POST /exchange-lots/send-test-notification-email with body { to_email, body, subject? }.
+     */
+    public function sendTestNotificationEmailStandalone(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'to_email' => 'required|email',
+            'body' => 'required|string|max:10000',
+            'subject' => 'nullable|string|max:255',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        }
+        $toEmail = trim((string) $request->input('to_email'));
+        $body = trim((string) $request->input('body'));
+        $subject = $request->input('subject');
+        $subject = is_string($subject) && trim($subject) !== '' ? trim($subject) : 'Deal message — Lot #test';
+
+        $fromAddress = config('mail.from.address', 'noreply@xdexboard.com');
+        $fromName = config('mail.from.name', 'XBoard');
+        $tagJson = json_encode(['t' => 'start_deal', 'lot_id' => 'test']);
+
+        try {
+            Mail::raw($body, function ($message) use ($toEmail, $fromAddress, $fromName, $subject, $tagJson) {
+                $message->to($toEmail);
+                $message->subject($subject);
+                $message->from($fromAddress, $fromName);
+                $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
+            });
+            Log::info('[exchange-lots] sendTestNotificationEmailStandalone: sent', ['to' => $toEmail]);
+            return response()->json(['success' => true, 'message' => 'Test notification email sent.']);
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] sendTestNotificationEmailStandalone: failed', ['to' => $toEmail, 'error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send test email: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
@@ -1059,7 +1167,7 @@ class ExchangeLotController extends Controller
         }
 
         $messageText = $request->input('message', '');
-        $subject = $this->getDealMessageSubject($lot, 'en');
+        $subject = $this->getDealMessageSubject($lot);
         $body = $messageText;
 
         // seller_exited: send notification to buyer then clear buyer_lot_email so the lot can accept new deals
@@ -1735,23 +1843,12 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * Subject line for "deal message" email, localized to buyer's locale (so seller sees subject in buyer's language).
-     * MUST include lot number (id) in subject so the client can parse it when opening from notification (e.g. IDLE).
+     * Subject line for "deal message" email. Single fixed format (no localization on server).
+     * MUST include lot number (id) so the client can parse it when opening from notification (e.g. IDLE).
      */
-    private function getDealMessageSubject(ExchangeLot $lot, string $buyerLocale): string
+    private function getDealMessageSubject(ExchangeLot $lot): string
     {
-        $locale = $buyerLocale ?: 'en';
-        $templates = [
-            'ru' => 'Сообщение по сделке — Лот #%s',
-            'fr' => 'Message de deal — Lot #%s',
-            'he' => 'הודעת עסקה — לוט #%s',
-            'de' => 'Deal-Nachricht — Lot #%s',
-            'es' => 'Mensaje de deal — Lote #%s',
-            'ar' => 'رسالة صفقة — لوت #%s',
-            'en' => 'Deal message — Lot #%s',
-        ];
-        $template = $templates[$locale] ?? $templates['en'];
-        return sprintf($template, (string) $lot->id);
+        return sprintf('Deal message — Lot #%s', (string) $lot->id);
     }
 
     /**
@@ -1777,10 +1874,9 @@ class ExchangeLotController extends Controller
      * Email body: deal summary (same info as on Deal screen) in buyer's language, then buyer's message.
      * Labels localized by buyer_locale; no seller language in body.
      */
-    private function getDealMessageBody(ExchangeLot $lot, string $buyerLocale, string $buyerMessage, ?float $selectedAmount): string
+    private function getDealMessageBody(ExchangeLot $lot, string $buyerMessage, ?float $selectedAmount): string
     {
-        $locale = $buyerLocale ?: 'en';
-        $strings = $this->getDealEmailStrings($locale);
+        $strings = $this->getDealEmailStrings();
 
         $fromSym = $this->formatCurrencyForDisplay($lot->from_currency ?? '');
         $toSym = $this->formatCurrencyForDisplay($lot->to_currency ?? '');
@@ -1829,13 +1925,14 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * Localized strings for deal summary email (buyer's language).
+     * Strings for deal summary email. English only (no localization on server).
+     * Used by getDealMessageBody if needed. Client is responsible for localized content.
      *
      * @return array<string, string>
      */
-    private function getDealEmailStrings(string $locale): array
+    private function getDealEmailStrings(): array
     {
-        $en = [
+        return [
             'summary_title' => 'Deal summary (buyer\'s view)',
             'pair' => 'Pair',
             'pay_range' => 'Pay range',
@@ -1847,44 +1944,6 @@ class ExchangeLotController extends Controller
             'accept_from_banks' => 'Accept from banks',
             'buyer_message' => 'Buyer\'s message:',
         ];
-        $ru = [
-            'summary_title' => 'Сводка по сделке (вид покупателя)',
-            'pair' => 'Пара',
-            'pay_range' => 'Диапазон оплаты',
-            'rate' => 'Курс',
-            'for_amount_you_get' => 'За %s %s (из %s %s): получите %s %s',
-            'aml' => 'AML',
-            'aml_not_considered' => '—',
-            'lot_id' => 'ID лота',
-            'accept_from_banks' => 'Принимает платежи с банков',
-            'buyer_message' => 'Сообщение покупателя:',
-        ];
-        $fr = [
-            'summary_title' => 'Résumé du deal (vue acheteur)',
-            'pair' => 'Paire',
-            'pay_range' => 'Fourchette de paiement',
-            'rate' => 'Taux',
-            'for_amount_you_get' => 'Pour %s %s (sur %s %s) : vous recevez %s %s',
-            'aml' => 'AML',
-            'aml_not_considered' => '—',
-            'lot_id' => 'ID du lot',
-            'accept_from_banks' => 'Accepte les virements depuis les banques',
-            'buyer_message' => 'Message de l\'acheteur :',
-        ];
-        $he = [
-            'summary_title' => 'סיכום עסקה (תצוגת קונה)',
-            'pair' => 'צמד',
-            'pay_range' => 'טווח תשלום',
-            'rate' => 'שער',
-            'for_amount_you_get' => 'עבור %s %s (מתוך %s %s): תקבל %s %s',
-            'aml' => 'AML',
-            'aml_not_considered' => '—',
-            'lot_id' => 'מזהה מנה',
-            'accept_from_banks' => 'מקבל תשלומים מהבנקים',
-            'buyer_message' => 'הודעת הקונה:',
-        ];
-        $all = ['en' => $en, 'ru' => $ru, 'fr' => $fr, 'he' => $he];
-        return $all[$locale] ?? $en;
     }
 
     /**
