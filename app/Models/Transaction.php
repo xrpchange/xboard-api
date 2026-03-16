@@ -30,6 +30,7 @@ class Transaction extends Model
         'bank_id',
         'bank_details',
         'crypto_address',
+        'receipt_links_json',
         'status',
         'is_test',
         'test_group',
@@ -53,6 +54,7 @@ class Transaction extends Model
 
     protected $casts = [
         'amount' => 'decimal:8',
+        'receipt_links_json' => 'array',
         'is_test' => 'boolean',
     ];
 
