@@ -224,7 +224,7 @@ class PaymentVerificationController extends Controller
      * Verify email sender against banks.allowed_domain whitelist.
      * Returns valid, domain, bank_name (for display "Letter from bank X"), and error when not in whitelist.
      */
-    private function verifySender(string $rawEmail): array
+    private function verifySender(string $rawEmail, ?int $expectedBankId = null): array
     {
         $result = [
             'valid' => false,
@@ -244,18 +244,37 @@ class PaymentVerificationController extends Controller
         $result['domain'] = $senderInfo['domain'];
         $result['from'] = $senderInfo['from'];
 
-        $banks = Bank::withAllowedDomain()->get();
-        foreach ($banks as $bank) {
-            $allowedDomain = strtolower(trim($bank->allowed_domain ?? ''));
-            if ($allowedDomain === '') {
-                continue;
+        if ($expectedBankId !== null) {
+            $bank = Bank::withAllowedDomain()->where('id', $expectedBankId)->first();
+            if (!$bank) {
+                $result['error'] = "Bank id '{$expectedBankId}' is not in DKIM whitelist";
+                return $result;
             }
-            // Exact match or subdomain (e.g. no-reply@sberbank.ru or mail.sberbank.ru)
+
+            $allowedDomain = strtolower(trim($bank->allowed_domain ?? ''));
             if ($senderInfo['domain'] === $allowedDomain
                 || substr($senderInfo['domain'], -strlen($allowedDomain) - 1) === '.' . $allowedDomain) {
                 $result['valid'] = true;
                 $result['bank_name'] = $bank->name;
                 return $result;
+            }
+
+            $result['error'] = "Sender domain '{$senderInfo['domain']}' does not match expected bank '{$bank->name}'";
+            return $result;
+        } else {
+            $banks = Bank::withAllowedDomain()->get();
+            foreach ($banks as $bank) {
+                $allowedDomain = strtolower(trim($bank->allowed_domain ?? ''));
+                if ($allowedDomain === '') {
+                    continue;
+                }
+                // Exact match or subdomain (e.g. no-reply@sberbank.ru or mail.sberbank.ru)
+                if ($senderInfo['domain'] === $allowedDomain
+                    || substr($senderInfo['domain'], -strlen($allowedDomain) - 1) === '.' . $allowedDomain) {
+                    $result['valid'] = true;
+                    $result['bank_name'] = $bank->name;
+                    return $result;
+                }
             }
         }
 
@@ -763,6 +782,7 @@ class PaymentVerificationController extends Controller
      *         @OA\JsonContent(
      *             required={"email_raw"},
      *             @OA\Property(property="email_raw", type="string", description="Base64 encoded raw email (from IMAP/POP3 or .eml)"),
+     *             @OA\Property(property="bank_id", type="integer", nullable=true, description="Optional expected bank ID from X-XBoard-Deal-Tag. If provided, sender must match this bank's allowed_domain."),
      *         )
      *     ),
      *     @OA\Response(
@@ -789,6 +809,7 @@ class PaymentVerificationController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'email_raw' => 'required|string',
+            'bank_id' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {
@@ -834,13 +855,43 @@ class PaymentVerificationController extends Controller
             // Extract sender domain and email
             $senderInfo = $this->extractSenderInfo($rawEmail);
 
-            // Check sender against bank whitelist (allowed_domain)
-            $senderCheck = $this->verifySender($rawEmail);
+            $expectedBankId = $request->filled('bank_id') ? (int) $request->input('bank_id') : null;
+            Log::info('verifyEmailContent: request context', [
+                'expected_bank_id' => $expectedBankId,
+                'sender_domain' => $senderInfo['domain'],
+                'sender_email' => $senderInfo['email'],
+            ]);
+
+            // Check sender against whitelist (or against exact bank when bank_id is provided)
+            $senderCheck = $this->verifySender($rawEmail, $expectedBankId);
+            Log::info('verifyEmailContent: sender check result', [
+                'expected_bank_id' => $expectedBankId,
+                'sender_known' => $senderCheck['valid'],
+                'sender_bank_name' => $senderCheck['bank_name'] ?? null,
+                'sender_check_error' => $senderCheck['error'] ?? null,
+                'matched_domain' => $senderCheck['domain'] ?? null,
+            ]);
+            if (!$senderCheck['valid']) {
+                Log::warning('verifyEmailContent: sender whitelist check failed', [
+                    'expected_bank_id' => $expectedBankId,
+                    'sender_domain' => $senderInfo['domain'],
+                    'sender_email' => $senderInfo['email'],
+                    'sender_check_error' => $senderCheck['error'] ?? null,
+                ]);
+            }
 
             // Prefer manual DKIM verification (correct body canonicalization and l= handling); fallback to PHPMailer
             $dkimResult = $this->verifyDKIMManual($rawEmail);
             if (!$dkimResult['valid']) {
                 $dkimResult = $this->verifyDKIM($rawEmail);
+            }
+            if (!$dkimResult['valid']) {
+                Log::warning('verifyEmailContent: dkim check failed', [
+                    'expected_bank_id' => $expectedBankId,
+                    'sender_domain' => $senderInfo['domain'],
+                    'dkim_domain' => $dkimResult['domain'] ?? null,
+                    'dkim_error' => $dkimResult['error'] ?? null,
+                ]);
             }
 
             Log::info("Email content verification", [
@@ -867,7 +918,36 @@ class PaymentVerificationController extends Controller
                 $pdfAttachments = $this->extractAndSavePdfAttachments($rawEmail);
                 Log::info('verifyEmailContent: PDF extraction done', ['count' => count($pdfAttachments)]);
             } else {
-                Log::info('verifyEmailContent: skipping PDF extraction (DKIM or sender whitelist check failed)');
+                Log::info('verifyEmailContent: skipping PDF extraction (DKIM or sender whitelist check failed)', [
+                    'expected_bank_id' => $expectedBankId,
+                    'dkim_valid' => $dkimResult['valid'],
+                    'sender_known' => $senderCheck['valid'],
+                    'dkim_error' => $dkimResult['error'] ?? null,
+                    'sender_check_error' => $senderCheck['error'] ?? null,
+                ]);
+            }
+
+            if ($dkimResult['valid'] && $senderCheck['valid'] && count($pdfAttachments) === 0) {
+                Log::warning('verifyEmailContent: invalid receipt, no PDF attachments', [
+                    'bank_id' => $expectedBankId,
+                    'sender_email' => $senderInfo['email'],
+                    'sender_domain' => $senderInfo['domain'],
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Email is invalid: no PDF attachments found',
+                    'data' => [
+                        'dkim_valid' => true,
+                        'dkim_domain' => $dkimResult['domain'] ? $this->cleanUtf8String($dkimResult['domain']) : null,
+                        'sender_domain' => $senderInfo['domain'] ? $this->cleanUtf8String($senderInfo['domain']) : null,
+                        'sender_email' => $senderInfo['email'] ? $this->cleanUtf8String($senderInfo['email']) : null,
+                        'sender_bank_name' => $senderCheck['bank_name'] ? $this->cleanUtf8String($senderCheck['bank_name']) : null,
+                        'sender_known' => $senderCheck['valid'],
+                        'dkim_error' => null,
+                        'pdf_attachments' => [],
+                    ],
+                ]);
             }
 
             // Ensure all strings are valid UTF-8 before JSON encoding
@@ -889,6 +969,9 @@ class PaymentVerificationController extends Controller
             ];
 
             Log::info('verifyEmailContent: response payload summary', [
+                'expected_bank_id' => $expectedBankId,
+                'sender_known' => $senderCheck['valid'],
+                'dkim_valid' => $dkimResult['valid'],
                 'pdf_attachments_count' => count($pdfAttachments),
                 'first_pdf_link' => $pdfAttachments[0]['link'] ?? null,
             ]);
@@ -1212,6 +1295,7 @@ class PaymentVerificationController extends Controller
             try {
                 Storage::disk('local')->put($path, $decoded);
                 $baseUrl = rtrim(request()->getSchemeAndHttpHost(), '/');
+                $baseUrl = preg_replace('/^http:/i', 'https:', $baseUrl);
                 $link = $baseUrl . '/api/v1/payments/email-attachments/' . $dateFolder . '/' . $token;
                 $result[] = [
                     'filename' => $this->cleanUtf8String($safeFilename) ?? $safeFilename,

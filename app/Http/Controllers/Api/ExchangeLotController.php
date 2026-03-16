@@ -788,6 +788,7 @@ class ExchangeLotController extends Controller
             'buyer_locale' => 'nullable|string|max:10',
             'selected_amount' => 'nullable|numeric|min:0',
             'message_type' => 'nullable|string|in:start_deal,buyer_exited',
+            'deal_tag' => 'nullable|string|max:20000',
         ]);
 
         if ($validator->fails()) {
@@ -980,6 +981,17 @@ class ExchangeLotController extends Controller
 
         try {
             $tagJson = null;
+            $customDealTagData = null;
+            $customDealTagRaw = $request->input('deal_tag');
+            if (is_string($customDealTagRaw) && trim($customDealTagRaw) !== '') {
+                $customDealTagData = $this->decodeDealTagFromRaw($customDealTagRaw);
+                if ($customDealTagData === null) {
+                    Log::warning('[exchange-lots] sendMessageToSeller: invalid custom deal_tag JSON', [
+                        'lot_id' => $lot->id,
+                        'deal_tag_preview' => substr($customDealTagRaw, 0, 300),
+                    ]);
+                }
+            }
             if ($messageType === 'buyer_exited') {
                 $tagJson = json_encode(['t' => 'buyer_exited', 'lot_id' => $lot->id]);
             } elseif ($messageType === 'start_deal') {
@@ -994,14 +1006,22 @@ class ExchangeLotController extends Controller
                 }
                 $tagJson = json_encode($tag);
             }
-            Mail::raw($body, function ($message) use ($sellerEmail, $fromAddress, $fromName, $subject, $tagJson) {
-                $message->to($sellerEmail);
-                $message->subject($subject);
-                $message->from($fromAddress, $fromName);
-                if ($tagJson !== null) {
-                    $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
+            if ($customDealTagData !== null) {
+                if (!array_key_exists('lot_id', $customDealTagData)) {
+                    $customDealTagData['lot_id'] = (int) $lot->id;
                 }
-            });
+                $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
+            $this->sendDealEmail(
+                to: $sellerEmail,
+                subject: $subject,
+                fromAddress: $fromAddress,
+                fromName: $fromName,
+                body: $body,
+                tagJson: $tagJson,
+                dealTagData: $customDealTagData
+            );
+            $this->storeReceiptLinksInLatestTransaction($lot, $customDealTagData);
             if ($requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
                 $this->lotMailboxService->writeBuyerSentCopyToMailbox($requesterMailboxEmail, (string) $lot->id, $body);
             }
@@ -1173,6 +1193,7 @@ class ExchangeLotController extends Controller
         $validator = Validator::make($request->all(), [
             'message' => 'required|string|max:10000',
             'message_type' => 'nullable|string|in:seller_exited',
+            'deal_tag' => 'nullable|string|max:20000',
         ]);
 
         if ($validator->fails()) {
@@ -1274,6 +1295,22 @@ class ExchangeLotController extends Controller
         $tagJson = $messageType === 'seller_exited'
             ? json_encode(['t' => 'seller_exited', 'lot_id' => $lot->id])
             : null;
+        $customDealTagData = null;
+        $customDealTagRaw = $request->input('deal_tag');
+        if (is_string($customDealTagRaw) && trim($customDealTagRaw) !== '') {
+            $customDealTagData = $this->decodeDealTagFromRaw($customDealTagRaw);
+            if ($customDealTagData === null) {
+                Log::warning('[exchange-lots] sendMessageToBuyer: invalid custom deal_tag JSON', [
+                    'lot_id' => $lot->id,
+                    'deal_tag_preview' => substr($customDealTagRaw, 0, 300),
+                ]);
+            } else {
+                if (!array_key_exists('lot_id', $customDealTagData)) {
+                    $customDealTagData['lot_id'] = (int) $lot->id;
+                }
+                $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
+        }
 
         if (!empty($buyerEmail)) {
             Log::info('[exchange-lots] sendMessageToBuyer: sending mail', [
@@ -1283,14 +1320,16 @@ class ExchangeLotController extends Controller
             ]);
 
             try {
-                Mail::raw($body, function ($message) use ($buyerEmail, $subject, $tagJson) {
-                    $message->to($buyerEmail);
-                    $message->subject($subject);
-                    $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
-                    if ($tagJson !== null) {
-                        $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
-                    }
-                });
+                $this->sendDealEmail(
+                    to: $buyerEmail,
+                    subject: $subject,
+                    fromAddress: config('mail.from.address', 'noreply@xdexboard.com'),
+                    fromName: config('mail.from.name', 'XBoard'),
+                    body: $body,
+                    tagJson: $tagJson,
+                    dealTagData: $customDealTagData
+                );
+                $this->storeReceiptLinksInLatestTransaction($lot, $customDealTagData);
             } catch (\Throwable $e) {
                 Log::warning('[exchange-lots] sendMessageToBuyer: failed to send mail', [
                     'lot_id' => $lot->id,
@@ -2069,6 +2108,163 @@ class ExchangeLotController extends Controller
             ]);
         } catch (\Throwable $e) {
             Log::warning('[exchange-lots] insertDealChatMessage failed', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Decode custom deal tag JSON payload from client.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function decodeDealTagFromRaw(string $raw): ?array
+    {
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+
+        return $decoded;
+    }
+
+    /**
+     * Build HTML body with clickable links for receipt confirmation tags.
+     * Falls back to plain text body for all other deal message types.
+     */
+    private function buildClickableLinksHtml(string $plainBody, ?array $dealTagData): ?string
+    {
+        if (!is_array($dealTagData) || (($dealTagData['t'] ?? null) !== 'receipt_confirmation')) {
+            return null;
+        }
+        $links = $dealTagData['receipt_links'] ?? null;
+        if (!is_array($links) || count($links) === 0) {
+            return null;
+        }
+
+        $escapedMessage = nl2br(e($plainBody));
+        $itemsHtml = '';
+        foreach ($links as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $url = isset($item['link']) ? trim((string) $item['link']) : '';
+            if ($url === '') {
+                continue;
+            }
+            $name = isset($item['filename']) ? trim((string) $item['filename']) : $url;
+            $itemsHtml .= '<li><a href="' . e($url) . '" target="_blank" rel="noopener noreferrer">' . e($name) . '</a></li>';
+        }
+        if ($itemsHtml === '') {
+            return null;
+        }
+
+        return '<!doctype html><html><body>'
+            . '<p>' . $escapedMessage . '</p>'
+            . '<p><strong>PDF links:</strong></p><ul>' . $itemsHtml . '</ul>'
+            . '</body></html>';
+    }
+
+    /**
+     * Send deal email as HTML (for receipt confirmation with links) or plain text.
+     */
+    private function sendDealEmail(
+        string $to,
+        string $subject,
+        string $fromAddress,
+        string $fromName,
+        string $body,
+        ?string $tagJson,
+        ?array $dealTagData = null
+    ): void {
+        $htmlBody = $this->buildClickableLinksHtml($body, $dealTagData);
+        if ($htmlBody !== null) {
+            Mail::send([], [], function ($message) use ($to, $subject, $fromAddress, $fromName, $tagJson, $htmlBody) {
+                $message->to($to);
+                $message->subject($subject);
+                $message->from($fromAddress, $fromName);
+                $message->html($htmlBody);
+                if ($tagJson !== null) {
+                    $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
+                }
+            });
+
+            return;
+        }
+
+        Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName, $tagJson) {
+            $message->to($to);
+            $message->subject($subject);
+            $message->from($fromAddress, $fromName);
+            if ($tagJson !== null) {
+                $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
+            }
+        });
+    }
+
+    /**
+     * Persist receipt confirmation links into the latest related transaction.
+     * Stores links from deal tag (receipt_confirmation.receipt_links) as JSON.
+     *
+     * @param array<string, mixed>|null $dealTagData
+     */
+    private function storeReceiptLinksInLatestTransaction(ExchangeLot $lot, ?array $dealTagData): void
+    {
+        if (!is_array($dealTagData) || (($dealTagData['t'] ?? null) !== 'receipt_confirmation')) {
+            return;
+        }
+
+        $rawLinks = $dealTagData['receipt_links'] ?? null;
+        if (!is_array($rawLinks) || count($rawLinks) === 0) {
+            return;
+        }
+
+        $normalizedLinks = [];
+        foreach ($rawLinks as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $filename = isset($item['filename']) ? trim((string) $item['filename']) : '';
+            $link = isset($item['link']) ? trim((string) $item['link']) : '';
+            if ($link === '') {
+                continue;
+            }
+            $normalizedLinks[] = [
+                'filename' => $filename,
+                'link' => $link,
+            ];
+        }
+
+        if (count($normalizedLinks) === 0) {
+            return;
+        }
+
+        try {
+            $query = Transaction::where('exchange_lot_id', $lot->id);
+            if (!empty($lot->buyer_lot_email)) {
+                $query->where('buyer_lot_email', $lot->buyer_lot_email);
+            }
+            $transaction = $query->orderByDesc('id')->first();
+            if ($transaction === null) {
+                Log::warning('[exchange-lots] storeReceiptLinksInLatestTransaction: no transaction found', [
+                    'lot_id' => $lot->id,
+                    'buyer_lot_email' => $lot->buyer_lot_email,
+                    'links_count' => count($normalizedLinks),
+                ]);
+
+                return;
+            }
+
+            $transaction->receipt_links_json = $normalizedLinks;
+            $transaction->save();
+            Log::info('[exchange-lots] storeReceiptLinksInLatestTransaction: saved', [
+                'lot_id' => $lot->id,
+                'transaction_id' => $transaction->id,
+                'links_count' => count($normalizedLinks),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] storeReceiptLinksInLatestTransaction failed', [
                 'lot_id' => $lot->id,
                 'error' => $e->getMessage(),
             ]);
