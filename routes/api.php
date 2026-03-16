@@ -40,6 +40,8 @@ Route::prefix('v1/payments')->group(function () {
     Route::post('/verify-email', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'verifyEmail']);
     Route::post('/verify-email-content', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'verifyEmailContent']);
     Route::post('/forward-email', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'forwardEmail']);
+    // Serve saved PDF attachments from verify-email-content (token = long random filename without extension)
+    Route::get('/email-attachments/{date}/{token}', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'showEmailAttachment']);
 });
 
 // Email providers (v1 API, public, no authentication required)

@@ -7,6 +7,7 @@ use App\Models\Bank;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -855,6 +856,20 @@ class PaymentVerificationController extends Controller
                 'dkim_error' => $dkimResult['error'],
             ]);
 
+            // Extract and save PDF attachments only after DKIM and bank whitelist checks pass
+            $pdfAttachments = [];
+            Log::info('verifyEmailContent: PDF extraction check', [
+                'dkim_valid' => $dkimResult['valid'],
+                'sender_known' => $senderCheck['valid'],
+                'will_extract_pdf' => $dkimResult['valid'] && $senderCheck['valid'],
+            ]);
+            if ($dkimResult['valid'] && $senderCheck['valid']) {
+                $pdfAttachments = $this->extractAndSavePdfAttachments($rawEmail);
+                Log::info('verifyEmailContent: PDF extraction done', ['count' => count($pdfAttachments)]);
+            } else {
+                Log::info('verifyEmailContent: skipping PDF extraction (DKIM or sender whitelist check failed)');
+            }
+
             // Ensure all strings are valid UTF-8 before JSON encoding
             $responseData = [
                 'success' => true,
@@ -869,8 +884,14 @@ class PaymentVerificationController extends Controller
                     'sender_bank_name' => $senderCheck['bank_name'] ? $this->cleanUtf8String($senderCheck['bank_name']) : null,
                     'sender_known' => $senderCheck['valid'],
                     'dkim_error' => $dkimResult['error'] ? $this->cleanUtf8String($dkimResult['error']) : null,
+                    'pdf_attachments' => $pdfAttachments,
                 ]
             ];
+
+            Log::info('verifyEmailContent: response payload summary', [
+                'pdf_attachments_count' => count($pdfAttachments),
+                'first_pdf_link' => $pdfAttachments[0]['link'] ?? null,
+            ]);
 
             return response()->json($responseData);
 
@@ -1109,6 +1130,198 @@ class PaymentVerificationController extends Controller
                 $swiftMessage->setBody($rawEmail, 'message/rfc822');
             }
         });
+    }
+
+    /**
+     * Serve a previously saved email PDF attachment by date (UTC YYYY-MM-DD) and token.
+     * GET /api/v1/payments/email-attachments/{date}/{token}
+     */
+    public function showEmailAttachment(Request $request, string $date, string $token): StreamedResponse|JsonResponse
+    {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return response()->json(['error' => 'Invalid date'], 400);
+        }
+        if (!preg_match('/^[a-f0-9]{32}$/i', $token)) {
+            return response()->json(['error' => 'Invalid token'], 400);
+        }
+        $path = 'email_attachments/' . $date . '/' . $token . '.pdf';
+        if (!Storage::disk('local')->exists($path)) {
+            return response()->json(['error' => 'Not found'], 404);
+        }
+        return Storage::disk('local')->response($path, 'attachment.pdf', [
+            'Content-Type' => 'application/pdf',
+        ]);
+    }
+
+    /**
+     * Extract PDF attachments from raw MIME email, save each in a date subfolder (UTC YYYY-MM-DD),
+     * and return array of { filename, link } for the client.
+     */
+    private function extractAndSavePdfAttachments(string $rawEmail): array
+    {
+        $result = [];
+        $dateFolder = gmdate('Y-m-d');
+        Log::info('extractAndSavePdfAttachments: start', ['date_folder' => $dateFolder, 'raw_email_len' => strlen($rawEmail)]);
+
+        $parts = $this->extractMimeParts($rawEmail);
+        Log::info('extractAndSavePdfAttachments: MIME parts count', ['count' => count($parts)]);
+
+        foreach ($parts as $i => $part) {
+            $contentType = $part['content_type'] ?? '';
+            $filename = $part['filename'] ?? '';
+            $bodyLen = isset($part['body']) ? strlen($part['body']) : 0;
+            Log::info('extractAndSavePdfAttachments: part', [
+                'index' => $i,
+                'content_type' => substr($contentType, 0, 80),
+                'filename' => substr($filename, 0, 80),
+                'body_len' => $bodyLen,
+                'encoding' => $part['encoding'] ?? '',
+            ]);
+
+            if (empty($part['body'])) {
+                Log::info('extractAndSavePdfAttachments: skip part (empty body)', ['index' => $i]);
+                continue;
+            }
+
+            $decoded = $this->decodeMimePartBody($part['body'], $part['encoding'] ?? '');
+            if ($decoded === null) {
+                Log::warning('extractAndSavePdfAttachments: decode failed', ['index' => $i, 'encoding' => $part['encoding'] ?? '']);
+                continue;
+            }
+
+            // Consider PDF if Content-Type/filename say so, or if decoded content has PDF magic bytes (some parts have no headers)
+            $isPdfByHeader = stripos($contentType, 'application/pdf') !== false
+                || (strlen($filename) >= 4 && strtolower(substr($filename, -4)) === '.pdf');
+            $isPdfByMagic = strlen($decoded) >= 4 && substr($decoded, 0, 4) === '%PDF';
+            $isPdf = $isPdfByHeader || $isPdfByMagic;
+            if (!$isPdf) {
+                Log::info('extractAndSavePdfAttachments: skip part (not PDF)', ['index' => $i]);
+                continue;
+            }
+            if ($isPdfByMagic && !$isPdfByHeader) {
+                Log::info('extractAndSavePdfAttachments: part detected as PDF by magic bytes', ['index' => $i]);
+            }
+
+            $safeFilename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $filename) ?: 'attachment.pdf';
+            $token = bin2hex(random_bytes(16));
+            $dir = 'email_attachments/' . $dateFolder;
+            $path = $dir . '/' . $token . '.pdf';
+
+            Log::info('extractAndSavePdfAttachments: saving', ['path' => $path, 'decoded_len' => strlen($decoded)]);
+
+            try {
+                Storage::disk('local')->put($path, $decoded);
+                $baseUrl = rtrim(request()->getSchemeAndHttpHost(), '/');
+                $link = $baseUrl . '/api/v1/payments/email-attachments/' . $dateFolder . '/' . $token;
+                $result[] = [
+                    'filename' => $this->cleanUtf8String($safeFilename) ?? $safeFilename,
+                    'link' => $link,
+                ];
+                Log::info('extractAndSavePdfAttachments: saved', ['path' => $path, 'link' => $link]);
+            } catch (\Throwable $e) {
+                Log::warning('extractAndSavePdfAttachments: save failed', ['path' => $path, 'token' => $token, 'error' => $e->getMessage()]);
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * Extract MIME parts from raw email (recursive for nested multipart); returns array of [ content_type, filename, encoding, body ].
+     */
+    private function extractMimeParts(string $rawEmail): array
+    {
+        $parts = [];
+        $this->extractMimePartsRecursive($rawEmail, $parts);
+        return $parts;
+    }
+
+    private function extractMimePartsRecursive(string $rawEmail, array &$parts): void
+    {
+        $split = preg_split('/\r?\n\r?\n/', $rawEmail, 2);
+        $headers = $split[0] ?? '';
+        $fullBody = $split[1] ?? '';
+        if ($fullBody === '') {
+            Log::info('extractMimePartsRecursive: no body after headers');
+            return;
+        }
+        $boundary = null;
+        if (preg_match('/boundary\s*=\s*["\']?([^"\'\s;]+)["\']?/i', $headers, $m)) {
+            $boundary = trim($m[1], '"\'');
+        }
+        if ($boundary === null) {
+            Log::info('extractMimePartsRecursive: no boundary in headers', ['headers_preview' => substr($headers, 0, 200)]);
+            return;
+        }
+        $segments = preg_split('/\r?\n--' . preg_quote($boundary, '/') . '(?:\r?\n|$)/', $fullBody);
+        Log::info('extractMimePartsRecursive: boundary found', ['boundary' => $boundary, 'segments_count' => count($segments)]);
+        foreach ($segments as $segment) {
+            $segment = trim($segment, "\r\n");
+            if ($segment === '' || $segment === '--') {
+                continue;
+            }
+            $subSplit = preg_split('/\r?\n\r?\n/', $segment, 2);
+            $partHeaders = $subSplit[0] ?? '';
+            $partBody = $subSplit[1] ?? '';
+            $contentType = '';
+            $filename = '';
+            $encoding = '';
+            foreach (explode("\n", str_replace("\r", '', $partHeaders)) as $line) {
+                if (preg_match('/^Content-Type:\s*(.+)$/i', trim($line), $m)) {
+                    $contentType = trim($m[1]);
+                    if (preg_match('/name\s*=\s*["\']?([^"\'\s;]+)["\']?/i', $contentType, $n)) {
+                        $filename = trim($n[1], '"\'');
+                    }
+                }
+                if (preg_match('/^Content-Disposition:\s*(.+)$/i', trim($line), $m)) {
+                    if (preg_match('/filename\s*=\s*["\']?([^"\']+)["\']?/i', $m[1], $n)) {
+                        $filename = trim($n[1], '"\'');
+                    }
+                }
+                if (preg_match('/^Content-Transfer-Encoding:\s*(\S+)/i', trim($line), $m)) {
+                    $encoding = strtolower(trim($m[1]));
+                }
+            }
+            if (preg_match('/^multipart\//i', $contentType)) {
+                $this->extractMimePartsRecursive($partHeaders . "\r\n\r\n" . $partBody, $parts);
+                continue;
+            }
+            $parts[] = [
+                'content_type' => $contentType,
+                'filename' => $filename,
+                'encoding' => $encoding,
+                'body' => $partBody,
+            ];
+        }
+    }
+
+    private function decodeMimePartBody(string $body, string $encoding): ?string
+    {
+        $body = trim($body, "\r\n");
+        if ($encoding === 'base64') {
+            // Some providers include non-base64 chars/tabs or miss padding in attachment parts.
+            $clean = preg_replace('/[^A-Za-z0-9+\/=]/', '', $body) ?? '';
+            if ($clean === '') {
+                Log::warning('decodeMimePartBody: empty base64 after cleanup');
+                return null;
+            }
+            $mod = strlen($clean) % 4;
+            if ($mod !== 0) {
+                $clean .= str_repeat('=', 4 - $mod);
+            }
+            $decoded = base64_decode($clean, true);
+            if ($decoded === false) {
+                Log::warning('decodeMimePartBody: strict base64 decode failed, trying non-strict', [
+                    'raw_len' => strlen($body),
+                    'clean_len' => strlen($clean),
+                ]);
+                $decoded = base64_decode($clean, false);
+            }
+            return $decoded !== false ? $decoded : null;
+        }
+        if ($encoding === 'quoted-printable') {
+            return quoted_printable_decode($body) ?: null;
+        }
+        return $body !== '' ? $body : null;
     }
 
     /**
