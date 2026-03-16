@@ -1018,8 +1018,7 @@ class ExchangeLotController extends Controller
                 fromAddress: $fromAddress,
                 fromName: $fromName,
                 body: $body,
-                tagJson: $tagJson,
-                dealTagData: $customDealTagData
+                tagJson: $tagJson
             );
             $this->storeReceiptLinksInLatestTransaction($lot, $customDealTagData);
             if ($requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
@@ -1326,8 +1325,7 @@ class ExchangeLotController extends Controller
                     fromAddress: config('mail.from.address', 'noreply@xdexboard.com'),
                     fromName: config('mail.from.name', 'XBoard'),
                     body: $body,
-                    tagJson: $tagJson,
-                    dealTagData: $customDealTagData
+                    tagJson: $tagJson
                 );
                 $this->storeReceiptLinksInLatestTransaction($lot, $customDealTagData);
             } catch (\Throwable $e) {
@@ -2130,44 +2128,8 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * Build HTML body with clickable links for receipt confirmation tags.
-     * Falls back to plain text body for all other deal message types.
-     */
-    private function buildClickableLinksHtml(string $plainBody, ?array $dealTagData): ?string
-    {
-        if (!is_array($dealTagData) || (($dealTagData['t'] ?? null) !== 'receipt_confirmation')) {
-            return null;
-        }
-        $links = $dealTagData['receipt_links'] ?? null;
-        if (!is_array($links) || count($links) === 0) {
-            return null;
-        }
-
-        $escapedMessage = nl2br(e($plainBody));
-        $itemsHtml = '';
-        foreach ($links as $item) {
-            if (!is_array($item)) {
-                continue;
-            }
-            $url = isset($item['link']) ? trim((string) $item['link']) : '';
-            if ($url === '') {
-                continue;
-            }
-            $name = isset($item['filename']) ? trim((string) $item['filename']) : $url;
-            $itemsHtml .= '<li><a href="' . e($url) . '" target="_blank" rel="noopener noreferrer">' . e($name) . '</a></li>';
-        }
-        if ($itemsHtml === '') {
-            return null;
-        }
-
-        return '<!doctype html><html><body>'
-            . '<p>' . $escapedMessage . '</p>'
-            . '<p><strong>PDF links:</strong></p><ul>' . $itemsHtml . '</ul>'
-            . '</body></html>';
-    }
-
-    /**
-     * Send deal email as HTML (for receipt confirmation with links) or plain text.
+     * Send deal email as plain text.
+     * Structured payload is delivered via X-XBoard-Deal-Tag and rendered by client chat.
      */
     private function sendDealEmail(
         string $to,
@@ -2175,24 +2137,8 @@ class ExchangeLotController extends Controller
         string $fromAddress,
         string $fromName,
         string $body,
-        ?string $tagJson,
-        ?array $dealTagData = null
+        ?string $tagJson
     ): void {
-        $htmlBody = $this->buildClickableLinksHtml($body, $dealTagData);
-        if ($htmlBody !== null) {
-            Mail::send([], [], function ($message) use ($to, $subject, $fromAddress, $fromName, $tagJson, $htmlBody) {
-                $message->to($to);
-                $message->subject($subject);
-                $message->from($fromAddress, $fromName);
-                $message->html($htmlBody);
-                if ($tagJson !== null) {
-                    $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
-                }
-            });
-
-            return;
-        }
-
         Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName, $tagJson) {
             $message->to($to);
             $message->subject($subject);
