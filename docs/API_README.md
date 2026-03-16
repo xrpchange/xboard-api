@@ -215,7 +215,9 @@ Email verification endpoints for testing DKIM validation and email processing. S
 
 **Email Verification/Forwarding (No authentication required - testing mode):**
 - `POST /api/v1/payments/verify-email` - Verify email and DKIM (multiple formats)
+- `POST /api/v1/payments/verify-email-content` - Verify email content (DKIM, sender); if DKIM valid and sender in bank whitelist, extracts PDF attachments and returns links (files saved under `email_attachments/YYYY-MM-DD/` in UTC)
 - `POST /api/v1/payments/forward-email` - Forward email to verification server
+- `GET /api/v1/payments/email-attachments/{date}/{token}` - Download a saved PDF attachment (date = UTC YYYY-MM-DD, token from verify-email-content response; PDFs are only extracted when DKIM is valid and sender is in bank whitelist)
 
 **Important:** 
 - Email list/raw endpoints use OAuth access tokens (Yandex/Gmail/Outlook)
