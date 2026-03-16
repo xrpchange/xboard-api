@@ -296,6 +296,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **[XRPChangeCore Setup](CORE_NGINX_SETUP.md)** - Core system deployment instructions
 - **[Cron Jobs Setup](CRON_SSL_SETUP.md)** - Automatic certificate renewal
 - **[Email Server Setup](docs/EMAIL_SERVER_SETUP.md)** - Email server for payment verification (DKIM checking)
+- **[Scheduled Pruning](docs/SCHEDULED_PRUNING.md)** - Daily cleanup: `deal_chat_messages` and `transactions` older than 15 days
 - **[Lot Mailbox and IMAP Chat](docs/LOT_MAILBOX_AND_IMAP_CHAT.md)** - Концепция: почтовые ящики для лотов, чат на IMAP (не реализовано)
 - **[Email Verification Methods](docs/EMAIL_VERIFICATION_METHODS.md)** - Complete guide for all email verification methods (OAuth, .eml, forward, copy-paste)
 - **[User Email Verification Guide](docs/USER_EMAIL_VERIFICATION_GUIDE.md)** - User-friendly guide for verifying payment emails
