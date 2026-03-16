@@ -83,3 +83,14 @@ So the server marks the chat as cleared **for that side only** when the user cle
 - **Per-side columns:** `database/migrations/2026_03_15_000001_add_deleted_by_seller_buyer_to_deal_chat_messages.php` — adds `deleted_by_seller_at` and `deleted_by_buyer_at`.
 
 Run: `php artisan migrate`.
+
+---
+
+## Pruning old messages (physical delete)
+
+Messages older than **15 days** are permanently deleted to keep the table small. This is done by the scheduled Artisan command **`deal-chat:prune`** (runs daily).
+
+- **Command:** `php artisan deal-chat:prune` — deletes rows where `created_at` is older than 15 days (default).
+- **Options:** `--days=15` (default), `--dry-run` (show count only, no delete).
+- **Schedule:** Registered in `bootstrap/app.php`; runs daily. Ensure the server runs the Laravel scheduler (e.g. cron: `* * * * * cd /path && php artisan schedule:run >> /dev/null 2>&1`).
+- **Overview of all pruning tasks:** [SCHEDULED_PRUNING.md](SCHEDULED_PRUNING.md) (includes `transactions:prune`).
