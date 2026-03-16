@@ -525,11 +525,19 @@ class ExchangeLotController extends Controller
      *     ),
      *     @OA\Response(response=200, description="Updated"),
      *     @OA\Response(response=401, description="Unauthorized"),
+     *     @OA\Response(response=409, description="Lot has deal in progress; editing not allowed"),
      *     @OA\Response(response=422, description="Validation error")
      * )
      */
     public function update(Request $request, ExchangeLot $lot): JsonResponse
     {
+        if (!empty($lot->buyer_lot_email)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot edit lot while a deal is in progress.',
+            ], 409);
+        }
+
         $validator = Validator::make($request->all(), [
             'wallet_address' => 'required|string',
             'from_currency' => 'required|string|max:20',
