@@ -11,6 +11,7 @@ use App\Models\ExchangeLot;
 use App\Models\FiatCurrency;
 use App\Models\Transaction;
 use App\Services\EscrowTokenValidationService;
+use App\Services\ReceiptAttachmentStorage;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -1007,8 +1008,13 @@ class ExchangeLotController extends Controller
                 $tagJson = json_encode($tag);
             }
             if ($customDealTagData !== null) {
+                $receiptLinkReplacements = [];
                 if (!array_key_exists('lot_id', $customDealTagData)) {
                     $customDealTagData['lot_id'] = (int) $lot->id;
+                }
+                $customDealTagData = $this->promoteReceiptLinksInDealTag($customDealTagData, $receiptLinkReplacements);
+                if (count($receiptLinkReplacements) > 0) {
+                    $body = strtr($body, $receiptLinkReplacements);
                 }
                 $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
@@ -1304,8 +1310,13 @@ class ExchangeLotController extends Controller
                     'deal_tag_preview' => substr($customDealTagRaw, 0, 300),
                 ]);
             } else {
+                $receiptLinkReplacements = [];
                 if (!array_key_exists('lot_id', $customDealTagData)) {
                     $customDealTagData['lot_id'] = (int) $lot->id;
+                }
+                $customDealTagData = $this->promoteReceiptLinksInDealTag($customDealTagData, $receiptLinkReplacements);
+                if (count($receiptLinkReplacements) > 0) {
+                    $body = strtr($body, $receiptLinkReplacements);
                 }
                 $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
@@ -2150,6 +2161,52 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * For receipt confirmation tags, move receipt links from tmp to permanent storage
+     * and rewrite links in the deal tag payload before sending email/chat.
+     *
+     * @param array<string, mixed> $dealTagData
+     * @param array<string, string> $replacements old_link => new_link (for body text rewrite)
+     * @return array<string, mixed>
+     */
+    private function promoteReceiptLinksInDealTag(array $dealTagData, array &$replacements = []): array
+    {
+        if (($dealTagData['t'] ?? null) !== 'receipt_confirmation') {
+            return $dealTagData;
+        }
+
+        $rawLinks = $dealTagData['receipt_links'] ?? null;
+        if (!is_array($rawLinks) || count($rawLinks) === 0) {
+            return $dealTagData;
+        }
+
+        $normalizedLinks = [];
+        foreach ($rawLinks as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $filename = isset($item['filename']) ? trim((string) $item['filename']) : '';
+            $link = isset($item['link']) ? trim((string) $item['link']) : '';
+            if ($link === '') {
+                continue;
+            }
+            $newLink = ReceiptAttachmentStorage::moveTmpToPermanentAndReturnNewLink($link);
+            if ($newLink !== $link) {
+                $replacements[$link] = $newLink;
+            }
+            $normalizedLinks[] = [
+                'filename' => $filename,
+                'link' => $newLink,
+            ];
+        }
+
+        if (count($normalizedLinks) > 0) {
+            $dealTagData['receipt_links'] = $normalizedLinks;
+        }
+
+        return $dealTagData;
+    }
+
+    /**
      * Persist receipt confirmation links into the latest related transaction.
      * Stores links from deal tag (receipt_confirmation.receipt_links) as JSON.
      *
@@ -2176,6 +2233,8 @@ class ExchangeLotController extends Controller
             if ($link === '') {
                 continue;
             }
+            // Move file from tmp to permanent if needed; store the permanent link in receipt_links_json
+            $link = ReceiptAttachmentStorage::moveTmpToPermanentAndReturnNewLink($link);
             $normalizedLinks[] = [
                 'filename' => $filename,
                 'link' => $link,
@@ -2202,8 +2261,12 @@ class ExchangeLotController extends Controller
                 return;
             }
 
+            $previousLinks = $transaction->receipt_links_json;
             $transaction->receipt_links_json = $normalizedLinks;
             $transaction->save();
+            if (is_array($previousLinks) && count($previousLinks) > 0) {
+                ReceiptAttachmentStorage::deleteFilesRemovedFromReceiptLinks($previousLinks, $normalizedLinks);
+            }
             Log::info('[exchange-lots] storeReceiptLinksInLatestTransaction: saved', [
                 'lot_id' => $lot->id,
                 'transaction_id' => $transaction->id,

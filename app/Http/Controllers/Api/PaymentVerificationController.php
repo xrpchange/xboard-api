@@ -7,7 +7,7 @@ use App\Models\Bank;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -1217,9 +1217,23 @@ class PaymentVerificationController extends Controller
 
     /**
      * Serve a previously saved email PDF attachment by date (UTC YYYY-MM-DD) and token.
-     * GET /api/v1/payments/email-attachments/{date}/{token}
+     * GET /api/v1/payments/email-attachments/{date}/{token}.pdf
      */
-    public function showEmailAttachment(Request $request, string $date, string $token): StreamedResponse|JsonResponse
+    public function showEmailAttachment(Request $request, string $date, string $token): BinaryFileResponse|JsonResponse
+    {
+        return $this->serveEmailAttachmentPdf($date, $token, false);
+    }
+
+    /**
+     * Serve a PDF saved under date/tmp/ (when verify-email-content was called without bank_id).
+     * GET /api/v1/payments/email-attachments/{date}/tmp/{token}.pdf
+     */
+    public function showEmailAttachmentTmp(Request $request, string $date, string $token): BinaryFileResponse|JsonResponse
+    {
+        return $this->serveEmailAttachmentPdf($date, $token, true);
+    }
+
+    private function serveEmailAttachmentPdf(string $date, string $token, bool $tmpSubfolder): BinaryFileResponse|JsonResponse
     {
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
             return response()->json(['error' => 'Invalid date'], 400);
@@ -1227,23 +1241,30 @@ class PaymentVerificationController extends Controller
         if (!preg_match('/^[a-f0-9]{32}$/i', $token)) {
             return response()->json(['error' => 'Invalid token'], 400);
         }
-        $path = 'email_attachments/' . $date . '/' . $token . '.pdf';
+        $path = $tmpSubfolder
+            ? 'email_attachments/' . $date . '/tmp/' . $token . '.pdf'
+            : 'email_attachments/' . $date . '/' . $token . '.pdf';
         if (!Storage::disk('local')->exists($path)) {
             return response()->json(['error' => 'Not found'], 404);
         }
-        return Storage::disk('local')->response($path, 'attachment.pdf', [
+        $fullPath = Storage::disk('local')->path($path);
+        return response()->file($fullPath, [
             'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="attachment.pdf"',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 
     /**
-     * Extract PDF attachments from raw MIME email, save each in a date subfolder (UTC YYYY-MM-DD),
-     * and return array of { filename, link } for the client.
+     * Extract PDF attachments from raw MIME email; always saves under email_attachments/{date}/tmp/
+     * so that only files promoted to receipt_links_json are moved to date/ and survive tmp cleanup.
+     * Returns array of { filename, link } for the client (links point to tmp).
      */
     private function extractAndSavePdfAttachments(string $rawEmail): array
     {
         $result = [];
         $dateFolder = gmdate('Y-m-d');
+        $pathPrefix = 'email_attachments/' . $dateFolder . '/tmp';
         Log::info('extractAndSavePdfAttachments: start', ['date_folder' => $dateFolder, 'raw_email_len' => strlen($rawEmail)]);
 
         $parts = $this->extractMimeParts($rawEmail);
@@ -1287,7 +1308,7 @@ class PaymentVerificationController extends Controller
 
             $safeFilename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $filename) ?: 'attachment.pdf';
             $token = bin2hex(random_bytes(16));
-            $dir = 'email_attachments/' . $dateFolder;
+            $dir = $pathPrefix;
             $path = $dir . '/' . $token . '.pdf';
 
             Log::info('extractAndSavePdfAttachments: saving', ['path' => $path, 'decoded_len' => strlen($decoded)]);
@@ -1296,7 +1317,8 @@ class PaymentVerificationController extends Controller
                 Storage::disk('local')->put($path, $decoded);
                 $baseUrl = rtrim(request()->getSchemeAndHttpHost(), '/');
                 $baseUrl = preg_replace('/^http:/i', 'https:', $baseUrl);
-                $link = $baseUrl . '/api/v1/payments/email-attachments/' . $dateFolder . '/' . $token;
+                $linkPath = 'email-attachments/' . $dateFolder . '/tmp/' . $token . '.pdf';
+                $link = $baseUrl . '/api/v1/payments/' . $linkPath;
                 $result[] = [
                     'filename' => $this->cleanUtf8String($safeFilename) ?? $safeFilename,
                     'link' => $link,

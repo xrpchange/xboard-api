@@ -1,27 +1,34 @@
 # Scheduled pruning (daily cleanup)
 
-The API runs two Artisan commands daily to permanently delete old records and keep tables small.
+The API runs three Artisan commands daily to permanently delete old records and clean disk.
 
-| Command | Table | Criteria | Default age |
-|---------|--------|----------|-------------|
-| `deal-chat:prune` | `deal_chat_messages` | `created_at` older than N days | 15 days |
-| `transactions:prune` | `transactions` | `created_at` older than N days | 15 days |
+| Command | Target | Criteria |
+|---------|--------|----------|
+| `deal-chat:prune` | `deal_chat_messages` | `created_at` older than N days (default 15) |
+| `transactions:prune` | `transactions` | `created_at` older than N days (default 15) |
+| `email-attachments-tmp:prune` | `email_attachments/{date}/tmp` | `date` = two days ago (1-day buffer) |
+| `email-attachments-dates:prune` | `email_attachments/{date}` | `date` older than N days (default 15) |
 
 Both are registered in **`bootstrap/app.php`** and run once per day when the Laravel scheduler is executed.
 
 ### Manual run
 
 ```bash
-php artisan deal-chat:prune          # delete old deal chat messages
+php artisan deal-chat:prune              # delete old deal chat messages
 php artisan deal-chat:prune --dry-run
-php artisan transactions:prune       # delete old transactions
+php artisan transactions:prune           # delete old transactions
 php artisan transactions:prune --dry-run
+php artisan email-attachments-tmp:prune      # delete email_attachments/{date}/tmp for date = 2 days ago
+php artisan email-attachments-tmp:prune --dry-run
+php artisan email-attachments-dates:prune    # delete email_attachments/{date} older than 15 days
+php artisan email-attachments-dates:prune --days=15 --dry-run
 ```
 
-Options (both commands):
+Options:
 
-- `--days=15` — delete records older than this many days (default: 15).
-- `--dry-run` — only show how many rows would be deleted; do not delete.
+- `deal-chat:prune` / `transactions:prune`: `--days=15` — delete records older than this many days; `--dry-run` — show count only.
+- `email-attachments-tmp:prune`: `--dry-run` — log target date only, do not delete.
+- `email-attachments-dates:prune`: `--days=15` — delete date folders older than this many days; `--dry-run` — list only.
 
 ### Server setup
 
