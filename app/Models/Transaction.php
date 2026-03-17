@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\ReceiptAttachmentStorage;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -102,6 +103,16 @@ class Transaction extends Model
         return $query->where(function ($q) use ($address) {
             $q->where('from_address', $address)
               ->orWhere('to_address', $address);
+        });
+    }
+
+    protected static function booted(): void
+    {
+        static::deleting(function (Transaction $transaction): void {
+            $links = $transaction->receipt_links_json;
+            if (is_array($links) && count($links) > 0) {
+                ReceiptAttachmentStorage::deleteFilesFromReceiptLinks($links);
+            }
         });
     }
 } 

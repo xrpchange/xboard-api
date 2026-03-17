@@ -4,6 +4,7 @@
     </IfModule>
 
     RewriteEngine On
+    # DocumentRoot must point to this directory (public/). See docs/ENV_XRPCHANGE.md — no RewriteBase needed.
 
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
@@ -18,8 +19,20 @@
     RewriteCond %{REQUEST_URI} (.+)/$
     RewriteRule ^ %1 [L,R=301]
 
+    # PDF attachment links: pass to Laravel (no physical file in public/)
+    RewriteRule ^api/v1/payments/email-attachments/ index.php [L]
+
     # Send Requests To Front Controller...
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
+</IfModule>
+
+# Ensure PDF attachment URLs open inline (view) rather than download. Apache does not set
+# Content-Disposition by default; this overrides any parent config that might force attachment.
+<IfModule mod_headers.c>
+    SetEnvIf Request_URI "^/api/v1/payments/email-attachments/" PDF_INLINE=1
+    Header unset Content-Disposition env=PDF_INLINE
+    Header set Content-Disposition "inline; filename=\"attachment.pdf\"" env=PDF_INLINE
+    Header set X-Content-Type-Options "nosniff" env=PDF_INLINE
 </IfModule>
