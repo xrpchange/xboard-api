@@ -162,8 +162,11 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
         Route::post('/{lot}/send-test-notification-email', [ExchangeLotController::class, 'sendTestNotificationEmail']);
         Route::post('/{lot}/send-message-to-buyer', [ExchangeLotController::class, 'sendMessageToBuyer']);
         Route::post('/{lot}/send-payment-details', [ExchangeLotController::class, 'sendPaymentDetails']);
+        // Buyer sets external crypto destination for later crypto delivery/verification (fiat -> crypto scenario).
+        Route::post('/{lot}/buyer-set-crypto-destination', [ExchangeLotController::class, 'buyerSetCryptoDestination']);
         Route::post('/{lot}/buyer-cancel-deal', [ExchangeLotController::class, 'buyerCancelDeal']);
         Route::get('/{lot}/chat-messages', [ExchangeLotController::class, 'chatMessages']);
+        Route::post('/{lot}/arbiter-message', [ExchangeLotController::class, 'requestArbiterMessage']);
         Route::get('/{lot}/deal-message-status', [ExchangeLotController::class, 'dealMessageStatus']);
         Route::post('/{lot}/mark-chat-cleared', [ExchangeLotController::class, 'markChatCleared']);
     });

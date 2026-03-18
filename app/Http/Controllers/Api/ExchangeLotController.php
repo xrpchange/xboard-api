@@ -1513,6 +1513,110 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * Buyer provides an external crypto destination address for later crypto delivery/verification.
+     * This is for scenarios like: buyer receives crypto and wants the payout to be sent to their address.
+     *
+     * The call updates the latest pending sale transaction for this buyer + lot by setting `transactions.crypto_address`.
+     */
+    public function buyerSetCryptoDestination(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'address' => 'required|string|max:500',
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $buyerEmail = (string) ($lot->buyer_lot_email ?? '');
+        if ($buyerEmail === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This lot has no buyer linked.',
+                'error_code' => 'no_buyer',
+            ], 404);
+        }
+
+        $buyerEscrowTokenHash = $lot->buyer_escrow_token_hash;
+        if (empty($buyerEscrowTokenHash)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Buyer escrow token hash is not linked for this lot.',
+                'error_code' => 'buyer_token_not_linked',
+            ], 403);
+        }
+
+        // Validate token hash against the linked buyer escrow token hash.
+        // ValidateEscrowToken middleware attaches parsed data in escrow_token_data.
+        $tokenData = $request->input('escrow_token_data', []);
+        $requestorTokenHash = is_array($tokenData) ? ($tokenData['token_hash'] ?? null) : null;
+        if (empty($requestorTokenHash) || !is_string($requestorTokenHash)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid escrow token data.',
+                'error_code' => 'invalid_token_data',
+            ], 401);
+        }
+
+        $storedHash = strtolower(trim((string) $buyerEscrowTokenHash));
+        $requestHash = strtolower(trim((string) $requestorTokenHash));
+        if (!hash_equals($storedHash, $requestHash)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only the buyer can set crypto destination for this deal.',
+                'error_code' => 'forbidden',
+            ], 403);
+        }
+
+        $address = trim((string) $request->input('address', ''));
+        if ($address === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Crypto destination address must not be empty.',
+                'error_code' => 'validation_error',
+            ], 422);
+        }
+
+        // Update the latest pending sale transaction for this buyer + lot.
+        $transaction = Transaction::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->where('buyer_lot_email', $buyerEmail)
+            ->where('tx_type', 'sale')
+            ->where('status', 'pending')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($transaction === null) {
+            // Fallback: try any latest sale transaction in case the backend changed `status` briefly.
+            $transaction = Transaction::query()
+                ->where('exchange_lot_id', $lot->id)
+                ->where('buyer_lot_email', $buyerEmail)
+                ->where('tx_type', 'sale')
+                ->orderByDesc('id')
+                ->first();
+
+            if ($transaction === null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No sale transaction found for this deal.',
+                    'error_code' => 'no_sale_transaction',
+                ], 404);
+            }
+        }
+
+        $transaction->crypto_address = $address;
+        $transaction->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Crypto destination address saved.',
+            'transaction_id' => $transaction->id,
+        ]);
+    }
+
+    /**
      * Create a deal transaction and send payment details email to the buyer (seller only).
      * Subject is human-readable; structured tag is in X-XBoard-Deal-Tag header (JSON).
      * See docs/DEAL_EMAIL_SUBJECT_TAG.md.
@@ -1926,9 +2030,70 @@ class ExchangeLotController extends Controller
                 'date' => $m->created_at->toIso8601String(),
                 'body' => $m->body,
                 'from_me' => $isSeller ? $m->sender_side === 'seller' : $m->sender_side === 'buyer',
+                'sender_side' => $m->sender_side,
                 'deal_tag' => $m->deal_tag,
             ]);
         return response()->json(['success' => true, 'messages' => $messages]);
+    }
+
+    /**
+     * Add AI arbiter message to deal chat (chat-only actor, no email delivery).
+     * Requester must be seller or buyer (same auth as chatMessages).
+     */
+    public function requestArbiterMessage(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        $tokenData = $request->input('escrow_token_data', []);
+        $requesterWallet = is_array($tokenData) ? ($tokenData['wallet_address'] ?? '') : '';
+        $tokenHash = is_array($tokenData) && isset($tokenData['token_hash']) ? trim((string) $tokenData['token_hash']) : '';
+        $lot->load(['cryptoCurrency']);
+        $lotWalletRaw = $lot->wallet_address !== null ? (json_decode((string) $lot->wallet_address, true)['wallet_address'] ?? $lot->wallet_address) : null;
+        $requesterWalletStr = $this->normalizeWalletAddressForComparison($requesterWallet);
+        $lotWalletStr = $lotWalletRaw !== null ? $this->normalizeWalletAddressForComparison($lotWalletRaw) : '';
+        $isSeller = $requesterWalletStr !== '' && $lotWalletStr !== '' && hash_equals($lotWalletStr, $requesterWalletStr);
+        $isBuyer = $tokenHash !== '' && $lot->buyer_escrow_token_hash !== null && strcasecmp(trim((string) $lot->buyer_escrow_token_hash), $tokenHash) === 0;
+        if (!$isSeller && !$isBuyer) {
+            return response()->json(['success' => false, 'message' => 'Not authorized to request arbiter message.'], 403);
+        }
+
+        $validated = $request->validate([
+            'message' => ['nullable', 'string', 'max:4000'],
+        ]);
+
+        $contextMessage = trim((string) ($validated['message'] ?? ''));
+        $requesterSide = $isSeller ? 'seller' : 'buyer';
+        $replyLines = [
+            'AI arbiter is now in this dispute chat.',
+            'Please provide objective facts: transaction id/hash, amount, destination address, and evidence links.',
+            'I participate in chat only and do not send emails.',
+        ];
+        if ($contextMessage !== '') {
+            $replyLines[] = 'Last request from ' . $requesterSide . ': ' . mb_substr($contextMessage, 0, 500);
+        }
+        $arbiterBody = implode("\n", $replyLines);
+        $arbiterTag = json_encode([
+            't' => 'arbiter_message',
+            'lot_id' => (string) $lot->id,
+            'arbiter_id' => 'arbiter_ai_v1',
+            'source_side' => $requesterSide,
+        ], JSON_UNESCAPED_UNICODE);
+
+        $this->insertDealChatMessage(
+            lot: $lot,
+            senderSide: 'arbiter_ai',
+            fromEmail: null,
+            toEmail: null,
+            body: $arbiterBody,
+            dealTag: $arbiterTag !== false ? $arbiterTag : null,
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Arbiter message added.',
+            'data' => [
+                'sender_side' => 'arbiter_ai',
+                'body' => $arbiterBody,
+            ],
+        ]);
     }
 
     /**
