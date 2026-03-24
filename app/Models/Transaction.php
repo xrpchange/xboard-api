@@ -31,6 +31,8 @@ class Transaction extends Model
         'bank_id',
         'bank_details',
         'crypto_address',
+        'payment_details_set_by',
+        'transaction_timeout_minutes',
         'receipt_links_json',
         'status',
         'is_test',

@@ -152,6 +152,8 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
     Route::post('/lot-mailbox/delete', [LotMailboxController::class, 'delete']);
 
     Route::prefix('exchange-lots')->group(function () {
+        Route::get('/buyer-active-deal', [ExchangeLotController::class, 'buyerActiveDeal']);
+        Route::get('/buyer-active-deals', [ExchangeLotController::class, 'buyerActiveDeals']);
         Route::get('/{lot}/deal-messages', [ExchangeLotController::class, 'dealMessages']);
         Route::post('/', [ExchangeLotController::class, 'store']);
         Route::post('/send-test-notification-email', [ExchangeLotController::class, 'sendTestNotificationEmailStandalone']);
@@ -166,6 +168,7 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
         Route::post('/{lot}/buyer-set-crypto-destination', [ExchangeLotController::class, 'buyerSetCryptoDestination']);
         Route::post('/{lot}/buyer-cancel-deal', [ExchangeLotController::class, 'buyerCancelDeal']);
         Route::get('/{lot}/chat-messages', [ExchangeLotController::class, 'chatMessages']);
+        Route::get('/{lot}/dispute-status', [ExchangeLotController::class, 'disputeStatus']);
         Route::post('/{lot}/arbiter-message', [ExchangeLotController::class, 'requestArbiterMessage']);
         Route::get('/{lot}/deal-message-status', [ExchangeLotController::class, 'dealMessageStatus']);
         Route::post('/{lot}/mark-chat-cleared', [ExchangeLotController::class, 'markChatCleared']);
