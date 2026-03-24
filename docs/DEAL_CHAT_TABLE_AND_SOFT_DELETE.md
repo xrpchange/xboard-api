@@ -1,13 +1,15 @@
 # Deal chat table and per-side soft delete (clearing mailbox)
 
 **Status:** Implemented (API + client).  
-**Related:** `docs/LOT_MAILBOX_AND_IMAP_CHAT.md`, `docs/DEAL_EMAIL_SUBJECT_TAG.md`.
+**Related:** `docs/LOT_MAILBOX_AND_IMAP_CHAT.md`, `docs/DEAL_EMAIL_SUBJECT_TAG.md`, `docs/DEAL_DISPUTE_SYSTEM.md`.
 
 ---
 
 ## Purpose
 
 Deal messages between buyer and seller are stored in the API database in the **`deal_chat_messages`** table. The API writes a row whenever it sends a deal-related email (send message to seller/buyer, payment details), and also for chat-only system actors (for example, AI arbiter) that do not send email. The client can read the chat from this table (e.g. on opening the deal screen) and use IMAP as an event source for real-time updates.
+
+Dispute lifecycle state is stored separately in **`deal_disputes`** (opened/in_review/closed), see `docs/DEAL_DISPUTE_SYSTEM.md`.
 
 When the user **clears the mailbox** (deletes all messages in the deal mailbox via the client), the chat is **not** physically deleted. Records are **marked as cleared per side**: **`deleted_by_seller_at`** and **`deleted_by_buyer_at`**. When the **seller** clears, only `deleted_by_seller_at` is set — messages disappear only for the seller; the buyer still sees them. When the **buyer** clears, only `deleted_by_buyer_at` is set — messages disappear only for the buyer; the seller still sees them. This keeps history for support/audit and allows each side to clear their own view independently.
 

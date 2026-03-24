@@ -7,6 +7,7 @@ use App\Models\Bank;
 use App\Models\Country;
 use App\Models\CryptoCurrency;
 use App\Models\DealChatMessage;
+use App\Models\DealDispute;
 use App\Models\ExchangeLot;
 use App\Models\FiatCurrency;
 use App\Models\Transaction;
@@ -33,6 +34,140 @@ class ExchangeLotController extends Controller
         private EscrowTokenValidationService $escrowTokenValidation,
         private \App\Services\LotMailboxService $lotMailboxService
     ) {}
+
+    /**
+     * Return first active buyer deal for the request token (if exists).
+     * Used by clients to restore in-progress buyer deal from server state
+     * when local state is missing (e.g. app on another device).
+     */
+    public function buyerActiveDeal(Request $request): JsonResponse
+    {
+        $tokenData = $request->input('escrow_token_data', []);
+        $requestTokenHash = is_array($tokenData) ? trim((string) ($tokenData['token_hash'] ?? '')) : '';
+        $queryHashesRaw = $request->query('token_hashes', '');
+        $queryHashes = is_string($queryHashesRaw)
+            ? array_filter(array_map(static fn ($h) => strtolower(trim((string) $h)), explode(',', $queryHashesRaw)))
+            : [];
+        $hashes = array_values(array_unique(array_filter(array_merge(
+            $queryHashes,
+            $requestTokenHash !== '' ? [strtolower($requestTokenHash)] : []
+        ))));
+        Log::info('[exchange-lots] buyerActiveDeal: request', [
+            'hashes_count' => count($hashes),
+            'request_token_hash_prefix' => $requestTokenHash !== '' ? substr(strtolower($requestTokenHash), 0, 8) : null,
+            'query_hash_prefixes' => array_slice(array_map(static fn (string $h) => substr($h, 0, 8), $queryHashes), 0, 10),
+        ]);
+        if (count($hashes) === 0) {
+            Log::warning('[exchange-lots] buyerActiveDeal: no hashes provided');
+            return response()->json([
+                'success' => false,
+                'message' => 'No token hashes provided.',
+                'error_code' => 'invalid_token_data',
+            ], 401);
+        }
+
+        $lotQuery = ExchangeLot::query()
+            ->whereNotNull('buyer_lot_email')
+            ->where('buyer_lot_email', '<>', '')
+            ->where(function ($q) use ($hashes) {
+                $q->whereNotNull('buyer_escrow_token_hash')
+                    ->whereIn(DB::raw('LOWER(TRIM(buyer_escrow_token_hash))'), $hashes);
+            });
+        $lot = $lotQuery->orderBy('id')->first();
+
+        if ($lot === null) {
+            Log::info('[exchange-lots] buyerActiveDeal: no active lot found', [
+                'hashes_count' => count($hashes),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'No active buyer deal found.',
+                'error_code' => 'no_active_deal',
+            ], 404);
+        }
+        Log::info('[exchange-lots] buyerActiveDeal: found', [
+            'lot_id' => $lot->id,
+            'matched_hash_prefix' => substr(strtolower(trim((string) $lot->buyer_escrow_token_hash)), 0, 8),
+            'buyer_lot_email' => $lot->buyer_lot_email,
+        ]);
+
+        $lot->load(['cryptoCurrency', 'node', 'bank', 'banks', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'lot' => new \App\Http\Resources\ExchangeLotResource($lot),
+                'matched_token_hash' => strtolower(trim((string) $lot->buyer_escrow_token_hash)),
+            ],
+        ]);
+    }
+
+    /**
+     * Return all active buyer deals matching provided token hashes.
+     * Used for resilient restore/manual resume list on client.
+     */
+    public function buyerActiveDeals(Request $request): JsonResponse
+    {
+        $tokenData = $request->input('escrow_token_data', []);
+        $requestTokenHash = is_array($tokenData) ? trim((string) ($tokenData['token_hash'] ?? '')) : '';
+        $queryHashesRaw = $request->query('token_hashes', '');
+        $queryHashes = is_string($queryHashesRaw)
+            ? array_filter(array_map(static fn ($h) => strtolower(trim((string) $h)), explode(',', $queryHashesRaw)))
+            : [];
+        $hashes = array_values(array_unique(array_filter(array_merge(
+            $queryHashes,
+            $requestTokenHash !== '' ? [strtolower($requestTokenHash)] : []
+        ))));
+        if (count($hashes) === 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No token hashes provided.',
+                'error_code' => 'invalid_token_data',
+            ], 401);
+        }
+
+        Log::info('[exchange-lots] buyerActiveDeals: request', [
+            'hashes_count' => count($hashes),
+            'query_hash_prefixes' => array_slice(array_map(static fn (string $h) => substr($h, 0, 8), $queryHashes), 0, 10),
+        ]);
+
+        $lots = ExchangeLot::query()
+            ->whereNotNull('buyer_lot_email')
+            ->where('buyer_lot_email', '<>', '')
+            ->where(function ($q) use ($hashes) {
+                $q->whereNotNull('buyer_escrow_token_hash')
+                    ->whereIn(DB::raw('LOWER(TRIM(buyer_escrow_token_hash))'), $hashes);
+            })
+            ->orderBy('id')
+            ->limit(20)
+            ->get();
+        Log::info('[exchange-lots] buyerActiveDeals: found', ['count' => $lots->count()]);
+
+        if ($lots->isEmpty()) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'items' => [],
+                ],
+            ]);
+        }
+
+        $lots->load(['cryptoCurrency', 'node', 'bank', 'banks', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']);
+
+        $items = $lots->map(function (ExchangeLot $lot): array {
+            return [
+                'lot' => new \App\Http\Resources\ExchangeLotResource($lot),
+                'matched_token_hash' => strtolower(trim((string) $lot->buyer_escrow_token_hash)),
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'items' => $items,
+            ],
+        ]);
+    }
 
     /**
      * @OA\Get(
@@ -834,11 +969,31 @@ class ExchangeLotController extends Controller
         $tokenData = $request->input('escrow_token_data');
         $requesterWallet = '';
         $requesterCurrency = '';
+        $requesterTokenHash = '';
+        $requesterPublicPart = $request->header('X-Escrow-Token') ?? $request->input('escrow_token');
         $requesterMailboxEmail = null;
         if (is_array($tokenData)) {
             $requesterWallet = $tokenData['wallet_address'] ?? '';
             $requesterCurrency = $tokenData['currency'] ?? '';
-            if ($requesterWallet !== '' && $requesterCurrency !== '') {
+            $requesterTokenHash = trim((string) ($tokenData['token_hash'] ?? ''));
+            if ($requesterWallet !== '' && $requesterCurrency !== '' && !empty($requesterPublicPart) && $requesterTokenHash !== '') {
+                try {
+                    $requesterMailboxConfig = $this->lotMailboxService->ensureMailbox(
+                        (string) $requesterPublicPart,
+                        $requesterTokenHash,
+                        $requesterCurrency
+                    );
+                    if (is_array($requesterMailboxConfig)) {
+                        $requesterMailboxEmail = (string) ($requesterMailboxConfig['email'] ?? '');
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('[exchange-lots] sendMessageToSeller: ensureMailbox for requester failed', [
+                        'lot_id' => $lot->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+            if (($requesterMailboxEmail === null || $requesterMailboxEmail === '') && $requesterWallet !== '' && $requesterCurrency !== '') {
                 $requesterMailboxEmail = $this->lotMailboxService->getMailboxEmailForAddress($requesterWallet, $requesterCurrency);
                 if ($requesterMailboxEmail !== null && strcasecmp($requesterMailboxEmail, $sellerEmail) === 0) {
                     return response()->json([
@@ -861,14 +1016,9 @@ class ExchangeLotController extends Controller
             if (is_numeric($selectedAmount) && (float) $selectedAmount > 0) {
                 $updateData['buyer_selected_amount'] = (float) $selectedAmount;
             }
-            $tokenHash = '';
-            $publicPart = $request->header('X-Escrow-Token') ?? $request->input('escrow_token');
-            if ($publicPart && is_string($publicPart)) {
-                $decoded = json_decode($publicPart, true);
-                $tokenHash = isset($decoded['token_hash']) ? trim((string) $decoded['token_hash']) : '';
-                if ($tokenHash !== '' && strlen($tokenHash) <= 64) {
-                    $updateData['buyer_escrow_token_hash'] = $tokenHash;
-                }
+            $tokenHash = trim((string) $requesterTokenHash);
+            if ($tokenHash !== '' && strlen($tokenHash) <= 64) {
+                $updateData['buyer_escrow_token_hash'] = strtolower($tokenHash);
             }
             $updated = DB::table('exchange_lots')
                 ->where('id', $lot->id)
@@ -877,16 +1027,31 @@ class ExchangeLotController extends Controller
                 })
                 ->update($updateData);
             if ($updated === 0) {
-                Log::warning('[exchange-lots] sendMessageToSeller: lot already has buyer', ['lot_id' => $lot->id]);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Another buyer has already started a deal on this lot.',
-                    'error_code' => 'lot_taken',
-                ], 409);
+                // Idempotent resume for same buyer mailbox: refresh selected amount/hash on existing deal.
+                $sameBuyer = ExchangeLot::query()
+                    ->where('id', $lot->id)
+                    ->whereRaw('LOWER(TRIM(buyer_lot_email)) = ?', [strtolower(trim($requesterMailboxEmail))])
+                    ->exists();
+                if ($sameBuyer) {
+                    DB::table('exchange_lots')
+                        ->where('id', $lot->id)
+                        ->update($updateData);
+                    Log::info('[exchange-lots] sendMessageToSeller: start_deal resumed for same buyer', [
+                        'lot_id' => $lot->id,
+                        'buyer_lot_email' => $requesterMailboxEmail,
+                    ]);
+                } else {
+                    Log::warning('[exchange-lots] sendMessageToSeller: lot already has buyer', ['lot_id' => $lot->id]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Another buyer has already started a deal on this lot.',
+                        'error_code' => 'lot_taken',
+                    ], 409);
+                }
             }
-            if ($publicPart && is_string($publicPart) && $tokenHash !== '') {
+            if (!empty($requesterPublicPart) && is_string($requesterPublicPart) && $tokenHash !== '') {
                 try {
-                    $buyerMailboxConfig = $this->lotMailboxService->ensureMailbox($publicPart, $tokenHash, $requesterCurrency);
+                    $buyerMailboxConfig = $this->lotMailboxService->ensureMailbox($requesterPublicPart, $tokenHash, $requesterCurrency);
                 } catch (\Throwable $e) {
                     Log::warning('[exchange-lots] sendMessageToSeller: ensureMailbox for buyer failed (non-blocking)', [
                         'lot_id' => $lot->id,
@@ -896,6 +1061,18 @@ class ExchangeLotController extends Controller
                 }
             }
             Log::info('[exchange-lots] sendMessageToSeller: buyer_lot_email set', ['lot_id' => $lot->id, 'buyer_lot_email' => $requesterMailboxEmail]);
+        } elseif ($messageType === 'start_deal') {
+            Log::warning('[exchange-lots] sendMessageToSeller: cannot lock lot, requester mailbox missing', [
+                'lot_id' => $lot->id,
+                'has_wallet' => $requesterWallet !== '',
+                'has_currency' => $requesterCurrency !== '',
+                'has_token_hash' => $requesterTokenHash !== '',
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot start deal: buyer mailbox is unavailable.',
+                'error_code' => 'buyer_mailbox_unavailable',
+            ], 400);
         }
 
         // buyer_exited: delete reservation in Core, then delete transactions and clear buyer_lot_email.
@@ -941,7 +1118,7 @@ class ExchangeLotController extends Controller
                         Log::info('[exchange-lots] sendMessageToSeller: buyer_exited Core delete-reservation-by-buyer OK', ['lot_id' => $lot->id]);
                     } else {
                         Log::warning('[exchange-lots] sendMessageToSeller: buyer_exited Core delete-reservation-by-buyer failed', [
-                            'lot_id' => $lot->id,
+                'lot_id' => $lot->id,
                             'status' => $resp->status(),
                             'body' => $resp->body(),
                         ]);
@@ -961,6 +1138,11 @@ class ExchangeLotController extends Controller
                 ->where('id', $lot->id)
                 ->where('buyer_lot_email', $buyerExitedEmailToClear)
                 ->update(['buyer_lot_email' => null, 'buyer_escrow_token_hash' => null]);
+            $this->closeOpenDisputesForLot(
+                lot: $lot,
+                resolvedBy: 'system',
+                resolution: 'Deal was exited by buyer.'
+            );
             Log::info('[exchange-lots] sendMessageToSeller: buyer_lot_email cleared', ['lot_id' => $lot->id]);
         }
 
@@ -1037,6 +1219,12 @@ class ExchangeLotController extends Controller
                 $sellerEmail,
                 $body,
                 $tagJson
+            );
+            $this->syncDisputeStateFromDealTag(
+                lot: $lot,
+                senderSide: 'buyer',
+                dealTagData: $customDealTagData,
+                messageType: $messageType
             );
             Log::info('[exchange-lots] sendMessageToSeller: mail sent successfully', [
                 'lot_id' => $lot->id,
@@ -1243,15 +1431,31 @@ class ExchangeLotController extends Controller
             ], 400);
         }
 
-        // Block seller_exited only when this buyer has been sent payment details: transactions are linked to buyer
-        // via buyer_lot_email so that (in future) multiple buyers per lot can be supported; we only consider
-        // transactions for the current buyer (lot.buyer_lot_email).
-        if ($messageType === 'seller_exited' && Transaction::where('exchange_lot_id', $lot->id)->where('buyer_lot_email', $lot->buyer_lot_email)->exists()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Payment details have already been sent for this deal. Only the buyer can cancel the deal now.',
-                'error_code' => 'only_buyer_can_cancel',
-            ], 403);
+        // For seller_exited we enforce transaction-level timeout windows from lot settings.
+        // If at least one pending transaction is still inside its own timeout window,
+        // neither side can break the deal yet.
+        if ($messageType === 'seller_exited') {
+            $lock = $this->getActiveDealExitLock($lot);
+            if ($lock !== null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Deal cannot be exited yet. Transaction timeout has not passed.',
+                    'error_code' => 'deal_exit_locked_by_transaction_timeout',
+                    'locked_transaction_id' => $lock['transaction_id'],
+                    'remaining_seconds' => $lock['remaining_seconds'],
+                    'release_at' => $lock['release_at'],
+                ], 403);
+            }
+            $exitPermission = $this->getDealExitPermissionForTimeout($lot);
+            if ($exitPermission !== null && $exitPermission['allowed_side'] !== 'seller') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only the side that provided payment details can exit the deal after timeout.',
+                    'error_code' => 'deal_exit_not_allowed_for_side',
+                    'allowed_side' => $exitPermission['allowed_side'],
+                    'transaction_id' => $exitPermission['transaction_id'],
+                ], 403);
+            }
         }
 
         $messageText = $request->input('message', '');
@@ -1294,6 +1498,11 @@ class ExchangeLotController extends Controller
             DB::table('exchange_lots')
                 ->where('id', $lot->id)
                 ->update(['buyer_lot_email' => null]);
+            $this->closeOpenDisputesForLot(
+                lot: $lot,
+                resolvedBy: 'system',
+                resolution: 'Deal was exited by seller.'
+            );
             Log::info('[exchange-lots] sendMessageToBuyer: buyer_lot_email cleared (seller_exited)', ['lot_id' => $lot->id]);
         }
 
@@ -1362,6 +1571,12 @@ class ExchangeLotController extends Controller
                 $buyerEmail,
                 $body,
                 $tagJson
+            );
+            $this->syncDisputeStateFromDealTag(
+                lot: $lot,
+                senderSide: 'seller',
+                dealTagData: $customDealTagData,
+                messageType: $messageType
             );
 
             Log::info('[exchange-lots] sendMessageToBuyer: mail sent', [
@@ -1433,6 +1648,28 @@ class ExchangeLotController extends Controller
             ], 403);
         }
 
+        $lock = $this->getActiveDealExitLock($lot);
+        if ($lock !== null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Deal cannot be cancelled yet. Transaction timeout has not passed.',
+                'error_code' => 'deal_exit_locked_by_transaction_timeout',
+                'locked_transaction_id' => $lock['transaction_id'],
+                'remaining_seconds' => $lock['remaining_seconds'],
+                'release_at' => $lock['release_at'],
+            ], 403);
+        }
+        $exitPermission = $this->getDealExitPermissionForTimeout($lot);
+        if ($exitPermission !== null && $exitPermission['allowed_side'] !== 'buyer') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only the side that provided payment details can cancel the deal after timeout.',
+                'error_code' => 'deal_exit_not_allowed_for_side',
+                'allowed_side' => $exitPermission['allowed_side'],
+                'transaction_id' => $exitPermission['transaction_id'],
+            ], 403);
+        }
+
         $transactions = Transaction::where('exchange_lot_id', $lot->id)->where('buyer_lot_email', $lot->buyer_lot_email)->get();
         [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($escrowToken);
         $timeout = (int) config('services.core.timeout', 10);
@@ -1468,6 +1705,11 @@ class ExchangeLotController extends Controller
 
         Transaction::where('exchange_lot_id', $lot->id)->where('buyer_lot_email', $lot->buyer_lot_email)->delete();
         DB::table('exchange_lots')->where('id', $lot->id)->update(['buyer_lot_email' => null]);
+        $this->closeOpenDisputesForLot(
+            lot: $lot,
+            resolvedBy: 'system',
+            resolution: 'Deal was cancelled by buyer.'
+        );
 
         $lot->load(['cryptoCurrency']);
         $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $lot->cryptoCurrency?->code ?? 'crypto');
@@ -1607,6 +1849,8 @@ class ExchangeLotController extends Controller
         }
 
         $transaction->crypto_address = $address;
+        // Buyer provided destination details for transfer in this deal stage.
+        $transaction->payment_details_set_by = 'buyer';
         $transaction->save();
 
         return response()->json([
@@ -1743,6 +1987,8 @@ class ExchangeLotController extends Controller
             'bank_id' => $bankId,
             'bank_details' => $bankDetails,
             'crypto_address' => $cryptoAddress,
+            'payment_details_set_by' => 'seller',
+            'transaction_timeout_minutes' => (int) ($lot->buyer_payment_timeout_minutes ?? 30),
             'status' => 'pending',
             'is_test' => (bool) $lot->is_test,
             'test_group' => $lot->test_group,
@@ -2037,6 +2283,48 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * Get latest active dispute status for this lot.
+     * Requester must be seller or buyer (same auth as chatMessages).
+     */
+    public function disputeStatus(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        $tokenData = $request->input('escrow_token_data', []);
+        $requesterWallet = is_array($tokenData) ? ($tokenData['wallet_address'] ?? '') : '';
+        $tokenHash = is_array($tokenData) && isset($tokenData['token_hash']) ? trim((string) $tokenData['token_hash']) : '';
+        $lot->load(['cryptoCurrency']);
+        $lotWalletRaw = $lot->wallet_address !== null ? (json_decode((string) $lot->wallet_address, true)['wallet_address'] ?? $lot->wallet_address) : null;
+        $requesterWalletStr = $this->normalizeWalletAddressForComparison($requesterWallet);
+        $lotWalletStr = $lotWalletRaw !== null ? $this->normalizeWalletAddressForComparison($lotWalletRaw) : '';
+        $isSeller = $requesterWalletStr !== '' && $lotWalletStr !== '' && hash_equals($lotWalletStr, $requesterWalletStr);
+        $isBuyer = $tokenHash !== '' && $lot->buyer_escrow_token_hash !== null && strcasecmp(trim((string) $lot->buyer_escrow_token_hash), $tokenHash) === 0;
+        if (!$isSeller && !$isBuyer) {
+            return response()->json(['success' => false, 'message' => 'Not authorized to read dispute status.'], 403);
+        }
+
+        $activeDispute = DealDispute::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->whereIn('status', ['opened', 'in_review'])
+            ->orderByDesc('id')
+            ->first();
+
+        return response()->json([
+            'success' => true,
+            'dispute' => $activeDispute ? [
+                'id' => $activeDispute->id,
+                'status' => $activeDispute->status,
+                'opened_by' => $activeDispute->opened_by,
+                'opened_at' => optional($activeDispute->opened_at)->toIso8601String(),
+                'resolved_by' => $activeDispute->resolved_by,
+                'resolved_at' => optional($activeDispute->resolved_at)->toIso8601String(),
+                'closed_at' => optional($activeDispute->closed_at)->toIso8601String(),
+                'arbiter_id' => $activeDispute->arbiter_id,
+                'arbiter_model_version' => $activeDispute->arbiter_model_version,
+                'last_activity_at' => optional($activeDispute->last_activity_at)->toIso8601String(),
+            ] : null,
+        ]);
+    }
+
+    /**
      * Add AI arbiter message to deal chat (chat-only actor, no email delivery).
      * Requester must be seller or buyer (same auth as chatMessages).
      */
@@ -2070,11 +2358,18 @@ class ExchangeLotController extends Controller
             $replyLines[] = 'Last request from ' . $requesterSide . ': ' . mb_substr($contextMessage, 0, 500);
         }
         $arbiterBody = implode("\n", $replyLines);
+        $dispute = $this->ensureDealDisputeOpened(
+            lot: $lot,
+            openedBy: $requesterSide,
+            arbiterId: 'arbiter_ai_v1',
+            status: 'in_review'
+        );
         $arbiterTag = json_encode([
             't' => 'arbiter_message',
             'lot_id' => (string) $lot->id,
             'arbiter_id' => 'arbiter_ai_v1',
             'source_side' => $requesterSide,
+            'dispute_id' => $dispute->id,
         ], JSON_UNESCAPED_UNICODE);
 
         $this->insertDealChatMessage(
@@ -2092,6 +2387,7 @@ class ExchangeLotController extends Controller
             'data' => [
                 'sender_side' => 'arbiter_ai',
                 'body' => $arbiterBody,
+                'dispute_id' => $dispute->id,
             ],
         ]);
     }
@@ -2154,6 +2450,203 @@ class ExchangeLotController extends Controller
         $count = DealChatMessage::where('exchange_lot_id', $lot->id)->whereNull($column)->update([$column => now()]);
         Log::info('[exchange-lots] markChatCleared', ['lot_id' => $lot->id, 'by' => $isSeller ? 'seller' : 'buyer', 'count' => $count]);
         return response()->json(['success' => true, 'message' => 'Chat marked as cleared.', 'count' => $count]);
+    }
+
+    /**
+     * Keep deal_disputes in sync with existing chat/message actions.
+     *
+     * @param array<string, mixed>|null $dealTagData
+     */
+    private function syncDisputeStateFromDealTag(
+        ExchangeLot $lot,
+        string $senderSide,
+        ?array $dealTagData,
+        ?string $messageType = null
+    ): void {
+        if (in_array($messageType, ['buyer_exited', 'seller_exited'], true)) {
+            $this->closeOpenDisputesForLot(
+                lot: $lot,
+                resolvedBy: 'system',
+                resolution: 'Deal was exited by one side.'
+            );
+            return;
+        }
+
+        if ($dealTagData === null) {
+            return;
+        }
+
+        $tagType = isset($dealTagData['t']) ? trim((string) $dealTagData['t']) : '';
+        if (in_array($tagType, ['dispute_requested', 'dispute_requested_by_buyer', 'dispute_requested_by_seller'], true)) {
+            $this->ensureDealDisputeOpened(
+                lot: $lot,
+                openedBy: $senderSide,
+                status: 'opened'
+            );
+            return;
+        }
+
+        if (in_array($tagType, ['deal_completed_seller', 'deal_completed_buyer'], true)) {
+            $this->closeOpenDisputesForLot(
+                lot: $lot,
+                resolvedBy: $senderSide,
+                resolution: 'Deal completed by participants.'
+            );
+        }
+    }
+
+    /**
+     * Open a dispute if none active; otherwise update the latest active one.
+     */
+    private function ensureDealDisputeOpened(
+        ExchangeLot $lot,
+        string $openedBy,
+        string $status = 'opened',
+        ?string $arbiterId = null,
+        ?string $arbiterModelVersion = null
+    ): DealDispute {
+        $active = DealDispute::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->whereIn('status', ['opened', 'in_review'])
+            ->orderByDesc('id')
+            ->first();
+
+        if ($active !== null) {
+            $active->status = $status === 'in_review' ? 'in_review' : $active->status;
+            $active->last_activity_at = now();
+            if ($arbiterId !== null && $arbiterId !== '') {
+                $active->arbiter_id = $arbiterId;
+            }
+            if ($arbiterModelVersion !== null && $arbiterModelVersion !== '') {
+                $active->arbiter_model_version = $arbiterModelVersion;
+            }
+            $active->save();
+
+            return $active;
+        }
+
+        return DealDispute::create([
+            'exchange_lot_id' => $lot->id,
+            'opened_by' => $openedBy,
+            'status' => $status,
+            'arbiter_id' => $arbiterId,
+            'arbiter_model_version' => $arbiterModelVersion,
+            'opened_at' => now(),
+            'last_activity_at' => now(),
+        ]);
+    }
+
+    /**
+     * Deal exit/cancel lock based on pending transactions for current buyer.
+     * Returns lock payload when at least one transaction is still within timeout window, otherwise null.
+     *
+     * Timeout is per transaction (not global for whole deal):
+     * - if transaction.transaction_timeout_minutes is set, use it;
+     * - otherwise fallback to lot.buyer_payment_timeout_minutes (default 30).
+     *
+     * @return array{transaction_id:int, remaining_seconds:int, release_at:string}|null
+     */
+    private function getActiveDealExitLock(ExchangeLot $lot): ?array
+    {
+        $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($buyerEmail === '') {
+            return null;
+        }
+
+        $now = now();
+        $transactions = Transaction::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->where('buyer_lot_email', $buyerEmail)
+            ->where('tx_type', 'sale')
+            ->where('status', 'pending')
+            ->get();
+
+        if ($transactions->isEmpty()) {
+            return null;
+        }
+
+        $activeLock = null;
+        foreach ($transactions as $transaction) {
+            $timeoutMinutes = (int) ($transaction->transaction_timeout_minutes ?? $lot->buyer_payment_timeout_minutes ?? 30);
+            if ($timeoutMinutes <= 0) {
+                $timeoutMinutes = 30;
+            }
+            $releaseAt = $transaction->created_at?->copy()->addMinutes($timeoutMinutes);
+            if ($releaseAt === null || $releaseAt->lessThanOrEqualTo($now)) {
+                continue;
+            }
+
+            $remaining = (int) $now->diffInSeconds($releaseAt, false);
+            if ($remaining <= 0) {
+                continue;
+            }
+
+            if ($activeLock === null || $remaining > $activeLock['remaining_seconds']) {
+                $activeLock = [
+                    'transaction_id' => (int) $transaction->id,
+                    'remaining_seconds' => $remaining,
+                    'release_at' => $releaseAt->toIso8601String(),
+                ];
+            }
+        }
+
+        return $activeLock;
+    }
+
+    /**
+     * Returns who is allowed to exit/cancel after timeout based on
+     * who provided payment details for the latest deal transaction.
+     *
+     * @return array{allowed_side:string, transaction_id:int}|null
+     */
+    private function getDealExitPermissionForTimeout(ExchangeLot $lot): ?array
+    {
+        $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($buyerEmail === '') {
+            return null;
+        }
+
+        $transaction = Transaction::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->where('buyer_lot_email', $buyerEmail)
+            ->where('tx_type', 'sale')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($transaction === null) {
+            return null;
+        }
+
+        $rawSide = strtolower(trim((string) ($transaction->payment_details_set_by ?? '')));
+        $allowedSide = in_array($rawSide, ['buyer', 'seller'], true) ? $rawSide : 'seller';
+
+        return [
+            'allowed_side' => $allowedSide,
+            'transaction_id' => (int) $transaction->id,
+        ];
+    }
+
+    /**
+     * Close all active disputes for the lot.
+     */
+    private function closeOpenDisputesForLot(
+        ExchangeLot $lot,
+        string $resolvedBy,
+        string $resolution
+    ): void {
+        DealDispute::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->whereIn('status', ['opened', 'in_review'])
+            ->get()
+            ->each(function (DealDispute $dispute) use ($resolvedBy, $resolution): void {
+                $dispute->status = 'closed';
+                $dispute->resolved_by = $resolvedBy;
+                $dispute->resolution = $resolution;
+                $dispute->resolved_at = now();
+                $dispute->closed_at = now();
+                $dispute->last_activity_at = now();
+                $dispute->save();
+            });
     }
 
     /**
