@@ -50,6 +50,31 @@ Other types may be added without changing the format.
 
 ---
 
+## External emergency notifications (not the main deal transport)
+
+Deal-tag emails and mailbox chat remain the primary in-system channel. External notification emails are a separate fallback mechanism.
+
+Rules:
+
+- Do not treat external email as the main delivery path for deal messages.
+- Do not automatically mirror every deal-tag message to external addresses.
+- Automatic external notification is acceptable for a very small number of predefined critical events only.
+
+Current target policy:
+
+- `start_deal`: server may additionally send an external notification to the seller using `exchange_lots.seller_notification_email`.
+- Manual emergency escalation from the client chat may trigger an external email when the sender believes the recipient did not notice the in-system IMAP/chat message.
+- Seller-side external escalation should use `seller_notification_email`.
+- Buyer-side external escalation is optional and secondary; buyer attention should primarily be handled in the client UI, not by assuming external email is reliable on the first deal.
+
+Important:
+
+- External emergency notification does not replace `X-XBoard-Deal-Tag`.
+- Chat restoration and deal stage logic must still rely on the in-system messages/tags.
+- If external emergency notifications are sent, they should be considered informational fallback notices, not the system of record for deal state.
+
+---
+
 ## Examples
 
 **Crypto (XMR address):**

@@ -1208,6 +1208,35 @@ class ExchangeLotController extends Controller
                 body: $body,
                 tagJson: $tagJson
             );
+            if ($messageType === 'start_deal') {
+                $sellerNotificationEmail = $lot->seller_notification_email ? trim((string) $lot->seller_notification_email) : null;
+                if (
+                    $sellerNotificationEmail &&
+                    filter_var($sellerNotificationEmail, FILTER_VALIDATE_EMAIL) &&
+                    strcasecmp($sellerNotificationEmail, $sellerEmail) !== 0
+                ) {
+                    try {
+                        $this->sendDealEmail(
+                            to: $sellerNotificationEmail,
+                            subject: $subject,
+                            fromAddress: $fromAddress,
+                            fromName: $fromName,
+                            body: $body,
+                            tagJson: $tagJson
+                        );
+                        Log::info('[exchange-lots] sendMessageToSeller: start_deal external seller notification sent', [
+                            'lot_id' => $lot->id,
+                            'to' => $sellerNotificationEmail,
+                        ]);
+                    } catch (\Throwable $notificationError) {
+                        Log::warning('[exchange-lots] sendMessageToSeller: start_deal external seller notification failed', [
+                            'lot_id' => $lot->id,
+                            'to' => $sellerNotificationEmail,
+                            'error' => $notificationError->getMessage(),
+                        ]);
+                    }
+                }
+            }
             $this->storeReceiptLinksInLatestTransaction($lot, $customDealTagData);
             if ($requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
                 $this->lotMailboxService->writeBuyerSentCopyToMailbox($requesterMailboxEmail, (string) $lot->id, $body);
