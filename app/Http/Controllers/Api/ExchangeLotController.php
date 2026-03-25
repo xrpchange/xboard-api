@@ -1853,6 +1853,48 @@ class ExchangeLotController extends Controller
         $transaction->payment_details_set_by = 'buyer';
         $transaction->save();
 
+        $lot->load(['cryptoCurrency']);
+        $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $lot->cryptoCurrency?->code ?? 'crypto');
+        if (!$sellerEmail && !empty($lot->seller_lot_email)) {
+            $sellerEmail = (string) $lot->seller_lot_email;
+        }
+
+        $tagJson = json_encode([
+            't' => 'buyer_destination_details',
+            'lot_id' => $lot->id,
+            'tx_id' => $transaction->id,
+            'address' => $address,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $body = 'Buyer sent destination details for the seller transfer.';
+
+        if (!empty($sellerEmail)) {
+            try {
+                $this->sendDealEmail(
+                    to: $sellerEmail,
+                    subject: $this->getDealMessageSubject($lot),
+                    fromAddress: config('mail.from.address', 'noreply@xdexboard.com'),
+                    fromName: config('mail.from.name', 'XBoard'),
+                    body: $body,
+                    tagJson: $tagJson
+                );
+            } catch (\Throwable $e) {
+                Log::warning('[exchange-lots] buyerSetCryptoDestination: failed to send seller mail', [
+                    'lot_id' => $lot->id,
+                    'to' => $sellerEmail,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $this->insertDealChatMessage(
+            $lot,
+            'buyer',
+            config('mail.from.address', 'noreply@xdexboard.com'),
+            $sellerEmail,
+            $body,
+            $tagJson
+        );
+
         return response()->json([
             'success' => true,
             'message' => 'Crypto destination address saved.',

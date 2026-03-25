@@ -39,6 +39,11 @@ Other server-set fields may be added (e.g. `amount`, `currency`) in the same JSO
 |---------------------|-------------|
 | `start_deal`        | Buyer opened the deal (e.g. "Start deal — buyer opened the deal window"). Email is sent **to the seller**. Tag includes `lot_id`; may include `selected_amount` (buyer-selected amount) and `buyer_locale` (e.g. `en`, `ru`) for analytics and UI. |
 | `payment_details`   | Seller sent payment instructions: either crypto address or bank + bank_data. **Email body** = seller's text (what they wrote; e.g. bank requisites). Technical data is in the tag; the client shows the body in chat. Buyer uses tag for Core `reservation-by-transaction` with `tx_id`, `crypto`, `address`. |
+| `receipt_confirmation` | Buyer sent payment confirmation or the first transaction number. This marks the end of the buyer payment step and starts seller-side verification. |
+| `seller_received_funds` | Seller confirmed that the first-leg funds were received. This starts the seller transfer stage. |
+| `buyer_destination_details` | Buyer sent destination details for the seller transfer (for example, crypto address in reverse flow). This event must be present in chat so the UI can be restored only from tags. |
+| `seller_transfer_tx` | Seller sent the outgoing transfer transaction number/hash for the second leg. Buyer uses this event before the final completion confirmation. |
+| `deal_completed_buyer` | Buyer confirmed final completion of the deal. |
 | `buyer_exited`      | Buyer cancelled the deal (e.g. via buyer-cancel-deal). Email is sent **to the seller**. Tag includes `lot_id`. The seller app, when it sees a message with this tag in the deal mailbox, unblocks the "Exit deal" button so the seller can close the deal. |
 
 Other types may be added without changing the format.
@@ -71,6 +76,16 @@ Other types may be added without changing the format.
 **Buyer exited (email to seller):**
 ```json
 {"t":"buyer_exited","lot_id":42}
+```
+
+**Buyer destination details (email to seller):**
+```json
+{"t":"buyer_destination_details","lot_id":42,"tx_id":103,"address":"TXYZ..."}
+```
+
+**Seller transfer tx number (email to buyer):**
+```json
+{"t":"seller_transfer_tx","lot_id":42,"tx_id":103,"tx_number":"0xabc123..."}
 ```
 
 ---
