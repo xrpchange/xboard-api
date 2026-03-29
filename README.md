@@ -299,6 +299,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **[Scheduled Pruning](docs/SCHEDULED_PRUNING.md)** - Daily cleanup: `deal_chat_messages` and `transactions` older than 15 days
 - **[Lot Mailbox and IMAP Chat](docs/LOT_MAILBOX_AND_IMAP_CHAT.md)** - Концепция: почтовые ящики для лотов, чат на IMAP (не реализовано)
 - **[Deal Dispute System](docs/DEAL_DISPUTE_SYSTEM.md)** - Separate dispute lifecycle state (`deal_disputes`) and API flow
+- **[AI Arbiter (server)](docs/AI_ARBITER_SERVER.md)** - LLM provider abstraction (default GigaChat + DeepSeek fallback), env, failover, security, curl test checklist
 - **[Email Verification Methods](docs/EMAIL_VERIFICATION_METHODS.md)** - Complete guide for all email verification methods (OAuth, .eml, forward, copy-paste)
 - **[User Email Verification Guide](docs/USER_EMAIL_VERIFICATION_GUIDE.md)** - User-friendly guide for verifying payment emails
 - **[OAuth Setup Guide](docs/OAUTH_SETUP.md)** - OAuth integration setup for email providers (Yandex, Gmail, Outlook)

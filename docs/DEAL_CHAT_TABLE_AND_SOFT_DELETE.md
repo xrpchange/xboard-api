@@ -62,7 +62,7 @@ Email-based inserts use the same `body`, `deal_tag`, and sender/recipient as the
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET    | `/v1/exchange-lots/{lot}/chat-messages` | List deal chat messages for the lot (excluding rows cleared by this side: seller sees where `deleted_by_seller_at` IS NULL, buyer where `deleted_by_buyer_at` IS NULL). Requires escrow token (seller or buyer). |
-| POST   | `/v1/exchange-lots/{lot}/arbiter-message` | Add AI arbiter message into chat (chat-only, no email). Optional request field: `message` (context). Requires escrow token (seller or buyer). |
+| POST   | `/v1/exchange-lots/{lot}/arbiter-message` | Add AI arbiter message into chat (chat-only, no email). Optional: `message`, evidence hashes (`pdf_sha256`, `email_message_sha256`, `dkim_signature_sha256`), `bank_timezone` + `payment_time_raw` for UTC normalization, `provider`/`provider_hint` (ignored for provider selection). See [AI_ARBITER_SERVER.md](AI_ARBITER_SERVER.md). Requires escrow token (seller or buyer). |
 | POST   | `/v1/exchange-lots/{lot}/mark-chat-cleared` | Mark all chat messages as cleared **for this requester only** (set `deleted_by_seller_at` or `deleted_by_buyer_at`). Call when user clears mailbox. Same auth as above. |
 
 Both require the `ValidateEscrowToken` middleware and a valid escrow token for the requesting side (seller or buyer for that lot).
