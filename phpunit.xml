@@ -17,6 +17,11 @@
             <directory>app</directory>
         </include>
     </source>
+    <groups>
+        <exclude>
+            <group>sqlite-incompatible</group>
+        </exclude>
+    </groups>
     <php>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
@@ -30,5 +35,8 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="PAYMENT_VERIFICATION_EMAIL" value="check@example.test"/>
+        <env name="ARBITER_PRIMARY_PROVIDER" value="stub"/>
+        <env name="ARBITER_FALLBACK_PROVIDERS" value=""/>
     </php>
 </phpunit>

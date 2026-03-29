@@ -1,0 +1,14 @@
+---
+description: Link documented API behavior to PHPUnit via SPEC_REGISTRY
+globs: docs/**/*.md,app/Services/**/*.php,tests/**/*.php
+---
+
+# Spec registry (xboard-api)
+
+When you **document new server behavior** in `docs/` (especially arbiter, payments, deals):
+
+1. Add or update a row in **`docs/SPEC_REGISTRY.md`** with a new stable ID (e.g. `ARB-010`, `API-002`).
+2. Add or adjust a PHPUnit test; tag it with **`#[Group('spec')]`** and **`#[Group('spec-<ID>')]`** (see existing arbiter tests).
+3. Run **`composer test-spec`** or **`php artisan test --group spec`**.
+
+For behavior that needs full HTTP + seeded DB, note **Manual / integration** in the registry until a feature test exists.

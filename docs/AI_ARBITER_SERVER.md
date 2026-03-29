@@ -2,6 +2,14 @@
 
 **Scope:** `xboard-api` only. LLM API keys stay in `.env` (BYOK). Clients must not select or impersonate the provider.
 
+### Specification vs implementation
+
+Documented behavior is tracked in **[`docs/SPEC_REGISTRY.md`](SPEC_REGISTRY.md)** with stable IDs (`ARB-001`, …) linked to PHPUnit tests. After changing this file or arbiter code, update the registry and run:
+
+```bash
+php artisan test --group spec
+```
+
 ---
 
 ## Security model
