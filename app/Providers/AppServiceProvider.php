@@ -7,6 +7,7 @@ use App\Services\Arbiter\ArbiterService;
 use App\Services\Arbiter\DeepSeekArbiterProvider;
 use App\Services\Arbiter\GigaChatArbiterProvider;
 use App\Services\Arbiter\OpenAiArbiterProvider;
+use App\Services\Arbiter\StubArbiterProvider;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -32,6 +33,7 @@ class AppServiceProvider extends ServiceProvider
             $gigachatConfig = is_array($arbiterConfig['gigachat'] ?? null) ? $arbiterConfig['gigachat'] : [];
 
             $providers = [
+                new StubArbiterProvider(),
                 new GigaChatArbiterProvider(
                     oauthCredential: (string) ($gigachatConfig['oauth_credential'] ?? ''),
                     scope: (string) ($gigachatConfig['scope'] ?? 'GIGACHAT_API_PERS'),

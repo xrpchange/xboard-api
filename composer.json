@@ -58,6 +58,10 @@
         "test": [
             "@php artisan config:clear --ansi",
             "@php artisan test"
+        ],
+        "test-spec": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --group spec"
         ]
     },
     "extra": {

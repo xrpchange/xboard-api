@@ -235,6 +235,13 @@ In `XRPChangeCore/public/echo.php` there should be an echo endpoint (default `/e
 php artisan test
 ```
 
+**Spec-linked tests** (documented behavior → PHPUnit; see `docs/SPEC_REGISTRY.md`):
+
+```bash
+composer test-spec
+# or: php artisan test --group spec
+```
+
 ### Test mode
 In test mode, all requests must contain `test_group` for data isolation.
 
