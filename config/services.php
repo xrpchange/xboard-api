@@ -77,4 +77,43 @@ return [
         'maildir_base' => env('LOT_MAILBOX_MAILDIR_BASE', '/var/mail/vhosts'), // for Maildir creation
     ],
 
+    'arbiter' => [
+        // Default gigachat for RU-friendly banking context; falls back to deepseek if primary fails (set keys in .env).
+        'primary_provider' => env('ARBITER_PRIMARY_PROVIDER', 'gigachat'),
+        'fallback_providers' => array_values(array_filter(array_map(
+            static fn (string $v): string => trim($v),
+            explode(',', (string) env('ARBITER_FALLBACK_PROVIDERS', 'deepseek'))
+        ))),
+        // Below this deterministic context score, skip LLM calls (rules-only manual outcome).
+        'no_ai_below' => (float) env('ARBITER_NO_AI_BELOW', 0.35),
+        // After a successful LLM response, escalate when context score is still below this threshold.
+        'manual_review_threshold' => (float) env('ARBITER_MANUAL_REVIEW_THRESHOLD', 0.55),
+        'anthropic' => [
+            'api_key' => env('ARBITER_ANTHROPIC_API_KEY', ''),
+            'model' => env('ARBITER_ANTHROPIC_MODEL', 'claude-3-7-sonnet-latest'),
+            'timeout' => (int) env('ARBITER_ANTHROPIC_TIMEOUT', 20),
+        ],
+        'openai' => [
+            'api_key' => env('ARBITER_OPENAI_API_KEY', ''),
+            'model' => env('ARBITER_OPENAI_MODEL', 'gpt-4o-mini'),
+            'timeout' => (int) env('ARBITER_OPENAI_TIMEOUT', 20),
+        ],
+        'deepseek' => [
+            'api_key' => env('ARBITER_DEEPSEEK_API_KEY', ''),
+            'base_url' => rtrim((string) env('ARBITER_DEEPSEEK_BASE_URL', 'https://api.deepseek.com'), '/'),
+            'model' => env('ARBITER_DEEPSEEK_MODEL', 'deepseek-chat'),
+            'timeout' => (int) env('ARBITER_DEEPSEEK_TIMEOUT', 30),
+        ],
+        'gigachat' => [
+            // Authorization key from Sber developer portal: either raw Base64 (used as Basic <value>) or full "Basic ..." / "Bearer ..." header value.
+            'oauth_credential' => (string) env('ARBITER_GIGACHAT_AUTHORIZATION_KEY', ''),
+            'scope' => env('ARBITER_GIGACHAT_SCOPE', 'GIGACHAT_API_PERS'),
+            'oauth_url' => rtrim((string) env('ARBITER_GIGACHAT_OAUTH_URL', 'https://ngw.devices.sberbank.ru:9443/api/v2/oauth'), '/'),
+            'api_base_url' => rtrim((string) env('ARBITER_GIGACHAT_API_BASE_URL', 'https://gigachat.devices.sberbank.ru/api/v1'), '/'),
+            'model' => env('ARBITER_GIGACHAT_MODEL', 'GigaChat'),
+            'timeout' => (int) env('ARBITER_GIGACHAT_TIMEOUT', 45),
+            'verify_ssl' => filter_var(env('ARBITER_GIGACHAT_VERIFY_SSL', true), FILTER_VALIDATE_BOOL),
+        ],
+    ],
+
 ];

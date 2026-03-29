@@ -12,6 +12,7 @@ use App\Models\ExchangeLot;
 use App\Models\FiatCurrency;
 use App\Models\Transaction;
 use App\Services\EscrowTokenValidationService;
+use App\Services\Arbiter\ArbiterService;
 use App\Services\ReceiptAttachmentStorage;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -32,7 +33,8 @@ class ExchangeLotController extends Controller
 {
     public function __construct(
         private EscrowTokenValidationService $escrowTokenValidation,
-        private \App\Services\LotMailboxService $lotMailboxService
+        private \App\Services\LotMailboxService $lotMailboxService,
+        private ArbiterService $arbiterService
     ) {}
 
     /**
@@ -2416,31 +2418,86 @@ class ExchangeLotController extends Controller
 
         $validated = $request->validate([
             'message' => ['nullable', 'string', 'max:4000'],
+            'provider' => ['nullable', 'string', 'max:64'],
+            'provider_hint' => ['nullable', 'string', 'max:64'],
+            'bank_timezone' => ['nullable', 'string', 'max:64'],
+            'payment_time_raw' => ['nullable', 'string', 'max:128'],
+            'pdf_sha256' => ['nullable', 'string', 'size:64', 'regex:/^[a-fA-F0-9]{64}$/'],
+            'email_message_sha256' => ['nullable', 'string', 'size:64', 'regex:/^[a-fA-F0-9]{64}$/'],
+            'dkim_signature_sha256' => ['nullable', 'string', 'size:64', 'regex:/^[a-fA-F0-9]{64}$/'],
         ]);
 
         $contextMessage = trim((string) ($validated['message'] ?? ''));
         $requesterSide = $isSeller ? 'seller' : 'buyer';
-        $replyLines = [
-            'AI arbiter is now in this dispute chat.',
-            'Please provide objective facts: transaction id/hash, amount, destination address, and evidence links.',
-            'I participate in chat only and do not send emails.',
-        ];
-        if ($contextMessage !== '') {
-            $replyLines[] = 'Last request from ' . $requesterSide . ': ' . mb_substr($contextMessage, 0, 500);
-        }
-        $arbiterBody = implode("\n", $replyLines);
+        $providerHint = trim((string) ($validated['provider_hint'] ?? $validated['provider'] ?? ''));
+        $normalizedPaymentTime = $this->normalizeBankTimeToUtc(
+            (string) ($validated['payment_time_raw'] ?? ''),
+            (string) ($validated['bank_timezone'] ?? '')
+        );
+
+        $fingerprints = array_filter([
+            strtolower(trim((string) ($validated['pdf_sha256'] ?? ''))),
+            strtolower(trim((string) ($validated['email_message_sha256'] ?? ''))),
+            strtolower(trim((string) ($validated['dkim_signature_sha256'] ?? ''))),
+        ]);
+        $hasReplay = $this->hasEvidenceReplay($lot, $fingerprints);
+
+        $arbiterResult = $this->arbiterService->buildArbiterMessage([
+            'lot_id' => $lot->id,
+            'requester_side' => $requesterSide,
+            'message' => $contextMessage,
+            'provider_hint' => $providerHint,
+            'bank_timezone' => (string) ($validated['bank_timezone'] ?? ''),
+            'payment_time_raw' => (string) ($validated['payment_time_raw'] ?? ''),
+            'normalized_payment_time' => $normalizedPaymentTime,
+            'pdf_sha256' => strtolower(trim((string) ($validated['pdf_sha256'] ?? ''))),
+            'email_message_sha256' => strtolower(trim((string) ($validated['email_message_sha256'] ?? ''))),
+            'dkim_signature_sha256' => strtolower(trim((string) ($validated['dkim_signature_sha256'] ?? ''))),
+            'has_replay' => $hasReplay,
+        ]);
+        $arbiterBody = (string) ($arbiterResult['message'] ?? 'Dispute is escalated to manual review.');
+
+        Log::info('[arbiter] policy_applied', [
+            'lot_id' => $lot->id,
+            'provider_hint' => $providerHint !== '' ? $providerHint : null,
+            'provider_used' => $arbiterResult['provider_used'] ?? null,
+            'arbiter_status' => $arbiterResult['arbiter_status'] ?? null,
+            'confidence' => $arbiterResult['confidence'] ?? null,
+            'reason_code' => $arbiterResult['reason_code'] ?? null,
+            'has_replay' => $hasReplay,
+        ]);
+
         $dispute = $this->ensureDealDisputeOpened(
             lot: $lot,
             openedBy: $requesterSide,
             arbiterId: 'arbiter_ai_v1',
+            arbiterModelVersion: (string) ($arbiterResult['model_version'] ?? ''),
             status: 'in_review'
         );
         $arbiterTag = json_encode([
             't' => 'arbiter_message',
             'lot_id' => (string) $lot->id,
             'arbiter_id' => 'arbiter_ai_v1',
+            'arbiter_status' => $arbiterResult['arbiter_status'] ?? null,
+            'policy' => $arbiterResult['policy'] ?? 'rules_first',
+            'provider_used' => $arbiterResult['provider_used'] ?? null,
+            'provider_hint' => $providerHint !== '' ? $providerHint : null,
+            'provider_hint_applied' => false,
+            'reason_code' => $arbiterResult['reason_code'] ?? null,
+            'confidence' => $arbiterResult['confidence'] ?? null,
             'source_side' => $requesterSide,
             'dispute_id' => $dispute->id,
+            'anti_replay' => [
+                'triggered' => $hasReplay,
+                'pdf_sha256' => strtolower(trim((string) ($validated['pdf_sha256'] ?? ''))),
+                'email_message_sha256' => strtolower(trim((string) ($validated['email_message_sha256'] ?? ''))),
+                'dkim_signature_sha256' => strtolower(trim((string) ($validated['dkim_signature_sha256'] ?? ''))),
+            ],
+            'bank_time' => [
+                'timezone' => (string) ($validated['bank_timezone'] ?? ''),
+                'raw' => (string) ($validated['payment_time_raw'] ?? ''),
+                'normalized_utc' => $normalizedPaymentTime,
+            ],
         ], JSON_UNESCAPED_UNICODE);
 
         $this->insertDealChatMessage(
@@ -2459,6 +2516,12 @@ class ExchangeLotController extends Controller
                 'sender_side' => 'arbiter_ai',
                 'body' => $arbiterBody,
                 'dispute_id' => $dispute->id,
+                'dispute_status' => 'in_review',
+                'arbiter_status' => $arbiterResult['arbiter_status'] ?? null,
+                'confidence' => $arbiterResult['confidence'] ?? null,
+                'reason_code' => $arbiterResult['reason_code'] ?? null,
+                'provider_used' => $arbiterResult['provider_used'] ?? null,
+                'provider_hint_applied' => false,
             ],
         ]);
     }
@@ -2564,6 +2627,67 @@ class ExchangeLotController extends Controller
                 resolution: 'Deal completed by participants.'
             );
         }
+    }
+
+    private function normalizeBankTimeToUtc(string $rawValue, string $timezone): ?string
+    {
+        $raw = trim($rawValue);
+        $tz = trim($timezone);
+        if ($raw === '' || $tz === '') {
+            return null;
+        }
+
+        try {
+            $dt = new \DateTimeImmutable($raw, new \DateTimeZone($tz));
+            return $dt->setTimezone(new \DateTimeZone('UTC'))->format(\DateTimeInterface::ATOM);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * @param list<string> $fingerprints
+     */
+    private function hasEvidenceReplay(ExchangeLot $lot, array $fingerprints): bool
+    {
+        if (count($fingerprints) === 0) {
+            return false;
+        }
+
+        $normalizedFingerprints = array_values(array_unique(array_map(
+            static fn (string $v): string => strtolower(trim($v)),
+            $fingerprints
+        )));
+
+        $messages = DealChatMessage::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->where('sender_side', 'arbiter_ai')
+            ->whereNotNull('deal_tag')
+            ->orderByDesc('id')
+            ->limit(50)
+            ->get(['deal_tag']);
+
+        foreach ($messages as $message) {
+            $tagRaw = (string) ($message->deal_tag ?? '');
+            if ($tagRaw === '') {
+                continue;
+            }
+            $tagData = json_decode($tagRaw, true);
+            if (!is_array($tagData)) {
+                continue;
+            }
+            $antiReplay = is_array($tagData['anti_replay'] ?? null) ? $tagData['anti_replay'] : [];
+            $existing = array_filter([
+                strtolower(trim((string) ($antiReplay['pdf_sha256'] ?? ''))),
+                strtolower(trim((string) ($antiReplay['email_message_sha256'] ?? ''))),
+                strtolower(trim((string) ($antiReplay['dkim_signature_sha256'] ?? ''))),
+            ]);
+            if (count(array_intersect($normalizedFingerprints, $existing)) > 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

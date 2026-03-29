@@ -64,6 +64,14 @@ Auth:
 - Same as chat endpoints (`ValidateEscrowToken`).
 - Requester must be current seller or buyer for the lot.
 
+### AI arbiter (server-side)
+
+Full setup, env vars, failover, security, and curl checklist: **[docs/AI_ARBITER_SERVER.md](AI_ARBITER_SERVER.md)** (includes **GigaChat** + DeepSeek and other providers).
+
+- **Dispute row** `deal_disputes.status` remains `in_review` after an arbiter message (so `GET .../dispute-status` keeps returning the active row).
+- **Semantic outcome** is returned as `arbiter_status` (`in_review` | `manual_review`) in the POST JSON and in `deal_chat_messages.deal_tag` for `t=arbiter_message`.
+- Optional body fields: `message`, `provider` / `provider_hint` (hint only; **not** used to choose the LLM provider), `bank_timezone`, `payment_time_raw`, `pdf_sha256`, `email_message_sha256`, `dkim_signature_sha256`.
+
 ---
 
 ## Migration
