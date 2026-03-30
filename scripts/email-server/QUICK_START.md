@@ -176,3 +176,5 @@ sudo systemctl status postfix dovecot opendkim
 
 Полная документация: [`docs/EMAIL_SERVER_SETUP.md`](../../docs/EMAIL_SERVER_SETUP.md)
 
+Очередь Postfix раздулась / подозрение на open relay: [`docs/POSTFIX_RELAY_AND_QUEUE.md`](../../docs/POSTFIX_RELAY_AND_QUEUE.md), скрипт `apply-postfix-relay-hardening.sh`.
+
