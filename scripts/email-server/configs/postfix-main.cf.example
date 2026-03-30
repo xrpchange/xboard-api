@@ -23,6 +23,14 @@ virtual_mailbox_base = /var/mail/vhosts
 transport_maps = hash:/etc/postfix/transport
 
 # Security
+# Важно: при compatibility_level=0 (по умолчанию в старых инсталляциях) smtpd_relay_restrictions пустой —
+# внешние клиенты могут ретранслировать почту как «открытый релей». Рекомендуется 3.6 (см. Postfix COMPATIBILITY_README).
+compatibility_level = 3.6
+
+# Не держать недоставленные письма дольше указанного времени (очередь самоочищается).
+maximal_queue_lifetime = 10m
+bounce_queue_lifetime = 10m
+
 smtpd_banner = $myhostname ESMTP
 smtpd_helo_required = yes
 smtpd_helo_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_invalid_helo_hostname, reject_non_fqdn_helo_hostname

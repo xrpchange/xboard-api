@@ -9,6 +9,7 @@
 ```
 scripts/email-server/
 ├── install.sh                      # Установка Postfix/Dovecot для верификации платежей
+├── apply-postfix-relay-hardening.sh # Закрытие open relay + лимиты очереди (см. docs/POSTFIX_RELAY_AND_QUEUE.md)
 ├── setup-mysql-users.sh            # Создание MySQL-пользователей postfix/dovecot (lot mailboxes)
 ├── setup-lot-mailboxes.sh          # Настройка Postfix/Dovecot для ящиков лотов (IMAP-чат)
 ├── php-verifier.php                # PHP скрипт проверки DKIM и отправки ответов
@@ -82,6 +83,7 @@ scripts/email-server/
 ## Документация
 
 - **Полная настройка сервера:** [`docs/EMAIL_SERVER_SETUP.md`](../../docs/EMAIL_SERVER_SETUP.md)
+- **Postfix: открытый релей, очередь, фаервол, обслуживание:** [`docs/POSTFIX_RELAY_AND_QUEUE.md`](../../docs/POSTFIX_RELAY_AND_QUEUE.md)
 - **SPF, DKIM, DMARC (доставка, защита от спама):** [`docs/MAIL_SPF_DKIM_DMARC.md`](../../docs/MAIL_SPF_DKIM_DMARC.md)
 
 ## Типичные ошибки (Postfix / lot mailboxes)

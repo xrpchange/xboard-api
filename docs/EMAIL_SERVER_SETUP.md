@@ -400,6 +400,10 @@ sudo doveconf | grep imap_idle
 tail -f /var/log/dovecot.log
 ```
 
+## Postfix: релей, очередь и безопасность
+
+Если на сервере **раздувается очередь** (`postqueue -p`), в логах появляются предупреждения про пустой `smtpd_relay_restrictions` или внешние клиенты массово отправляют почту наружу — см. отдельный документ **[POSTFIX_RELAY_AND_QUEUE.md](POSTFIX_RELAY_AND_QUEUE.md)** (уровень `compatibility_level`, лимиты `maximal_queue_lifetime`, очистка `postsuper`, фаервол, артефакты `master.cf`).
+
 ## Дополнительные ресурсы
 
 - [Postfix Documentation](http://www.postfix.org/documentation.html)

@@ -34,6 +34,7 @@ Key points:
 
 **CRITICAL: Use webklex/php-imap library for email operations!**
 
+- Self-hosted Postfix (e.g. `mail.xdexboard.com`): relay hardening, queue limits, and incident response — **`docs/POSTFIX_RELAY_AND_QUEUE.md`**.
 - The project uses `webklex/php-imap` package from Composer for IMAP operations
 - **For sending emails:** Use email service API with token (Postmark, Mailgun, Resend, etc.) configured in `config/services.php` and `config/mail.php`
 - **DO NOT** use SMTP with password authentication - use API tokens instead
