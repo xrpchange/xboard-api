@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\OpenDealController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -16,6 +17,9 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return view('welcome');
 });
+
+/** Public: opens app from seller email (HTTPS link is mail-client friendly). */
+Route::get('/open-deal', [OpenDealController::class, 'show'])->name('deal.open');
 
 // Swagger документация
 Route::get('/api/documentation', function () {
