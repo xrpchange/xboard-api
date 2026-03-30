@@ -6,6 +6,7 @@ System emails sent to the buyer during a deal (e.g. payment details from the sel
 - **To:** Buyer's lot mailbox (`buyer_lot_email`).
 - **Subject:** Human-readable (e.g. "Payment details — Lot #42"). Not used for machine parsing.
 - **X-XBoard-Deal-Tag:** Custom header containing the tag as a single-line JSON string (no newlines). The client reads this header when available (e.g. from IMAP or from the chat/mailbox API) to detect deal-related system messages.
+- **Delivery priority:** All transactional mail uses MIME **priority 1** (highest): `App\Mail\HighDeliveryPriority::apply()` on Laravel `Mail` messages, and `HighDeliveryPriority::injectIntoRawMime()` on raw RFC822 when using Postmark/Resend/Mailgun HTTP APIs (no bulk/marketing traffic).
 
 ---
 

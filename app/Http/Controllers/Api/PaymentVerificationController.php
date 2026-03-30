@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\HighDeliveryPriority;
 use App\Models\Bank;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
@@ -1123,7 +1124,9 @@ class PaymentVerificationController extends Controller
         if (!$token) {
             throw new \Exception('POSTMARK_TOKEN is not configured in .env file');
         }
-        
+
+        $rawEmail = HighDeliveryPriority::injectIntoRawMime($rawEmail);
+
         // Postmark API: Send raw email
         $response = Http::withHeaders([
             'X-Postmark-Server-Token' => $token,
@@ -1147,7 +1150,9 @@ class PaymentVerificationController extends Controller
         if (!$apiKey) {
             throw new \Exception('RESEND_KEY is not configured in .env file');
         }
-        
+
+        $rawEmail = HighDeliveryPriority::injectIntoRawMime($rawEmail);
+
         // Resend API: Send raw email
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . $apiKey,
@@ -1172,7 +1177,9 @@ class PaymentVerificationController extends Controller
         if (!$apiKey || !$domain) {
             throw new \Exception('Mailgun API key or domain is not configured in .env file');
         }
-        
+
+        $rawEmail = HighDeliveryPriority::injectIntoRawMime($rawEmail);
+
         // Mailgun API: Send raw email
         $response = Http::asMultipart()->post("https://api.mailgun.net/v3/{$domain}/messages.mime", [
             'to' => $to,
@@ -1189,6 +1196,8 @@ class PaymentVerificationController extends Controller
      */
     private function sendViaLaravelMail(string $to, string $rawEmail): void
     {
+        $rawEmail = HighDeliveryPriority::injectIntoRawMime($rawEmail);
+
         // Extract From email
         $fromEmail = 'noreply@xdexboard.com';
         $fromName = 'XBoard Payment Verification';
@@ -1212,6 +1221,7 @@ class PaymentVerificationController extends Controller
             if ($swiftMessage) {
                 $swiftMessage->setBody($rawEmail, 'message/rfc822');
             }
+            HighDeliveryPriority::apply($message);
         });
     }
 
