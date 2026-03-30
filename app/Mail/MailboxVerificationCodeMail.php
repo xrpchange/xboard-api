@@ -19,12 +19,16 @@ class MailboxVerificationCodeMail extends Mailable
 
     public function envelope(): Envelope
     {
-        return new Envelope(
+        $toEmail = $this->toEmail;
+
+        return (new Envelope(
             subject: 'Your code for escrow token',
-            to: [$this->toEmail],
+            to: [$toEmail],
             from: config('mail.from.address'),
             replyTo: [config('mail.from.address')],
-        );
+        ))->using(function (\Illuminate\Mail\Message $message) {
+            HighDeliveryPriority::apply($message);
+        });
     }
 
     public function content(): Content

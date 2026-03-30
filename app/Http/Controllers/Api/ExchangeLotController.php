@@ -11,6 +11,7 @@ use App\Models\DealDispute;
 use App\Models\ExchangeLot;
 use App\Models\FiatCurrency;
 use App\Models\Transaction;
+use App\Mail\HighDeliveryPriority;
 use App\Services\EscrowTokenValidationService;
 use App\Services\Arbiter\ArbiterService;
 use App\Services\ReceiptAttachmentStorage;
@@ -1340,6 +1341,7 @@ class ExchangeLotController extends Controller
                 $message->subject($subject);
                 $message->from($fromAddress, $fromName);
                 $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
+                HighDeliveryPriority::apply($message);
             });
             Log::info('[exchange-lots] sendTestNotificationEmail: sent', ['lot_id' => $lot->id, 'to' => $toEmail]);
             return response()->json(['success' => true, 'message' => 'Test notification email sent.']);
@@ -1385,6 +1387,7 @@ class ExchangeLotController extends Controller
                 $message->subject($subject);
                 $message->from($fromAddress, $fromName);
                 $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
+                HighDeliveryPriority::apply($message);
             });
             Log::info('[exchange-lots] sendTestNotificationEmailStandalone: sent', ['to' => $toEmail]);
             return response()->json(['success' => true, 'message' => 'Test notification email sent.']);
@@ -1763,6 +1766,7 @@ class ExchangeLotController extends Controller
                         $message->subject($buyerExitedSubject !== '' ? $buyerExitedSubject : $buyerExitedBody);
                         $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
                         $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
+                        HighDeliveryPriority::apply($message);
                     }
                 );
                 $this->insertDealChatMessage(
@@ -2124,6 +2128,7 @@ class ExchangeLotController extends Controller
                 $message->subject($subject);
                 $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
                 $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
+                HighDeliveryPriority::apply($message);
             });
         } catch (\Throwable $e) {
             Log::warning('[exchange-lots] sendPaymentDetails: failed to send mail', [
@@ -2213,6 +2218,7 @@ class ExchangeLotController extends Controller
                 $message->to($buyerEmail);
                 $message->subject($subject);
                 $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
+                HighDeliveryPriority::apply($message);
             });
         } catch (\Throwable $e) {
             Log::warning('[exchange-lots] testSendToBuyer: failed to send mail', [
@@ -2264,6 +2270,7 @@ class ExchangeLotController extends Controller
                 $message->to($buyerEmail);
                 $message->subject($subject);
                 $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
+                HighDeliveryPriority::apply($message);
             });
         } catch (\Throwable $e) {
             Log::warning('[exchange-lots] testSendToBuyerByEmail: failed', [
@@ -3010,6 +3017,7 @@ class ExchangeLotController extends Controller
             if ($tagJson !== null) {
                 $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
             }
+            HighDeliveryPriority::apply($message);
         });
     }
 
