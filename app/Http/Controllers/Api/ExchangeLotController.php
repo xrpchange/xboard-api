@@ -15,6 +15,7 @@ use App\Mail\HighDeliveryPriority;
 use App\Services\EscrowTokenValidationService;
 use App\Services\Arbiter\ArbiterService;
 use App\Services\ReceiptAttachmentStorage;
+use App\Support\DealSellerOpenLinks;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -1218,15 +1219,37 @@ class ExchangeLotController extends Controller
                     filter_var($sellerNotificationEmail, FILTER_VALIDATE_EMAIL) &&
                     strcasecmp($sellerNotificationEmail, $sellerEmail) !== 0
                 ) {
+                    $webUrl = $this->buildSellerOpenDealWebUrl($lot);
+                    $appUrl = $this->buildSellerOpenDealAppLink($lot);
                     try {
-                        $this->sendDealEmail(
-                            to: $sellerNotificationEmail,
-                            subject: $subject,
-                            fromAddress: $fromAddress,
-                            fromName: $fromName,
-                            body: $body,
-                            tagJson: $tagJson
-                        );
+                        if ($webUrl !== null || $appUrl !== null) {
+                            $plainForExternal = $body;
+                            if ($webUrl !== null) {
+                                $plainForExternal .= "\n\nOpen in XBoard app (HTTPS): " . $webUrl;
+                            }
+                            if ($appUrl !== null) {
+                                $plainForExternal .= "\n\nOpen in XBoard app (app link): " . $appUrl;
+                            }
+                            $htmlForExternal = $this->buildSellerExternalNotificationHtml($body, $webUrl, $appUrl);
+                            $this->sendDealEmailHtmlMultipart(
+                                to: $sellerNotificationEmail,
+                                subject: $subject,
+                                fromAddress: $fromAddress,
+                                fromName: $fromName,
+                                plainBody: $plainForExternal,
+                                htmlBody: $htmlForExternal,
+                                tagJson: $tagJson
+                            );
+                        } else {
+                            $this->sendDealEmail(
+                                to: $sellerNotificationEmail,
+                                subject: $subject,
+                                fromAddress: $fromAddress,
+                                fromName: $fromName,
+                                body: $body,
+                                tagJson: $tagJson
+                            );
+                        }
                         Log::info('[exchange-lots] sendMessageToSeller: start_deal external seller notification sent', [
                             'lot_id' => $lot->id,
                             'to' => $sellerNotificationEmail,
@@ -2996,6 +3019,115 @@ class ExchangeLotController extends Controller
         }
 
         return $decoded;
+    }
+
+    /**
+     * @return array{lot_id: string, node_key: string}|null
+     */
+    private function sellerOpenDealQueryParams(ExchangeLot $lot): ?array
+    {
+        $lot->loadMissing('node');
+        $domain = $lot->node?->domain;
+        if (!is_string($domain) || trim($domain) === '') {
+            return null;
+        }
+        $nodeKey = strtolower(trim($domain));
+        $nodeKey = (string) preg_replace('/^api\./i', '', $nodeKey);
+        if ($nodeKey === '') {
+            return null;
+        }
+
+        return [
+            'lot_id' => (string) $lot->id,
+            'node_key' => $nodeKey,
+        ];
+    }
+
+    /**
+     * HTTPS link for email: same host/scheme as this API request (no APP_URL / env base).
+     */
+    private function buildSellerOpenDealWebUrl(ExchangeLot $lot): ?string
+    {
+        if (app()->runningInConsole()) {
+            return null;
+        }
+        $params = $this->sellerOpenDealQueryParams($lot);
+        if ($params === null) {
+            return null;
+        }
+        $base = rtrim(request()->getSchemeAndHttpHost(), '/');
+        if ($base === '') {
+            return null;
+        }
+        $query = http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+
+        return $base . '/open-deal?' . $query;
+    }
+
+    /**
+     * Deep link for the Android app: opens the same deal flow as tapping the local "new message" notification
+     * (lot_id + node_key). Only added to seller_notification_email body, not to the lot mailbox copy.
+     */
+    private function buildSellerOpenDealAppLink(ExchangeLot $lot): ?string
+    {
+        $params = $this->sellerOpenDealQueryParams($lot);
+        if ($params === null) {
+            return null;
+        }
+        $base = rtrim(DealSellerOpenLinks::APP_DEEP_LINK_BASE, '?&');
+        $query = http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+        $sep = str_contains($base, '?') ? '&' : '?';
+
+        return $base . $sep . $query;
+    }
+
+    /**
+     * HTML + plain text for seller_notification_email: primary &lt;a href&gt; uses HTTPS (mail clients strip xboard://).
+     */
+    private function buildSellerExternalNotificationHtml(string $messageBody, ?string $webUrl, ?string $appUrl): string
+    {
+        $escaped = htmlspecialchars($messageBody, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $html = '<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:14px;line-height:1.45;color:#111;">';
+        $html .= '<p style="white-space:pre-wrap;margin:0 0 1em 0;">' . nl2br($escaped, false) . '</p>';
+        $primary = $webUrl ?? $appUrl;
+        if ($primary !== null) {
+            $href = htmlspecialchars($primary, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $html .= '<p style="margin:0 0 0.75em 0;"><a href="' . $href . '">Open in XBoard app</a></p>';
+            // Always repeat href as plain text: many clients strip xboard:// from links; user can copy the line.
+            $html .= '<p style="margin:0;font-size:12px;color:#555;word-break:break-all;">' . $href . '</p>';
+            if ($appUrl !== null && $webUrl !== null && $appUrl !== $webUrl) {
+                $a = htmlspecialchars($appUrl, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                $html .= '<p style="margin:0.75em 0 0;font-size:11px;color:#777;">App link: ' . $a . '</p>';
+            }
+        }
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    /**
+     * Multipart email (text + HTML) so clients show a tappable link in HTML mode.
+     */
+    private function sendDealEmailHtmlMultipart(
+        string $to,
+        string $subject,
+        string $fromAddress,
+        string $fromName,
+        string $plainBody,
+        string $htmlBody,
+        ?string $tagJson
+    ): void {
+        Mail::send([], [], function ($message) use ($to, $subject, $fromAddress, $fromName, $plainBody, $htmlBody, $tagJson) {
+            $message->to($to);
+            $message->subject($subject);
+            $message->from($fromAddress, $fromName);
+            $message->text($plainBody);
+            $message->html($htmlBody);
+            if ($tagJson !== null) {
+                $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
+            }
+            HighDeliveryPriority::apply($message);
+        });
     }
 
     /**
