@@ -729,7 +729,7 @@ class ExchangeLotController extends Controller
             }
         }
 
-        // Compare incoming escrow token with lot's stored token (no Core call on update)
+        // Validate incoming escrow token public part on update as well.
         $decoded = json_decode($validated['wallet_address'], true);
         if (!is_array($decoded) || empty($decoded['token_hash'])) {
             return response()->json([
@@ -738,11 +738,11 @@ class ExchangeLotController extends Controller
             ], 422);
         }
         $incomingHash = strtolower(trim($decoded['token_hash']));
-        $storedHash = strtolower(trim($lot->wallet_hash ?? ''));
-        if ($incomingHash !== $storedHash) {
+        $validation = $this->escrowTokenValidation->validateToken($validated['wallet_address']);
+        if (!$validation['valid']) {
             return response()->json([
                 'success' => false,
-                'errors' => ['wallet_address' => ['Escrow token does not match the lot. Cannot change token when updating.']]
+                'errors' => ['wallet_address' => [$validation['error'] ?? 'Escrow token validation failed. Token may be fake or invalid.']]
             ], 422);
         }
 
@@ -764,6 +764,8 @@ class ExchangeLotController extends Controller
             'from_crypto_currency_id' => $fromCrypto?->id,
             'to_fiat_currency_id' => $toFiat?->id,
             'to_crypto_currency_id' => $toCrypto?->id,
+            'wallet_address' => $validated['wallet_address'],
+            'wallet_hash' => $incomingHash,
             'sell_amount' => $validated['sell_amount'],
             'buy_amount_min' => min($buyAmounts),
             'buy_amount_max' => max($buyAmounts),
@@ -821,6 +823,24 @@ class ExchangeLotController extends Controller
         }
         $lot->update($updateData);
         Log::info('[exchange-lots] update done', ['lot_id' => $lot->id, 'lot_aml_after' => $lot->fresh()->aml]);
+
+        try {
+            $currency = $lot->cryptoCurrency?->code ?? $decoded['currency'] ?? 'crypto';
+            $mailbox = $this->lotMailboxService->ensureMailbox(
+                $validated['wallet_address'],
+                $incomingHash,
+                $currency
+            );
+            $sellerEmail = $mailbox['email'] ?? null;
+            if (!empty($sellerEmail)) {
+                $lot->update(['seller_lot_email' => $sellerEmail]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] Lot mailbox refresh failed on update (non-blocking)', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         if (array_key_exists('bank_ids', $validated)) {
             $bankIds = $validated['bank_ids'] ?? [];
