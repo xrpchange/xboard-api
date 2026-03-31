@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use Illuminate\Mail\Message;
+use Symfony\Component\Mime\Email;
 
 /**
  * Sets MIME priority 1 (highest) on all transactional mail.
@@ -10,9 +11,27 @@ use Illuminate\Mail\Message;
  */
 final class HighDeliveryPriority
 {
-    public static function apply(Message $message): void
+    /**
+     * Apply high delivery priority for both legacy Illuminate\Mail\Message
+     * and the newer Symfony\Component\Mime\Email transport.
+     */
+    public static function apply($message): void
     {
-        $message->priority(1);
+        if ($message instanceof Message) {
+            $message->priority(1);
+            return;
+        }
+
+        if ($message instanceof Email) {
+            // Symfony Mailer: set standard priority headers
+            $headers = $message->getHeaders();
+            if (!$headers->has('X-Priority')) {
+                $headers->addTextHeader('X-Priority', '1');
+            }
+            if (!$headers->has('Importance')) {
+                $headers->addTextHeader('Importance', 'high');
+            }
+        }
     }
 
     /**
