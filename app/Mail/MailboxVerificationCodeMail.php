@@ -7,6 +7,7 @@ use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
+use Symfony\Component\Mime\Email;
 
 class MailboxVerificationCodeMail extends Mailable
 {
@@ -26,7 +27,7 @@ class MailboxVerificationCodeMail extends Mailable
             to: [$toEmail],
             from: config('mail.from.address'),
             replyTo: [config('mail.from.address')],
-        ))->using(function (\Illuminate\Mail\Message $message) {
+        ))->using(function (Email $message) {
             HighDeliveryPriority::apply($message);
         });
     }
