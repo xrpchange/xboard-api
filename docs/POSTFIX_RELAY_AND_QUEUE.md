@@ -83,7 +83,61 @@ sudo systemctl reload postfix
 sudo tail -n 50 /var/log/mail.log
 ```
 
-## 7. Связанные файлы в репозитории
+## 7. Submission / submissions: не ломать sender_login_maps
+
+Важно не превращать порты **587/465** (submission / submissions) в обход глобальных ограничений отправителя.
+
+- **Нельзя** затирать `smtpd_sender_restrictions` в `master.cf` для `submission` / `submissions` пустым значением:
+
+  ```text
+  -o smtpd_sender_restrictions=
+  ```
+
+  В таком случае Postfix **перестаёт применять** `smtpd_sender_login_maps`, и любой успешно аутентифицированный клиент может слать почту с произвольным `From:` внутри домена.
+
+- Для XBoard исходящий SMTP должен оставаться жёстким:
+
+  - Допустимые внешние отправители задаются **только** через `smtpd_sender_login_maps`
+    (в продакшене — `noreply@xdexboard.com` и, при необходимости, технический `check@xdexboard.com`).
+  - Для `submission` / `submissions` нужно явно подставить такие же ограничения, как в `main.cf`:
+
+    ```text
+    # master.cf (фрагмент)
+    submission inet n       -       y       -       -       smtpd
+      ...
+      -o smtpd_sender_restrictions=reject_sender_login_mismatch,permit_mynetworks,permit_sasl_authenticated
+    submissions     inet  n       -       y       -       -       smtpd
+      ...
+      -o smtpd_sender_restrictions=reject_sender_login_mismatch,permit_mynetworks,permit_sasl_authenticated
+    ```
+
+  - Это гарантирует, что даже при валидной аутентификации **нельзя выбрать произвольный `MAIL FROM`**, которого нет в `sender_login_maps`
+    (например, `information@xdexboard.com`, `orders@xdexboard.com` и т.п.).
+
+### Мини‑чек‑лист, чтобы не открыть релей через submission
+
+1. Проверить глобальные ограничения:
+
+   ```bash
+   sudo postconf smtpd_sender_restrictions smtpd_sender_login_maps
+   ```
+
+2. Убедиться, что `sender_login_maps` содержит только разрешённые внешние адреса (`noreply@xdexboard.com`, `check@xdexboard.com`).
+
+3. Проверить блоки `submission` / `submissions` в `/etc/postfix/master.cf`:
+
+   - там **нет** строки `-o smtpd_sender_restrictions=` без значения;
+   - там есть строка с `reject_sender_login_mismatch,permit_mynetworks,permit_sasl_authenticated`.
+
+4. После правок:
+
+   ```bash
+   sudo postfix check
+   sudo systemctl reload postfix
+   sudo tail -n 50 /var/log/mail.log
+   ```
+
+## 8. Связанные файлы в репозитории
 
 - Пример `main.cf`: `scripts/email-server/configs/postfix-main.cf.example` — `compatibility_level`, лимиты очереди.
 - Опциональный скрипт на сервере: `scripts/email-server/apply-postfix-relay-hardening.sh` (см. комментарии внутри).
