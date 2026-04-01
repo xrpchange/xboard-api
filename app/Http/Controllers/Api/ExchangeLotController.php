@@ -477,6 +477,7 @@ class ExchangeLotController extends Controller
             'aml' => 'nullable|integer|min:0|max:100',
             'buyer_payment_timeout_minutes' => 'nullable|integer|in:15,20,30',
             'seller_notification_email' => 'nullable|string|email|max:255',
+            'buyer_notification_email' => 'nullable|string|email|max:255',
             'expires_at' => 'nullable|date',
         ]);
 
@@ -1036,6 +1037,13 @@ class ExchangeLotController extends Controller
         $buyerMailboxConfig = null;
         if ($messageType === 'start_deal' && $requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
             $updateData = ['buyer_lot_email' => $requesterMailboxEmail];
+            $buyerNotificationEmail = $request->input('buyer_notification_email');
+            if (is_string($buyerNotificationEmail)) {
+                $buyerNotificationEmail = trim($buyerNotificationEmail);
+                if ($buyerNotificationEmail !== '' && filter_var($buyerNotificationEmail, FILTER_VALIDATE_EMAIL)) {
+                    $updateData['buyer_notification_email'] = $buyerNotificationEmail;
+                }
+            }
             $selectedAmount = $request->input('selected_amount');
             if (is_numeric($selectedAmount) && (float) $selectedAmount > 0) {
                 $updateData['buyer_selected_amount'] = (float) $selectedAmount;
@@ -1366,6 +1374,9 @@ class ExchangeLotController extends Controller
             ], 400);
         }
 
+        // Ensure node relation is available for deep-link helpers (sellerOpenDealQueryParams uses $lot->node->domain).
+        $lot->loadMissing('node');
+
         $body = $request->input('body');
         if (!is_string($body) || trim($body) === '') {
             return response()->json(['success' => false, 'message' => 'Body is required.'], 422);
@@ -1374,18 +1385,47 @@ class ExchangeLotController extends Controller
         $subject = $request->input('subject');
         $subject = is_string($subject) && trim($subject) !== '' ? trim($subject) : sprintf('Deal message — Lot #%s', (string) $lot->id);
 
+        // Append deep links (HTTPS + app) so recipient can reopen the deal on another device.
+        // Use the same helpers/wording as the main start_deal seller notification.
+        try {
+            $webUrl = $this->buildSellerOpenDealWebUrl($lot);
+            $appLink = $this->buildSellerOpenDealAppLink($lot);
+            if ($webUrl !== null || $appLink !== null) {
+                if ($webUrl !== null) {
+                    $body .= "\n\nOpen in XBoard app (HTTPS): " . $webUrl;
+                }
+                if ($appLink !== null) {
+                    $body .= "\n\nApp link: " . $appLink;
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] sendTestNotificationEmail: failed to append deep links', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         $fromAddress = config('mail.from.address', 'noreply@xdexboard.com');
         $fromName = config('mail.from.name', 'XBoard');
         $tagJson = json_encode(['t' => 'start_deal', 'lot_id' => $lot->id]);
 
+        // Match the external notification format used for start_deal (HTML button + links).
+        $webUrl = $this->buildSellerOpenDealWebUrl($lot);
+        $appLink = $this->buildSellerOpenDealAppLink($lot);
+        // Plain text: keep only the localized body; links live in the HTML part (with one explicit plain copy inside HTML).
+        $plainBody = $body;
+        $htmlBody = $this->buildSellerExternalNotificationHtml($body, $webUrl, $appLink);
+
         try {
-            Mail::raw($body, function ($message) use ($toEmail, $fromAddress, $fromName, $subject, $body, $tagJson) {
-                $message->to($toEmail);
-                $message->subject($subject);
-                $message->from($fromAddress, $fromName);
-                $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
-                HighDeliveryPriority::apply($message);
-            });
+            $this->sendDealEmailHtmlMultipart(
+                to: $toEmail,
+                subject: $subject,
+                fromAddress: $fromAddress,
+                fromName: $fromName,
+                plainBody: $plainBody,
+                htmlBody: $htmlBody,
+                tagJson: $tagJson
+            );
             Log::info('[exchange-lots] sendTestNotificationEmail: sent', ['lot_id' => $lot->id, 'to' => $toEmail]);
             return response()->json(['success' => true, 'message' => 'Test notification email sent.']);
         } catch (\Throwable $e) {
@@ -3112,13 +3152,8 @@ class ExchangeLotController extends Controller
         $primary = $webUrl ?? $appUrl;
         if ($primary !== null) {
             $href = htmlspecialchars($primary, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            // Single clear button; без дополнительного дублирования ссылок текстом.
             $html .= '<p style="margin:0 0 0.75em 0;"><a href="' . $href . '">Open in XBoard app</a></p>';
-            // Always repeat href as plain text: many clients strip xboard:// from links; user can copy the line.
-            $html .= '<p style="margin:0;font-size:12px;color:#555;word-break:break-all;">' . $href . '</p>';
-            if ($appUrl !== null && $webUrl !== null && $appUrl !== $webUrl) {
-                $a = htmlspecialchars($appUrl, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                $html .= '<p style="margin:0.75em 0 0;font-size:11px;color:#777;">App link: ' . $a . '</p>';
-            }
         }
         $html .= '</div>';
 
