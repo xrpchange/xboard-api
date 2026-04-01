@@ -1031,6 +1031,9 @@ class ExchangeLotController extends Controller
         }
 
         $messageType = $request->input('message_type');
+        $buyerNotificationEmailForExternal = null;
+        $buyerExternalSubject = $request->input('buyer_notification_subject');
+        $buyerExternalBody = $request->input('buyer_notification_body');
 
         // start_deal: atomically set buyer_lot_email only if currently NULL/empty (avoid race)
         // Also ensure buyer's mailbox exists; return mailbox config so client can read messages via IMAP
@@ -1042,6 +1045,7 @@ class ExchangeLotController extends Controller
                 $buyerNotificationEmail = trim($buyerNotificationEmail);
                 if ($buyerNotificationEmail !== '' && filter_var($buyerNotificationEmail, FILTER_VALIDATE_EMAIL)) {
                     $updateData['buyer_notification_email'] = $buyerNotificationEmail;
+                    $buyerNotificationEmailForExternal = $buyerNotificationEmail;
                 }
             }
             $selectedAmount = $request->input('selected_amount');
@@ -1287,6 +1291,62 @@ class ExchangeLotController extends Controller
                             'lot_id' => $lot->id,
                             'to' => $sellerNotificationEmail,
                             'error' => $notificationError->getMessage(),
+                        ]);
+                    }
+                }
+
+                // Optional external notification for buyer: "you entered the deal, seller is notified", with deep links.
+                $buyerExternalEmail = $buyerNotificationEmailForExternal;
+                if ($buyerExternalEmail === null && !empty($lot->buyer_notification_email)) {
+                    $candidate = trim((string) $lot->buyer_notification_email);
+                    if ($candidate !== '' && filter_var($candidate, FILTER_VALIDATE_EMAIL)) {
+                        $buyerExternalEmail = $candidate;
+                    }
+                }
+                if ($buyerExternalEmail !== null) {
+                    $webUrl = $this->buildSellerOpenDealWebUrl($lot);
+                    $appUrl = $this->buildSellerOpenDealAppLink($lot);
+                    try {
+                        if ($webUrl !== null || $appUrl !== null) {
+                            $buyerPlain = is_string($buyerExternalBody) && trim($buyerExternalBody) !== ''
+                                ? trim($buyerExternalBody)
+                                : 'You have opened the deal window for this lot. The seller has been notified about your entry.';
+                            $buyerHtml = $this->buildSellerExternalNotificationHtml($buyerPlain, $webUrl, $appUrl);
+                            $this->sendDealEmailHtmlMultipart(
+                                to: $buyerExternalEmail,
+                                subject: is_string($buyerExternalSubject) && trim($buyerExternalSubject) !== ''
+                                    ? trim($buyerExternalSubject)
+                                    : $subject,
+                                fromAddress: $fromAddress,
+                                fromName: $fromName,
+                                plainBody: $buyerPlain,
+                                htmlBody: $buyerHtml,
+                                tagJson: $tagJson
+                            );
+                        } else {
+                            $buyerPlain = is_string($buyerExternalBody) && trim($buyerExternalBody) !== ''
+                                ? trim($buyerExternalBody)
+                                : 'You have opened the deal window for this lot. The seller has been notified about your entry.';
+                            $this->sendDealEmail(
+                                to: $buyerExternalEmail,
+                                subject: is_string($buyerExternalSubject) && trim($buyerExternalSubject) !== ''
+                                    ? trim($buyerExternalSubject)
+                                    : $subject,
+                                fromAddress: $fromAddress,
+                                fromName: $fromName,
+                                body: $buyerPlain,
+                                tagJson: $tagJson
+                            );
+                        }
+                        Log::info('[exchange-lots] sendMessageToSeller: start_deal external buyer notification sent', [
+                            'lot_id' => $lot->id,
+                            'to' => $buyerExternalEmail,
+                        ]);
+                    } catch (\Throwable $buyerNotifyError) {
+                        Log::warning('[exchange-lots] sendMessageToSeller: start_deal external buyer notification failed', [
+                            'lot_id' => $lot->id,
+                            'to' => $buyerExternalEmail,
+                            'error' => $buyerNotifyError->getMessage(),
                         ]);
                     }
                 }
