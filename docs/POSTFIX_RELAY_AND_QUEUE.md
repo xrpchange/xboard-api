@@ -137,7 +137,57 @@ sudo tail -n 50 /var/log/mail.log
    sudo tail -n 50 /var/log/mail.log
    ```
 
-## 8. Связанные файлы в репозитории
+## 8. Ежедневный мониторинг блокировок (RBL / репутация)
+
+Когда SMTP-конфиг уже ужесточён, важно **следить за тем, как внешние провайдеры видят IP сервера**.  
+Для этого достаточно периодически (вручную) смотреть на блоки по Spamhaus / Abusix / Cloudmark и т.д. за последний день.
+
+В репозитории есть вспомогательный скрипт:
+
+- `scripts/email-server/check_rbl_blocks.py` — быстрый отчёт по RBL / репутационным блокам.
+
+### Как использовать на сервере
+
+1. Скопируйте (или выкатите через деплой) файл `scripts/email-server/check_rbl_blocks.py` на сервер (например, в `/opt/xboard/tools/`).
+2. Запустите от root (или пользователя с доступом к `/var/log/mail.log`):
+
+   ```bash
+   python3 /opt/xboard/tools/check_rbl_blocks.py
+   ```
+
+   По умолчанию:
+
+   - читает `/var/log/mail.log`;
+   - смотрит окно **последние 24 часа**;
+   - ищет типичные фразы вроде:
+     - `blocked using Spamhaus`
+     - `Spamhaus SBL`
+     - `Abusix Mail Intelligence` / `IP blocked by Abusix`
+     - `found on one or more DNSBLs`
+     - `Cloudmark CSI-Global`
+     - и т.п.
+
+3. В выводе будет:
+
+   - общее количество таких блоков за окно;
+   - разбивка по доменам получателей (gmail.com, comcast.net, orange.fr и т.д.);
+   - разбивка по удалённым MX (mx2c1.comcast.net, smtp-in.orange.fr и т.д.);
+   - несколько примеров строк лога с точным текстом ошибки.
+
+Примеры параметров:
+
+```bash
+# Локальный путь к логу и 6 часов назад
+python3 check_rbl_blocks.py --log /var/log/mail.log --hours 6
+```
+
+Используйте этот отчет, чтобы:
+
+- отслеживать момент, когда IP сняли с RBL (количество блоков уходит к нулю);
+- видеть, какие провайдеры всё ещё режут письма (по доменам и MX);
+- принимать решение, когда можно возвращать массовые отправки кодов подтверждения на чувствительные домены.
+
+## 9. Связанные файлы в репозитории
 
 - Пример `main.cf`: `scripts/email-server/configs/postfix-main.cf.example` — `compatibility_level`, лимиты очереди.
 - Опциональный скрипт на сервере: `scripts/email-server/apply-postfix-relay-hardening.sh` (см. комментарии внутри).
