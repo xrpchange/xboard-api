@@ -227,9 +227,37 @@ class EscrowTokenController extends BaseApiController
             $this->rateLimitService->incrementEmail($email, $environment);
             $this->rateLimitService->incrementIp($ip);
 
+            // Mark email as verified for future test/emergency notifications.
+            $this->markEmailAsVerified($email);
+
             return response()->json($result, 201);
         } catch (\Exception $e) {
             return $this->errorResponse($e->getMessage(), 400);
+        }
+    }
+
+    /**
+     * Store/update email in verified_emails after successful token creation.
+     */
+    private function markEmailAsVerified(string $email): void
+    {
+        $normalized = strtolower(trim($email));
+        if ($normalized === '') {
+            return;
+        }
+
+        $now = now();
+        $existing = \DB::table('verified_emails')->where('email', $normalized)->first();
+        if ($existing === null) {
+            \DB::table('verified_emails')->insert([
+                'email' => $normalized,
+                'first_verified_at' => $now,
+                'last_verified_at' => $now,
+            ]);
+        } else {
+            \DB::table('verified_emails')
+                ->where('email', $normalized)
+                ->update(['last_verified_at' => $now]);
         }
     }
 
