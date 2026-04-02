@@ -1434,6 +1434,24 @@ class ExchangeLotController extends Controller
             ], 400);
         }
 
+        // Only allow test emails to addresses that were previously verified via token creation.
+        if (!$this->isVerifiedEmail($toEmail)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot send test email to this address. Use it for token creation and verification first.',
+                'error_code' => 'unverified_email_for_test',
+            ], 422);
+        }
+
+        // Per-recipient daily rate limit to avoid abuse of test emails.
+        if (!$this->incrementEmailTestCounter($toEmail)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Test email daily limit reached for this recipient.',
+                'error_code' => 'test_email_limit_reached',
+            ], 429);
+        }
+
         // Ensure node relation is available for deep-link helpers (sellerOpenDealQueryParams uses $lot->node->domain).
         $lot->loadMissing('node');
 
@@ -1516,6 +1534,25 @@ class ExchangeLotController extends Controller
             return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
         }
         $toEmail = trim((string) $request->input('to_email'));
+
+        // Only allow test emails to addresses that were previously verified via token creation.
+        if (!$this->isVerifiedEmail($toEmail)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot send test email to this address. Use it for token creation and verification first.',
+                'error_code' => 'unverified_email_for_test',
+            ], 422);
+        }
+
+        // Apply the same daily limit to standalone test endpoint.
+        if (!$this->incrementEmailTestCounter($toEmail)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Test email daily limit reached for this recipient.',
+                'error_code' => 'test_email_limit_reached',
+            ], 429);
+        }
+
         $body = trim((string) $request->input('body'));
         $subject = $request->input('subject');
         $subject = is_string($subject) && trim($subject) !== '' ? trim($subject) : 'Deal message — Lot #test';
@@ -3110,6 +3147,12 @@ class ExchangeLotController extends Controller
         ?string $dealTag
     ): void {
         try {
+            // Enforce max message length on server side.
+            $maxLen = (int) config('deal.max_message_length', 1000);
+            if ($maxLen > 0 && mb_strlen($body) > $maxLen) {
+                $body = mb_substr($body, 0, $maxLen);
+            }
+
             DealChatMessage::create([
                 'exchange_lot_id' => $lot->id,
                 'sender_side' => $senderSide,
@@ -3118,6 +3161,23 @@ class ExchangeLotController extends Controller
                 'body' => $body,
                 'deal_tag' => $dealTag,
             ]);
+
+            // Keep only last N messages per deal to avoid unbounded growth.
+            $maxMessages = (int) config('deal.max_messages_per_deal', 1000);
+            if ($maxMessages > 0) {
+                $total = DealChatMessage::where('exchange_lot_id', $lot->id)->count();
+                if ($total > $maxMessages) {
+                    $excess = $total - $maxMessages;
+                    $idsToDelete = DealChatMessage::where('exchange_lot_id', $lot->id)
+                        ->orderBy('id')
+                        ->limit($excess)
+                        ->pluck('id')
+                        ->all();
+                    if (!empty($idsToDelete)) {
+                        DealChatMessage::whereIn('id', $idsToDelete)->delete();
+                    }
+                }
+            }
         } catch (\Throwable $e) {
             Log::warning('[exchange-lots] insertDealChatMessage failed', [
                 'lot_id' => $lot->id,
@@ -3260,6 +3320,71 @@ class ExchangeLotController extends Controller
             }
             HighDeliveryPriority::apply($message);
         });
+    }
+
+    /**
+     * Increment per-recipient daily counter for test emails. Returns false when limit is reached.
+     *
+     * Hard limit: 20 test emails per (email, calendar day) pair by default (configurable via mail.test_email_daily_limit).
+     */
+    private function incrementEmailTestCounter(string $email): bool
+    {
+        $limit = (int) config('mail.test_email_daily_limit', 20);
+        if ($limit <= 0) {
+            return false;
+        }
+
+        $normalized = strtolower(trim($email));
+        if ($normalized === '') {
+            return false;
+        }
+
+        $today = now()->toDateString();
+
+        return DB::transaction(function () use ($normalized, $today, $limit): bool {
+            $row = DB::table('email_test_counters')
+                ->where('email', $normalized)
+                ->where('day', $today)
+                ->lockForUpdate()
+                ->first();
+
+            if ($row !== null && (int) $row->sent_count >= $limit) {
+                return false;
+            }
+
+            if ($row === null) {
+                DB::table('email_test_counters')->insert([
+                    'email' => $normalized,
+                    'day' => $today,
+                    'sent_count' => 1,
+                    'last_sent_at' => now(),
+                ]);
+            } else {
+                DB::table('email_test_counters')
+                    ->where('id', $row->id)
+                    ->update([
+                        'sent_count' => (int) $row->sent_count + 1,
+                        'last_sent_at' => now(),
+                    ]);
+            }
+
+            return true;
+        });
+    }
+
+    /**
+     * Check if email was verified via escrow token creation flow.
+     */
+    private function isVerifiedEmail(string $email): bool
+    {
+        $normalized = strtolower(trim($email));
+        if ($normalized === '') {
+            return false;
+        }
+
+        return \DB::table('verified_emails')
+            ->where('email', $normalized)
+            ->exists();
     }
 
     /**
