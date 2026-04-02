@@ -811,6 +811,8 @@ class PaymentVerificationController extends Controller
         $validator = Validator::make($request->all(), [
             'email_raw' => 'required|string',
             'bank_id' => 'nullable|integer',
+            /** Client: connected mailbox — if DKIM is valid and this address appears in To/Cc/Delivered-To etc., we record it like escrow-token verification. */
+            'mailbox_email' => 'nullable|email',
         ]);
 
         if ($validator->fails()) {
@@ -908,6 +910,24 @@ class PaymentVerificationController extends Controller
                 'dkim_error' => $dkimResult['error'],
             ]);
 
+            $verifiedMailboxRecorded = false;
+            $mailboxRaw = $request->input('mailbox_email');
+            if ($dkimResult['valid'] && is_string($mailboxRaw)) {
+                $mbNorm = strtolower(trim($mailboxRaw));
+                if ($mbNorm !== '' && filter_var($mbNorm, FILTER_VALIDATE_EMAIL)
+                    && $this->rawEmailContainsMailboxAddress($rawEmail, $mbNorm)) {
+                    $this->markEmailVerifiedForDealNotifications($mbNorm);
+                    $verifiedMailboxRecorded = true;
+                    Log::info('verifyEmailContent: mailbox recorded for deal/test notifications (DKIM valid + recipient headers)', [
+                        'email' => $mbNorm,
+                    ]);
+                } elseif ($mbNorm !== '' && $dkimResult['valid']) {
+                    Log::info('verifyEmailContent: DKIM valid but mailbox_email not found in recipient headers', [
+                        'email' => $mbNorm,
+                    ]);
+                }
+            }
+
             // Extract and save PDF attachments only after DKIM and bank whitelist checks pass
             $pdfAttachments = [];
             Log::info('verifyEmailContent: PDF extraction check', [
@@ -947,6 +967,7 @@ class PaymentVerificationController extends Controller
                         'sender_known' => $senderCheck['valid'],
                         'dkim_error' => null,
                         'pdf_attachments' => [],
+                        'verified_mailbox_recorded' => $verifiedMailboxRecorded,
                     ],
                 ]);
             }
@@ -966,6 +987,7 @@ class PaymentVerificationController extends Controller
                     'sender_known' => $senderCheck['valid'],
                     'dkim_error' => $dkimResult['error'] ? $this->cleanUtf8String($dkimResult['error']) : null,
                     'pdf_attachments' => $pdfAttachments,
+                    'verified_mailbox_recorded' => $verifiedMailboxRecorded,
                 ]
             ];
 
@@ -1438,6 +1460,69 @@ class PaymentVerificationController extends Controller
             return quoted_printable_decode($body) ?: null;
         }
         return $body !== '' ? $body : null;
+    }
+
+    /**
+     * Same as escrow-token flow: allows test / emergency notification sends to this address.
+     */
+    private function markEmailVerifiedForDealNotifications(string $email): void
+    {
+        $normalized = strtolower(trim($email));
+        if ($normalized === '') {
+            return;
+        }
+
+        $now = now();
+        $existing = \DB::table('verified_emails')->where('email', $normalized)->first();
+        if ($existing === null) {
+            \DB::table('verified_emails')->insert([
+                'email' => $normalized,
+                'first_verified_at' => $now,
+                'last_verified_at' => $now,
+            ]);
+        } else {
+            \DB::table('verified_emails')
+                ->where('email', $normalized)
+                ->update(['last_verified_at' => $now]);
+        }
+    }
+
+    /**
+     * True if the mailbox address appears in recipient-related headers (To, Cc, Delivered-To, …).
+     */
+    private function rawEmailContainsMailboxAddress(string $rawEmail, string $normalizedMailbox): bool
+    {
+        $rawEmail = str_replace(["\r\n", "\r"], "\n", $rawEmail);
+        $sep = strpos($rawEmail, "\n\n");
+        $headers = $sep !== false ? substr($rawEmail, 0, $sep) : $rawEmail;
+        $unfolded = preg_replace('/\n[ \t]+/', ' ', $headers) ?? $headers;
+
+        $recipientHeaderNames = [
+            'to', 'cc', 'bcc', 'delivered-to', 'x-original-to', 'envelope-to',
+            'x-forwarded-to', 'resent-to', 'original-recipient', 'x-envelope-to',
+        ];
+
+        foreach (explode("\n", $unfolded) as $line) {
+            $lineTrim = trim($line);
+            $colon = strpos($lineTrim, ':');
+            if ($colon === false) {
+                continue;
+            }
+            $hdrName = strtolower(trim(substr($lineTrim, 0, $colon)));
+            if (!in_array($hdrName, $recipientHeaderNames, true)) {
+                continue;
+            }
+            $value = trim(substr($lineTrim, $colon + 1));
+            if (preg_match_all('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', $value, $m)) {
+                foreach ($m[0] as $addr) {
+                    if (strtolower($addr) === $normalizedMailbox) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
