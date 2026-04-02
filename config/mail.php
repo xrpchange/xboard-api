@@ -138,4 +138,16 @@ return [
         'name' => env('MAIL_FROM_NAME', 'XBoard'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Deal external notification daily limit (per recipient email)
+    |--------------------------------------------------------------------------
+    |
+    | Single counter (email_test_counters) for both:
+    | - POST .../send-test-notification-email (test / emergency preview)
+    | - start_deal external mail to seller_notification_email and buyer_notification_email
+    |
+    */
+    'test_email_daily_limit' => (int) env('MAIL_TEST_EMAIL_DAILY_LIMIT', 30),
+
 ];

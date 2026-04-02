@@ -1251,47 +1251,54 @@ class ExchangeLotController extends Controller
                     filter_var($sellerNotificationEmail, FILTER_VALIDATE_EMAIL) &&
                     strcasecmp($sellerNotificationEmail, $sellerEmail) !== 0
                 ) {
-                    $webUrl = $this->buildSellerOpenDealWebUrl($lot);
-                    $appUrl = $this->buildSellerOpenDealAppLink($lot);
-                    try {
-                        if ($webUrl !== null || $appUrl !== null) {
-                            $plainForExternal = $body;
-                            if ($webUrl !== null) {
-                                $plainForExternal .= "\n\nOpen in XBoard app (HTTPS): " . $webUrl;
+                    if (!$this->incrementEmailTestCounter($sellerNotificationEmail)) {
+                        Log::warning('[exchange-lots] sendMessageToSeller: start_deal external seller notification skipped (daily limit)', [
+                            'lot_id' => $lot->id,
+                            'to' => $sellerNotificationEmail,
+                        ]);
+                    } else {
+                        $webUrl = $this->buildSellerOpenDealWebUrl($lot);
+                        $appUrl = $this->buildSellerOpenDealAppLink($lot);
+                        try {
+                            if ($webUrl !== null || $appUrl !== null) {
+                                $plainForExternal = $body;
+                                if ($webUrl !== null) {
+                                    $plainForExternal .= "\n\nOpen in XBoard app (HTTPS): " . $webUrl;
+                                }
+                                if ($appUrl !== null) {
+                                    $plainForExternal .= "\n\nOpen in XBoard app (app link): " . $appUrl;
+                                }
+                                $htmlForExternal = $this->buildSellerExternalNotificationHtml($body, $webUrl, $appUrl);
+                                $this->sendDealEmailHtmlMultipart(
+                                    to: $sellerNotificationEmail,
+                                    subject: $subject,
+                                    fromAddress: $fromAddress,
+                                    fromName: $fromName,
+                                    plainBody: $plainForExternal,
+                                    htmlBody: $htmlForExternal,
+                                    tagJson: $tagJson
+                                );
+                            } else {
+                                $this->sendDealEmail(
+                                    to: $sellerNotificationEmail,
+                                    subject: $subject,
+                                    fromAddress: $fromAddress,
+                                    fromName: $fromName,
+                                    body: $body,
+                                    tagJson: $tagJson
+                                );
                             }
-                            if ($appUrl !== null) {
-                                $plainForExternal .= "\n\nOpen in XBoard app (app link): " . $appUrl;
-                            }
-                            $htmlForExternal = $this->buildSellerExternalNotificationHtml($body, $webUrl, $appUrl);
-                            $this->sendDealEmailHtmlMultipart(
-                                to: $sellerNotificationEmail,
-                                subject: $subject,
-                                fromAddress: $fromAddress,
-                                fromName: $fromName,
-                                plainBody: $plainForExternal,
-                                htmlBody: $htmlForExternal,
-                                tagJson: $tagJson
-                            );
-                        } else {
-                            $this->sendDealEmail(
-                                to: $sellerNotificationEmail,
-                                subject: $subject,
-                                fromAddress: $fromAddress,
-                                fromName: $fromName,
-                                body: $body,
-                                tagJson: $tagJson
-                            );
+                            Log::info('[exchange-lots] sendMessageToSeller: start_deal external seller notification sent', [
+                                'lot_id' => $lot->id,
+                                'to' => $sellerNotificationEmail,
+                            ]);
+                        } catch (\Throwable $notificationError) {
+                            Log::warning('[exchange-lots] sendMessageToSeller: start_deal external seller notification failed', [
+                                'lot_id' => $lot->id,
+                                'to' => $sellerNotificationEmail,
+                                'error' => $notificationError->getMessage(),
+                            ]);
                         }
-                        Log::info('[exchange-lots] sendMessageToSeller: start_deal external seller notification sent', [
-                            'lot_id' => $lot->id,
-                            'to' => $sellerNotificationEmail,
-                        ]);
-                    } catch (\Throwable $notificationError) {
-                        Log::warning('[exchange-lots] sendMessageToSeller: start_deal external seller notification failed', [
-                            'lot_id' => $lot->id,
-                            'to' => $sellerNotificationEmail,
-                            'error' => $notificationError->getMessage(),
-                        ]);
                     }
                 }
 
@@ -1304,50 +1311,57 @@ class ExchangeLotController extends Controller
                     }
                 }
                 if ($buyerExternalEmail !== null) {
-                    $webUrl = $this->buildSellerOpenDealWebUrl($lot);
-                    $appUrl = $this->buildSellerOpenDealAppLink($lot);
-                    try {
-                        if ($webUrl !== null || $appUrl !== null) {
-                            $buyerPlain = is_string($buyerExternalBody) && trim($buyerExternalBody) !== ''
-                                ? trim($buyerExternalBody)
-                                : 'You have opened the deal window for this lot. The seller has been notified about your entry.';
-                            $buyerHtml = $this->buildSellerExternalNotificationHtml($buyerPlain, $webUrl, $appUrl);
-                            $this->sendDealEmailHtmlMultipart(
-                                to: $buyerExternalEmail,
-                                subject: is_string($buyerExternalSubject) && trim($buyerExternalSubject) !== ''
-                                    ? trim($buyerExternalSubject)
-                                    : $subject,
-                                fromAddress: $fromAddress,
-                                fromName: $fromName,
-                                plainBody: $buyerPlain,
-                                htmlBody: $buyerHtml,
-                                tagJson: $tagJson
-                            );
-                        } else {
-                            $buyerPlain = is_string($buyerExternalBody) && trim($buyerExternalBody) !== ''
-                                ? trim($buyerExternalBody)
-                                : 'You have opened the deal window for this lot. The seller has been notified about your entry.';
-                            $this->sendDealEmail(
-                                to: $buyerExternalEmail,
-                                subject: is_string($buyerExternalSubject) && trim($buyerExternalSubject) !== ''
-                                    ? trim($buyerExternalSubject)
-                                    : $subject,
-                                fromAddress: $fromAddress,
-                                fromName: $fromName,
-                                body: $buyerPlain,
-                                tagJson: $tagJson
-                            );
+                    if (!$this->incrementEmailTestCounter($buyerExternalEmail)) {
+                        Log::warning('[exchange-lots] sendMessageToSeller: start_deal external buyer notification skipped (daily limit)', [
+                            'lot_id' => $lot->id,
+                            'to' => $buyerExternalEmail,
+                        ]);
+                    } else {
+                        $webUrl = $this->buildSellerOpenDealWebUrl($lot);
+                        $appUrl = $this->buildSellerOpenDealAppLink($lot);
+                        try {
+                            if ($webUrl !== null || $appUrl !== null) {
+                                $buyerPlain = is_string($buyerExternalBody) && trim($buyerExternalBody) !== ''
+                                    ? trim($buyerExternalBody)
+                                    : 'You have opened the deal window for this lot. The seller has been notified about your entry.';
+                                $buyerHtml = $this->buildSellerExternalNotificationHtml($buyerPlain, $webUrl, $appUrl);
+                                $this->sendDealEmailHtmlMultipart(
+                                    to: $buyerExternalEmail,
+                                    subject: is_string($buyerExternalSubject) && trim($buyerExternalSubject) !== ''
+                                        ? trim($buyerExternalSubject)
+                                        : $subject,
+                                    fromAddress: $fromAddress,
+                                    fromName: $fromName,
+                                    plainBody: $buyerPlain,
+                                    htmlBody: $buyerHtml,
+                                    tagJson: $tagJson
+                                );
+                            } else {
+                                $buyerPlain = is_string($buyerExternalBody) && trim($buyerExternalBody) !== ''
+                                    ? trim($buyerExternalBody)
+                                    : 'You have opened the deal window for this lot. The seller has been notified about your entry.';
+                                $this->sendDealEmail(
+                                    to: $buyerExternalEmail,
+                                    subject: is_string($buyerExternalSubject) && trim($buyerExternalSubject) !== ''
+                                        ? trim($buyerExternalSubject)
+                                        : $subject,
+                                    fromAddress: $fromAddress,
+                                    fromName: $fromName,
+                                    body: $buyerPlain,
+                                    tagJson: $tagJson
+                                );
+                            }
+                            Log::info('[exchange-lots] sendMessageToSeller: start_deal external buyer notification sent', [
+                                'lot_id' => $lot->id,
+                                'to' => $buyerExternalEmail,
+                            ]);
+                        } catch (\Throwable $buyerNotifyError) {
+                            Log::warning('[exchange-lots] sendMessageToSeller: start_deal external buyer notification failed', [
+                                'lot_id' => $lot->id,
+                                'to' => $buyerExternalEmail,
+                                'error' => $buyerNotifyError->getMessage(),
+                            ]);
                         }
-                        Log::info('[exchange-lots] sendMessageToSeller: start_deal external buyer notification sent', [
-                            'lot_id' => $lot->id,
-                            'to' => $buyerExternalEmail,
-                        ]);
-                    } catch (\Throwable $buyerNotifyError) {
-                        Log::warning('[exchange-lots] sendMessageToSeller: start_deal external buyer notification failed', [
-                            'lot_id' => $lot->id,
-                            'to' => $buyerExternalEmail,
-                            'error' => $buyerNotifyError->getMessage(),
-                        ]);
                     }
                 }
             }
@@ -3323,13 +3337,14 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * Increment per-recipient daily counter for test emails. Returns false when limit is reached.
+     * Increment per-recipient daily counter for deal external notification emails. Returns false when limit is reached.
      *
-     * Hard limit: 20 test emails per (email, calendar day) pair by default (configurable via mail.test_email_daily_limit).
+     * Applies to: send-test-notification-email and start_deal external notifications (seller_notification_email,
+     * buyer_notification_email). Default cap: 30 per (email, calendar day); mail.test_email_daily_limit / MAIL_TEST_EMAIL_DAILY_LIMIT.
      */
     private function incrementEmailTestCounter(string $email): bool
     {
-        $limit = (int) config('mail.test_email_daily_limit', 20);
+        $limit = (int) config('mail.test_email_daily_limit', 30);
         if ($limit <= 0) {
             return false;
         }
