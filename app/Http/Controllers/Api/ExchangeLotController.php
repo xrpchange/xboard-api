@@ -3206,18 +3206,12 @@ class ExchangeLotController extends Controller
      */
     private function buildSellerExternalNotificationHtml(string $messageBody, ?string $webUrl, ?string $appUrl): string
     {
-        $escaped = htmlspecialchars($messageBody, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $html = '<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:14px;line-height:1.45;color:#111;">';
-        $html .= '<p style="white-space:pre-wrap;margin:0 0 1em 0;">' . nl2br($escaped, false) . '</p>';
-        $primary = $webUrl ?? $appUrl;
-        if ($primary !== null) {
-            $href = htmlspecialchars($primary, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-            // Single clear button; без дополнительного дублирования ссылок текстом.
-            $html .= '<p style="margin:0 0 0.75em 0;"><a href="' . $href . '">Open in XBoard app</a></p>';
-        }
-        $html .= '</div>';
-
-        return $html;
+        // Используем Blade-шаблон в градациях серого, чтобы не собирать HTML руками.
+        return view('mail.deal_external_notification', [
+            'body' => $messageBody,
+            'webUrl' => $webUrl,
+            'appUrl' => $appUrl,
+        ])->render();
     }
 
     /**
