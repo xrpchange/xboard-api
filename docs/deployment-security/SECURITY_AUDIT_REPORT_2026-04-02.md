@@ -24,29 +24,32 @@
   - `maximal_queue_lifetime = 10m`;
   - `bounce_queue_lifetime = 10m`;
   - `mailbox_size_limit = 102400` (100 КБ).
-- Logrotate для `mail.log` (`/etc/logrotate.d/mail-xboard`):
+- Logrotate для `mail.log` (`/etc/logrotate.d/mail-xboard`) после донастройки:
 
   ```text
   /var/log/mail.log {
       size 10M
-      rotate 0
+      daily
+      rotate 7
       missingok
       notifempty
+      compress
+      delaycompress
       copytruncate
   }
   ```
 
-  - Лог режется по размеру 10 МБ, но `rotate 0` означает, что история не хранится (старый файл сразу обнуляется, без копий).
+  - Лог режется по размеру 10 МБ **и** ротации не реже раза в день, хранится до 7 сжатых копий.
 
 **Оценка:**
 
 - Очередь Postfix не может расти месяцами из‑за коротких `maximal_queue_lifetime`/`bounce_queue_lifetime`.
 - Ограничение `mailbox_size_limit` = 100 КБ защищает отдельные ящики от разрастания.
-- `mail.log` сам по себе не раздуется сверх 10 МБ, но общая папка `/var/log` (35G) уже значима — нужно отдельно проверить/настроить logrotate других логов (rsyslog, nginx, php‑fpm, monero, xboard‑email и т.п.).
+- Для `mail.log` теперь есть и ограничение размера, и ротация/сжатие с историей.
 
 **Статус:** частично покрыто.
 
-- Сделано: лимиты очереди и ящиков, ограничение размера `mail.log`.
+- Сделано: лимиты очереди и ящиков, корректная ротация/сжатие `mail.log`.
 - Осталось сделать: ревизия/жёсткая настройка logrotate для остальных логов (`/etc/logrotate.d/*`, особенно `nginx`, `php8.3-fpm`, `xboard-email`, `mysql-server`).
 
 **1.3. IMAP‑хранилище (Dovecot)**
