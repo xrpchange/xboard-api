@@ -39,6 +39,107 @@ class ExchangeLotController extends Controller
         private ArbiterService $arbiterService
     ) {}
 
+    private static function sellerEscrowCryptoCurrency(ExchangeLot $lot): ?CryptoCurrency
+    {
+        $lot->loadMissing(['fromCryptoCurrency', 'toCryptoCurrency', 'cryptoCurrency']);
+        if ($lot->fromCryptoCurrency) {
+            return $lot->fromCryptoCurrency;
+        }
+        if ($lot->toCryptoCurrency) {
+            return $lot->toCryptoCurrency;
+        }
+
+        return $lot->cryptoCurrency;
+    }
+
+    private static function coreCryptoTypeFromCurrencyRow(CryptoCurrency $row): string
+    {
+        $code = strtolower(trim((string) $row->code));
+        if ($code === '') {
+            throw new \InvalidArgumentException('Linked crypto currency has empty code.');
+        }
+        if (preg_match('/_(stellar|polygon|tron)$/', $code)) {
+            return $code;
+        }
+        $network = strtolower(trim((string) ($row->network ?? '')));
+        if ($network !== '' && $network !== 'native' && ! str_contains($code, '_')) {
+            return $code.'_'.$network;
+        }
+
+        return $code;
+    }
+
+    private static function coreCryptoTypeForSellerEscrow(ExchangeLot $lot): string
+    {
+        $row = self::sellerEscrowCryptoCurrency($lot);
+        if ($row === null) {
+            throw new \InvalidArgumentException('Lot has no crypto currency for escrow (from_crypto, to_crypto, or crypto_currency_id).');
+        }
+
+        return self::coreCryptoTypeFromCurrencyRow($row);
+    }
+
+    private static function buyerEscrowCryptoCurrency(ExchangeLot $lot): ?CryptoCurrency
+    {
+        $lot->loadMissing(['fromCryptoCurrency', 'toCryptoCurrency', 'cryptoCurrency']);
+        if ($lot->toCryptoCurrency) {
+            return $lot->toCryptoCurrency;
+        }
+        if ($lot->fromCryptoCurrency) {
+            return $lot->fromCryptoCurrency;
+        }
+
+        return $lot->cryptoCurrency;
+    }
+
+    private static function coreCryptoTypeForBuyerEscrow(ExchangeLot $lot): string
+    {
+        $row = self::buyerEscrowCryptoCurrency($lot);
+        if ($row === null) {
+            throw new \InvalidArgumentException('Lot has no crypto currency for buyer escrow (to_crypto, from_crypto, or crypto_currency_id).');
+        }
+
+        return self::coreCryptoTypeFromCurrencyRow($row);
+    }
+
+    private static function sellerMailboxCryptoCode(ExchangeLot $lot): string
+    {
+        return self::sellerEscrowCryptoCurrency($lot)?->code ?? ($lot->cryptoCurrency?->code ?? 'crypto');
+    }
+
+    /** Core validateEscrowToken matches token currency to crypto_type; prefer values derived from the token JSON. */
+    private static function coreCryptoTypeFromEscrowTokenJson(string $escrowTokenJson): ?string
+    {
+        $decoded = json_decode($escrowTokenJson, true);
+        if (!is_array($decoded) || !isset($decoded['currency'])) {
+            return null;
+        }
+        $raw = trim((string) $decoded['currency']);
+        if ($raw === '') {
+            return null;
+        }
+        if (preg_match('/^(USDT|USDC|DAI)_(STELLAR|POLYGON|TRON)$/i', $raw, $m)) {
+            return strtolower($m[1].'_'.$m[2]);
+        }
+        $currencyUpper = strtoupper($raw);
+        $network = isset($decoded['network']) ? strtolower(trim((string) $decoded['network'])) : '';
+        if ($network !== '' && in_array($network, ['stellar', 'tron', 'polygon'], true)) {
+            foreach (['USDT' => 'usdt', 'USDC' => 'usdc', 'DAI' => 'dai'] as $sym => $prefix) {
+                if ($currencyUpper === $sym) {
+                    return $prefix.'_'.$network;
+                }
+            }
+        }
+
+        return match ($currencyUpper) {
+            'XRP' => 'xrp',
+            'BTC' => 'btc',
+            'XMR' => 'xmr',
+            'MATIC', 'POLYGON' => 'polygon',
+            default => null,
+        };
+    }
+
     /**
      * Return first active buyer deal for the request token (if exists).
      * Used by clients to restore in-progress buyer deal from server state
@@ -960,7 +1061,7 @@ class ExchangeLotController extends Controller
         }
 
         $lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency', 'banks']);
-        $currency = $lot->cryptoCurrency?->code ?? 'crypto';
+        $currency = self::sellerMailboxCryptoCode($lot);
         $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $currency);
         // Fallback for exported/imported lots: use DB field when mailbox lookup fails (e.g. lot_mailboxes not imported)
         if (!$sellerEmail && !empty($lot->seller_lot_email)) {
@@ -1134,11 +1235,11 @@ class ExchangeLotController extends Controller
             if (!empty($buyerToken) && is_string($buyerToken)) {
                 try {
                     [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($buyerToken);
-                    $cryptoType = $lot->cryptoCurrency?->code ?? $currency;
-                    if (is_string($cryptoType)) {
-                        $cryptoType = strtolower($cryptoType);
-                    } else {
-                        $cryptoType = 'xmr';
+                    try {
+                        $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($buyerToken)
+                            ?? self::coreCryptoTypeForBuyerEscrow($lot);
+                    } catch (\InvalidArgumentException) {
+                        $cryptoType = strtolower((string) ($lot->cryptoCurrency?->code ?? 'xmr'));
                     }
                     $timeout = (int) config('services.core.timeout', 10);
                     $req = Http::timeout($timeout);
@@ -1625,8 +1726,8 @@ class ExchangeLotController extends Controller
         }
 
         $messageType = $request->input('message_type');
-        $lot->load(['cryptoCurrency']);
-        $currency = $lot->cryptoCurrency?->code ?? 'crypto';
+        $lot->load(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
+        $currency = self::sellerMailboxCryptoCode($lot);
 
         Log::info('[exchange-lots] sendMessageToBuyer: start', [
             'lot_id' => $lot->id,
@@ -1696,7 +1797,12 @@ class ExchangeLotController extends Controller
             if (!empty($sellerEscrowToken) && is_string($sellerEscrowToken)) {
                 try {
                     [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
-                    $cryptoType = $lot->cryptoCurrency?->code ?? 'xmr';
+                    try {
+                        $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($sellerEscrowToken)
+                            ?? self::coreCryptoTypeForSellerEscrow($lot);
+                    } catch (\InvalidArgumentException) {
+                        $cryptoType = strtolower((string) ($lot->cryptoCurrency?->code ?? 'xmr'));
+                    }
                     $timeout = (int) config('services.core.timeout', 10);
                     $req = \Illuminate\Support\Facades\Http::timeout($timeout);
                     if ($coreKey !== '') {
@@ -1901,7 +2007,12 @@ class ExchangeLotController extends Controller
         $transactions = Transaction::where('exchange_lot_id', $lot->id)->where('buyer_lot_email', $lot->buyer_lot_email)->get();
         [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($escrowToken);
         $timeout = (int) config('services.core.timeout', 10);
-        $cryptoType = $lot->cryptoCurrency?->code ?? 'xmr';
+        try {
+            $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($escrowToken)
+                ?? self::coreCryptoTypeForBuyerEscrow($lot);
+        } catch (\InvalidArgumentException) {
+            $cryptoType = strtolower((string) ($lot->cryptoCurrency?->code ?? 'xmr'));
+        }
 
         // Delete reservation in Core (works with or without transactions: by exchange_lot_id + buyer token)
         try {
@@ -1939,8 +2050,8 @@ class ExchangeLotController extends Controller
             resolution: 'Deal was cancelled by buyer.'
         );
 
-        $lot->load(['cryptoCurrency']);
-        $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $lot->cryptoCurrency?->code ?? 'crypto');
+        $lot->load(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
+        $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot));
         if (!$sellerEmail && !empty($lot->seller_lot_email)) {
             $sellerEmail = (string) $lot->seller_lot_email;
         }
@@ -2082,8 +2193,8 @@ class ExchangeLotController extends Controller
         $transaction->payment_details_set_by = 'buyer';
         $transaction->save();
 
-        $lot->load(['cryptoCurrency']);
-        $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $lot->cryptoCurrency?->code ?? 'crypto');
+        $lot->load(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
+        $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot));
         if (!$sellerEmail && !empty($lot->seller_lot_email)) {
             $sellerEmail = (string) $lot->seller_lot_email;
         }
@@ -2183,8 +2294,7 @@ class ExchangeLotController extends Controller
             ], 422);
         }
 
-        $lot->load(['cryptoCurrency', 'bank']);
-        $currency = $lot->cryptoCurrency?->code ?? 'crypto';
+        $lot->load(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency', 'bank']);
         $buyerEmail = $lot->buyer_lot_email;
         if (empty($buyerEmail)) {
             Log::warning('[exchange-lots] sendPaymentDetails: no buyer in deal (e.g. buyer exited)', [
@@ -2202,10 +2312,21 @@ class ExchangeLotController extends Controller
             : (float) $lot->sell_amount;
 
         $sellerEscrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+        $coreSellerCryptoType = null;
 
         // First create reservation in Core (reserves amount on escrow token). Server error (e.g. insufficient balance) is returned to client.
         // Use Core URL from token environment (EscrowTokenValidationService) so sandbox/prod and salt match token creation.
         if (!empty($sellerEscrowToken) && is_string($sellerEscrowToken)) {
+            try {
+                $coreSellerCryptoType = self::coreCryptoTypeFromEscrowTokenJson($sellerEscrowToken)
+                    ?? self::coreCryptoTypeForSellerEscrow($lot);
+            } catch (\InvalidArgumentException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'error_code' => 'invalid_lot_crypto',
+                ], 422);
+            }
             [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
             $timeout = (int) config('services.core.timeout', 10);
             $req = Http::timeout($timeout);
@@ -2216,7 +2337,7 @@ class ExchangeLotController extends Controller
                 'exchange_lot_id' => $lot->id,
                 'reserved_amount' => $amount,
                 'escrow_token' => $sellerEscrowToken,
-                'crypto_type' => $currency,
+                'crypto_type' => $coreSellerCryptoType,
                 'is_legal_entity' => false,
             ];
             if (!empty($lot->buyer_escrow_token_hash)) {
@@ -2277,7 +2398,7 @@ class ExchangeLotController extends Controller
                     'exchange_lot_id' => $lot->id,
                     'transaction_id' => $transaction->id,
                     'escrow_token' => $sellerEscrowToken,
-                    'crypto_type' => $currency,
+                    'crypto_type' => $coreSellerCryptoType,
                 ]);
             } catch (\Throwable $e) {
                 Log::warning('[exchange-lots] sendPaymentDetails: Core set-transaction-id failed (non-blocking)', [
@@ -2336,7 +2457,7 @@ class ExchangeLotController extends Controller
             ], 500);
         }
 
-        $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $lot->cryptoCurrency?->code ?? 'crypto') ?? $lot->seller_lot_email;
+        $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot)) ?? $lot->seller_lot_email;
         $this->insertDealChatMessage(
             $lot,
             'seller',
@@ -2737,7 +2858,7 @@ class ExchangeLotController extends Controller
         $tokenData = $request->input('escrow_token_data', []);
         $requesterWallet = is_array($tokenData) ? ($tokenData['wallet_address'] ?? '') : '';
         $tokenHash = is_array($tokenData) && isset($tokenData['token_hash']) ? trim((string) $tokenData['token_hash']) : '';
-        $lot->load(['cryptoCurrency']);
+        $lot->load(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
         $lotWalletRaw = $lot->wallet_address !== null ? (json_decode((string) $lot->wallet_address, true)['wallet_address'] ?? $lot->wallet_address) : null;
         $requesterWalletStr = $this->normalizeWalletAddressForComparison($requesterWallet);
         $lotWalletStr = $lotWalletRaw !== null ? $this->normalizeWalletAddressForComparison($lotWalletRaw) : '';
@@ -2747,7 +2868,7 @@ class ExchangeLotController extends Controller
             return response()->json(['success' => false, 'message' => 'Not authorized.'], 403);
         }
         $walletAddress = (string) ($lot->wallet_address ?? '');
-        $currency = $lot->cryptoCurrency?->code ?? 'crypto';
+        $currency = self::sellerMailboxCryptoCode($lot);
         if ($walletAddress === '') {
             return response()->json(['success' => true, 'delivered' => false, 'read' => false]);
         }

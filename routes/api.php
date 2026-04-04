@@ -116,8 +116,13 @@ Route::prefix('v1')->group(function () {
     });
 
     // Exchange lots — list and show are public (no escrow token required; anyone can browse)
+    // Literal paths MUST be registered before /{lot}, otherwise "buyer-active-deals" is parsed as a lot id (404).
     Route::prefix('exchange-lots')->group(function () {
         Route::get('/', [ExchangeLotController::class, 'index']);
+        Route::middleware(\App\Http\Middleware\ValidateEscrowToken::class)->group(function () {
+            Route::get('/buyer-active-deal', [ExchangeLotController::class, 'buyerActiveDeal']);
+            Route::get('/buyer-active-deals', [ExchangeLotController::class, 'buyerActiveDeals']);
+        });
         Route::get('/{lot}/details', [ExchangeLotController::class, 'details']);
         Route::get('/{lot}', [ExchangeLotController::class, 'show']);
     });
@@ -152,8 +157,6 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
     Route::post('/lot-mailbox/delete', [LotMailboxController::class, 'delete']);
 
     Route::prefix('exchange-lots')->group(function () {
-        Route::get('/buyer-active-deal', [ExchangeLotController::class, 'buyerActiveDeal']);
-        Route::get('/buyer-active-deals', [ExchangeLotController::class, 'buyerActiveDeals']);
         Route::get('/{lot}/deal-messages', [ExchangeLotController::class, 'dealMessages']);
         Route::post('/', [ExchangeLotController::class, 'store']);
         Route::post('/send-test-notification-email', [ExchangeLotController::class, 'sendTestNotificationEmailStandalone']);
