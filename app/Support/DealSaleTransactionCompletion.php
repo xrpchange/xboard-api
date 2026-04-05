@@ -29,6 +29,24 @@ final class DealSaleTransactionCompletion
     }
 
     /**
+     * Seller confirms deal completion after the buyer’s step timer expired (buyer did not post deal_completed_buyer).
+     *
+     * @param  array<string, mixed>|null  $dealTagData
+     */
+    public static function dealTagIsSellerTimeoutCompletionForLot(?array $dealTagData, ExchangeLot $lot): bool
+    {
+        if (! is_array($dealTagData)) {
+            return false;
+        }
+        if (($dealTagData['t'] ?? '') !== 'deal_completed_seller_timeout') {
+            return false;
+        }
+        $tagLotId = (string) ($dealTagData['lot_id'] ?? '');
+
+        return $tagLotId !== '' && $tagLotId === (string) $lot->id;
+    }
+
+    /**
      * @return int Number of rows updated
      */
     public static function markPendingSaleTransactionsCompleted(ExchangeLot $lot): int

@@ -26,6 +26,49 @@ class DealSaleTransactionCompletionTest extends TestCase
         $this->assertSame($expected, DealSaleTransactionCompletion::dealTagIsBuyerCompletedForLot($tag, $lot));
     }
 
+    #[DataProvider('sellerTimeoutCompletionTagProvider')]
+    public function test_spec_lot_002_deal_tag_seller_timeout_completion_for_lot(
+        ?array $tag,
+        int $lotId,
+        bool $expected,
+    ): void {
+        $lot = new ExchangeLot;
+        $lot->id = $lotId;
+        $this->assertSame($expected, DealSaleTransactionCompletion::dealTagIsSellerTimeoutCompletionForLot($tag, $lot));
+    }
+
+    /**
+     * @return iterable<string, array{0: ?array, 1: int, 2: bool}>
+     */
+    public static function sellerTimeoutCompletionTagProvider(): iterable
+    {
+        yield 'seller timeout matching lot (string lot_id)' => [
+            ['t' => 'deal_completed_seller_timeout', 'lot_id' => '42'],
+            42,
+            true,
+        ];
+        yield 'seller timeout matching lot (int lot_id)' => [
+            ['t' => 'deal_completed_seller_timeout', 'lot_id' => 7],
+            7,
+            true,
+        ];
+        yield 'wrong tag type' => [
+            ['t' => 'deal_completed_buyer', 'lot_id' => '42'],
+            42,
+            false,
+        ];
+        yield 'lot_id mismatch' => [
+            ['t' => 'deal_completed_seller_timeout', 'lot_id' => '41'],
+            42,
+            false,
+        ];
+        yield 'null tag' => [
+            null,
+            42,
+            false,
+        ];
+    }
+
     /**
      * @return iterable<string, array{0: ?array, 1: int, 2: bool}>
      */

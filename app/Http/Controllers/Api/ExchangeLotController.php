@@ -1870,6 +1870,13 @@ class ExchangeLotController extends Controller
                     'transaction_id' => $exitPermission['transaction_id'],
                 ], 403);
             }
+            if ($this->lotHasActiveDispute($lot)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot exit the deal while a dispute is open. Wait for resolution or continue in the dispute flow.',
+                    'error_code' => 'deal_exit_blocked_active_dispute',
+                ], 403);
+            }
         }
 
         $messageText = $request->input('message', '');
@@ -1950,6 +1957,13 @@ class ExchangeLotController extends Controller
             }
         }
 
+        if (is_array($customDealTagData) && ($customDealTagData['t'] ?? '') === 'deal_completed_seller_timeout') {
+            $denySellerTimeout = $this->denySellerTimeoutDealCompletionUnlessAllowed($lot, $customDealTagData);
+            if ($denySellerTimeout !== null) {
+                return $denySellerTimeout;
+            }
+        }
+
         if (!empty($buyerEmail)) {
             Log::info('[exchange-lots] sendMessageToBuyer: sending mail', [
                 'lot_id' => $lot->id,
@@ -1997,6 +2011,13 @@ class ExchangeLotController extends Controller
                 dealTagData: $customDealTagData,
                 messageType: $messageType
             );
+            if (DealSaleTransactionCompletion::dealTagIsSellerTimeoutCompletionForLot($customDealTagData, $lot)) {
+                $completedCount = DealSaleTransactionCompletion::markPendingSaleTransactionsCompleted($lot);
+                Log::info('[exchange-lots] sendMessageToBuyer: seller timeout deal completion — sale transactions marked completed', [
+                    'lot_id' => $lot->id,
+                    'updated_rows' => $completedCount,
+                ]);
+            }
 
             Log::info('[exchange-lots] sendMessageToBuyer: mail sent', [
                 'lot_id' => $lot->id,
@@ -2008,6 +2029,139 @@ class ExchangeLotController extends Controller
             'success' => true,
             'message' => 'Message sent to buyer.',
         ]);
+    }
+
+    /**
+     * Seller posts deal_completed_seller_timeout only after the buyer’s completion window expired (mirrors client step timer).
+     *
+     * @param  array<string, mixed>  $dealTagData
+     */
+    private function denySellerTimeoutDealCompletionUnlessAllowed(ExchangeLot $lot, array $dealTagData): ?JsonResponse
+    {
+        if (($dealTagData['t'] ?? '') !== 'deal_completed_seller_timeout') {
+            return null;
+        }
+        $tagLot = (string) ($dealTagData['lot_id'] ?? '');
+        if ($tagLot === '' || $tagLot !== (string) $lot->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'deal_tag lot_id does not match this lot.',
+                'error_code' => 'deal_tag_lot_mismatch',
+            ], 422);
+        }
+        $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($buyerEmail === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'No buyer in deal for this lot.',
+                'error_code' => 'no_buyer_in_deal',
+            ], 400);
+        }
+        $pendingExists = Transaction::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->where('buyer_lot_email', $buyerEmail)
+            ->where('tx_type', 'sale')
+            ->where('status', 'pending')
+            ->exists();
+        if (! $pendingExists) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No pending sale transaction to complete.',
+                'error_code' => 'seller_completion_no_pending_sale',
+            ], 403);
+        }
+        if ($this->lotHasActiveDispute($lot)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot confirm deal completion this way while a dispute is open.',
+                'error_code' => 'seller_completion_blocked_active_dispute',
+            ], 403);
+        }
+        $messages = DealChatMessage::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->orderBy('id')
+            ->get(['id', 'deal_tag', 'created_at']);
+        $lastTimeoutMinutesFromSellerFunds = null;
+        $anchor = null;
+        $buyerReceivesCrypto = $lot->to_crypto_currency_id !== null;
+        foreach ($messages as $row) {
+            $raw = $row->deal_tag;
+            if (! is_string($raw) || trim($raw) === '') {
+                continue;
+            }
+            $d = json_decode($raw, true);
+            if (! is_array($d)) {
+                continue;
+            }
+            $t = isset($d['t']) ? trim((string) $d['t']) : '';
+            if ($t === 'deal_completed_buyer') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Buyer already confirmed deal completion.',
+                    'error_code' => 'seller_completion_buyer_already_completed',
+                ], 403);
+            }
+            if ($t === 'deal_completed_seller_timeout') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Seller already posted timeout completion for this deal.',
+                    'error_code' => 'seller_completion_duplicate',
+                ], 409);
+            }
+            if ($t === 'deal_completed_seller' && ! empty($d['crypto_payout_tx'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Deal already completed via seller crypto payout.',
+                    'error_code' => 'seller_completion_already_finalized',
+                ], 403);
+            }
+            if ($t === 'seller_received_funds') {
+                $lastTimeoutMinutesFromSellerFunds = isset($d['timeout_minutes']) ? (int) $d['timeout_minutes'] : null;
+                if (! $buyerReceivesCrypto) {
+                    $anchor = $row->created_at;
+                }
+            }
+            if ($buyerReceivesCrypto && $t === 'seller_transfer_tx') {
+                $anchor = $row->created_at;
+            }
+        }
+        if ($anchor === null) {
+            return response()->json([
+                'success' => false,
+                'message' => $buyerReceivesCrypto
+                    ? 'Confirm completion only after you sent transfer proof to the buyer (seller_transfer_tx).'
+                    : 'Confirm completion only after you confirmed receiving funds (seller_received_funds).',
+                'error_code' => 'seller_completion_wrong_state',
+            ], 403);
+        }
+        $transaction = Transaction::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->where('buyer_lot_email', $buyerEmail)
+            ->where('tx_type', 'sale')
+            ->where('status', 'pending')
+            ->orderByDesc('id')
+            ->first();
+        $timeoutMinutes = (int) ($transaction?->transaction_timeout_minutes ?? 0);
+        if ($timeoutMinutes <= 0) {
+            $timeoutMinutes = (int) ($lastTimeoutMinutesFromSellerFunds ?? $lot->buyer_payment_timeout_minutes ?? 30);
+        }
+        if ($timeoutMinutes <= 0) {
+            $timeoutMinutes = 30;
+        }
+        $deadline = $anchor->copy()->addMinutes($timeoutMinutes);
+        if ($deadline->isFuture()) {
+            $remaining = (int) now()->diffInSeconds($deadline);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Buyer’s time to confirm completion has not expired yet.',
+                'error_code' => 'seller_completion_timer_active',
+                'remaining_seconds' => $remaining,
+                'release_at' => $deadline->toIso8601String(),
+            ], 403);
+        }
+
+        return null;
     }
 
     /**
@@ -2069,6 +2223,26 @@ class ExchangeLotController extends Controller
                 'message' => 'Only the buyer can cancel this deal.',
                 'error_code' => 'forbidden',
             ], 403);
+        }
+
+        // After completion + purge (or other cleanup): buyer_lot_email may already be null while the token hash
+        // is retained for chat auth. If there is no pending sale left, treat cancel as a no-op success so the client can leave.
+        $buyerEmailForCancel = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($buyerEmailForCancel === '') {
+            $pendingSale = Transaction::query()
+                ->where('exchange_lot_id', $lot->id)
+                ->where('tx_type', 'sale')
+                ->where('status', 'pending')
+                ->exists();
+            if (! $pendingSale) {
+                Log::info('[exchange-lots] buyerCancelDeal: already cleared (no buyer email, no pending sale)', ['lot_id' => $lot->id]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Deal already cleared on the server; nothing to cancel.',
+                    'already_cleared' => true,
+                ]);
+            }
         }
 
         $transactions = Transaction::where('exchange_lot_id', $lot->id)->where('buyer_lot_email', $lot->buyer_lot_email)->get();
@@ -2368,6 +2542,14 @@ class ExchangeLotController extends Controller
     {
         if (! $this->requesterIsSellerForLot($request, $lot)) {
             return response()->json(['success' => false, 'message' => 'Only the lot seller can send crypto payout.'], 403);
+        }
+
+        if ($this->lotHasActiveDispute($lot)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Crypto payout is not allowed while a dispute is open.',
+                'error_code' => 'payout_blocked_active_dispute',
+            ], 403);
         }
 
         $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
@@ -3411,7 +3593,7 @@ class ExchangeLotController extends Controller
             return;
         }
 
-        if (in_array($tagType, ['deal_completed_seller', 'deal_completed_buyer'], true)) {
+        if (in_array($tagType, ['deal_completed_seller', 'deal_completed_buyer', 'deal_completed_seller_timeout'], true)) {
             $this->closeOpenDisputesForLot(
                 lot: $lot,
                 resolvedBy: $senderSide,
@@ -3610,6 +3792,14 @@ class ExchangeLotController extends Controller
             'allowed_side' => $allowedSide,
             'transaction_id' => (int) $transaction->id,
         ];
+    }
+
+    private function lotHasActiveDispute(ExchangeLot $lot): bool
+    {
+        return DealDispute::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->whereIn('status', ['opened', 'in_review'])
+            ->exists();
     }
 
     /**
