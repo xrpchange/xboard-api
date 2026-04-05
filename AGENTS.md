@@ -40,6 +40,7 @@ Key points:
 - **DO NOT** use SMTP with password authentication - use API tokens instead
 - **DO NOT** implement custom SMTP socket connections - use Laravel Mail with configured mailer
 - Always check existing code and documentation before implementing new email functionality
+- **Supported mail domains (`email_providers`):** canonical list in `database/seeders/EmailProviderSeeder.php`; load with `php artisan db:seed` (or `--class=EmailProviderSeeder`). Client list = `is_active`; escrow email allowlist = any row with matching `domain`. See `docs/TOKEN_CREATION_RATE_LIMIT.md`.
 
 ## Development Workflow
 

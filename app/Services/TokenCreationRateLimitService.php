@@ -55,8 +55,9 @@ class TokenCreationRateLimitService
             return true;
         }
 
+        // Any seeded row with this domain counts (including is_active=false), so e.g. gmail.com
+        // stays allowed for escrow email while Gmail is hidden from GET /v1/email-providers.
         $inProviders = DB::table('email_providers')
-            ->where('is_active', true)
             ->whereNotNull('domain')
             ->where('domain', $domain)
             ->exists();

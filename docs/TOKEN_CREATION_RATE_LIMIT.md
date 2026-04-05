@@ -27,8 +27,10 @@
 
 An email is accepted if its **domain** is either:
 
-1. **In `email_providers`** — active user providers (Gmail, Yandex, etc.). The client shows this list in Settings → Email Access.
-2. **Sender domain** — the domain of `mail.from.address` (e.g. noreply@xdexboard.com → xdexboard.com). This is the server/own domain and is allowed programmatically; it is not stored in `email_providers`.
+1. **In `email_providers`** — any row whose `domain` equals the address domain (`is_active` is **ignored** for this check). The mobile client only receives rows with `is_active = true` from `GET /v1/email-providers`; inactive rows keep domains such as `gmail.com` / `outlook.com` valid for escrow token email while those providers are omitted from the in-app IMAP picker.
+2. **Sender domain** — the domain of `mail.from.address` (e.g. noreply@xdexboard.com → xdexboard.com). Allowed in code; not stored in `email_providers`.
+
+Rows are defined in `database/seeders/EmailProviderSeeder.php` and loaded with `php artisan db:seed` (or `--class=EmailProviderSeeder`).
 
 Other addresses receive `400 email_provider_not_supported`.
 
@@ -47,7 +49,7 @@ Other addresses receive `400 email_provider_not_supported`.
 
 - **token_creation_quota:** `email`, `period_month` (YYYY-MM), `environment`, `count`.
 - **token_creation_ip_daily:** `ip_address`, `date`, `count`.
-- **email_providers.domain:** Primary domain for each provider (e.g. gmail.com); used to allow only supported providers.
+- **email_providers.domain:** Primary domain for each provider (e.g. gmail.com); used for allowlist checks. **`is_active`** only controls visibility in the client provider list.
 
 ## Config
 
