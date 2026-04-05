@@ -175,6 +175,7 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
         Route::post('/{lot}/arbiter-message', [ExchangeLotController::class, 'requestArbiterMessage']);
         Route::get('/{lot}/deal-message-status', [ExchangeLotController::class, 'dealMessageStatus']);
         Route::post('/{lot}/mark-chat-cleared', [ExchangeLotController::class, 'markChatCleared']);
+        Route::post('/{lot}/purge-completed-deal-data', [ExchangeLotController::class, 'purgeCompletedDealData']);
     });
 
     // Buy triggers

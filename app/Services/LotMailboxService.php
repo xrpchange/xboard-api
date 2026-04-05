@@ -137,6 +137,43 @@ class LotMailboxService
     }
 
     /**
+     * Remove all messages from a lot mailbox given its full email (e.g. lot buyer_lot_email / seller mailbox email).
+     * Same Maildir cur/new/tmp cleanup as {@see cleanupMailbox}; does not remove the DB lot_mailboxes row.
+     */
+    public function cleanupMailboxByEmail(string $email): bool
+    {
+        $email = trim($email);
+        if ($email === '') {
+            return true;
+        }
+        $path = $this->getMaildirPathByEmail($email);
+        if ($path === null || ! is_dir($path)) {
+            Log::debug('[lot-mailbox] cleanupMailboxByEmail: path missing', ['email' => $email]);
+
+            return true;
+        }
+
+        $deleted = 0;
+        foreach (['cur', 'new', 'tmp'] as $sub) {
+            $subPath = $path.'/'.$sub;
+            if (is_dir($subPath)) {
+                foreach (glob($subPath.'/*') ?: [] as $file) {
+                    if (is_file($file) && @unlink($file)) {
+                        $deleted++;
+                    }
+                }
+            }
+        }
+
+        Log::info('[lot-mailbox] cleanupMailboxByEmail: deleted emails', [
+            'email' => $email,
+            'files_deleted' => $deleted,
+        ]);
+
+        return true;
+    }
+
+    /**
      * Get seller mailbox email for a lot (by wallet_address and currency).
      * Used when sending a message to the seller — e.g. "start deal" notification.
      *

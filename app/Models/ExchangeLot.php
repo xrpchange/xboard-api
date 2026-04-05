@@ -59,6 +59,7 @@ class ExchangeLot extends Model
 
     protected $casts = [
         'sell_amount' => 'decimal:8',
+        'sold_crypto_amount' => 'decimal:8',
         'buy_amount_min' => 'decimal:8',
         'buy_amount_max' => 'decimal:8',
         'buy_amounts' => 'array',

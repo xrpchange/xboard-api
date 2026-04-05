@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Permanently delete transactions older than 15 days.
+ * Deletes row-by-row so Transaction::deleting runs: completed sale rows add amount to exchange_lots.sold_crypto_amount.
  * Run manually: php artisan transactions:prune
  * Scheduled daily via bootstrap/app.php.
  */
@@ -38,7 +39,11 @@ class PruneTransactionsCommand extends Command
             return self::SUCCESS;
         }
 
-        $query->delete();
+        $query->orderBy('id')->chunkById(100, function ($rows): void {
+            foreach ($rows as $row) {
+                $row->delete();
+            }
+        });
         $this->info("Deleted {$count} transactions older than {$days} days.");
         Log::info('transactions:prune completed', ['deleted' => $count, 'older_than_days' => $days]);
 

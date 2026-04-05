@@ -31,6 +31,7 @@ class ExchangeLotResource extends JsonResource
             'from_currency_type' => self::currencyTypeForLotSide($this, 'from'),
             'to_currency_type' => self::currencyTypeForLotSide($this, 'to'),
             'sell_amount' => (float) $this->sell_amount,
+            'sold_crypto_amount' => (float) ($this->sold_crypto_amount ?? 0),
             'buy_amount_min' => (float) $this->buy_amount_min,
             'buy_amount_max' => (float) $this->buy_amount_max,
             'buy_amounts' => $buyAmounts,
