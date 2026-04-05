@@ -144,6 +144,118 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * Best-effort Core release after amicable buyer completion (deal_completed_buyer).
+     * Same contract as buyer_exited; failures are logged only.
+     */
+    private function tryDeleteCoreReservationAfterBuyerAmicableCompletion(ExchangeLot $lot, Request $request, string $reason): void
+    {
+        $buyerToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+        if (empty($buyerToken) || ! is_string($buyerToken)) {
+            Log::info('[exchange-lots] Core delete-reservation-by-buyer skipped (no escrow token)', [
+                'lot_id' => $lot->id,
+                'reason' => $reason,
+            ]);
+
+            return;
+        }
+        $lot->loadMissing(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
+        try {
+            [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($buyerToken);
+            try {
+                $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($buyerToken)
+                    ?? self::coreCryptoTypeForBuyerEscrow($lot);
+            } catch (\InvalidArgumentException) {
+                $cryptoType = strtolower((string) ($lot->cryptoCurrency?->code ?? 'xmr'));
+            }
+            $timeout = (int) config('services.core.timeout', 10);
+            $req = Http::timeout($timeout);
+            if ($coreKey !== '') {
+                $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+            }
+            $resp = $req->post(rtrim($coreUrl, '/') . '/api/delete-reservation-by-buyer', [
+                'exchange_lot_id' => (string) $lot->id,
+                'escrow_token' => $buyerToken,
+                'crypto_type' => $cryptoType,
+            ]);
+            if ($resp->successful()) {
+                Log::info('[exchange-lots] Core delete-reservation-by-buyer OK (amicable buyer completion)', [
+                    'lot_id' => $lot->id,
+                    'reason' => $reason,
+                ]);
+            } else {
+                Log::warning('[exchange-lots] Core delete-reservation-by-buyer failed (amicable buyer completion)', [
+                    'lot_id' => $lot->id,
+                    'reason' => $reason,
+                    'status' => $resp->status(),
+                    'body' => $resp->body(),
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] Core delete-reservation-by-buyer exception (amicable buyer completion)', [
+                'lot_id' => $lot->id,
+                'reason' => $reason,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Best-effort Core release after seller posts deal_completed_seller_timeout.
+     * Same contract as seller_exited; failures are logged only.
+     */
+    private function tryDeleteCoreReservationAfterSellerAmicableCompletion(ExchangeLot $lot, Request $request, string $reason): void
+    {
+        $sellerEscrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+        if (empty($sellerEscrowToken) || ! is_string($sellerEscrowToken)) {
+            Log::info('[exchange-lots] Core delete-reservation skipped (no escrow token)', [
+                'lot_id' => $lot->id,
+                'reason' => $reason,
+            ]);
+
+            return;
+        }
+        $lot->loadMissing(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
+        try {
+            [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
+            try {
+                $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($sellerEscrowToken)
+                    ?? self::coreCryptoTypeForSellerEscrow($lot);
+            } catch (\InvalidArgumentException) {
+                $cryptoType = strtolower((string) ($lot->cryptoCurrency?->code ?? 'xmr'));
+            }
+            $timeout = (int) config('services.core.timeout', 10);
+            $req = Http::timeout($timeout);
+            if ($coreKey !== '') {
+                $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+            }
+            $resp = $req->post(rtrim($coreUrl, '/') . '/api/delete-reservation', [
+                'exchange_lot_id' => (string) $lot->id,
+                'escrow_token' => $sellerEscrowToken,
+                'crypto_type' => $cryptoType,
+            ]);
+            if ($resp->successful()) {
+                Log::info('[exchange-lots] Core delete-reservation OK (amicable seller timeout completion)', [
+                    'lot_id' => $lot->id,
+                    'reason' => $reason,
+                ]);
+            } else {
+                Log::warning('[exchange-lots] Core delete-reservation failed (amicable seller timeout completion)', [
+                    'lot_id' => $lot->id,
+                    'reason' => $reason,
+                    'status' => $resp->status(),
+                    'body' => $resp->body(),
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] Core delete-reservation exception (amicable seller timeout completion)', [
+                'lot_id' => $lot->id,
+                'reason' => $reason,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
      * Return first active buyer deal for the request token (if exists).
      * Used by clients to restore in-progress buyer deal from server state
      * when local state is missing (e.g. app on another device).
@@ -1570,6 +1682,7 @@ class ExchangeLotController extends Controller
                     'lot_id' => $lot->id,
                     'updated_rows' => $completedCount,
                 ]);
+                $this->tryDeleteCoreReservationAfterBuyerAmicableCompletion($lot, $request, 'deal_completed_buyer');
             }
             Log::info('[exchange-lots] sendMessageToSeller: mail sent successfully', [
                 'lot_id' => $lot->id,
@@ -2019,6 +2132,7 @@ class ExchangeLotController extends Controller
                     'lot_id' => $lot->id,
                     'updated_rows' => $completedCount,
                 ]);
+                $this->tryDeleteCoreReservationAfterSellerAmicableCompletion($lot, $request, 'deal_completed_seller_timeout');
             }
 
             Log::info('[exchange-lots] sendMessageToBuyer: mail sent', [
