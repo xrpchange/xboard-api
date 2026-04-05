@@ -15,8 +15,10 @@ use App\Mail\HighDeliveryPriority;
 use App\Services\EscrowTokenValidationService;
 use App\Services\Arbiter\ArbiterService;
 use App\Services\ReceiptAttachmentStorage;
+use App\Services\SandboxVirtualBankService;
 use App\Support\DealSaleTransactionCompletion;
 use App\Support\DealSellerOpenLinks;
+use App\Support\SandboxTestReceiptPdf;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -375,7 +377,11 @@ class ExchangeLotController extends Controller
             $recipientBankId = (int) $request->bank_id;
         }
         if ($recipientBankId !== null) {
-            $query->where('bank_id', $recipientBankId);
+            if (SandboxVirtualBankService::isVirtualBankId($recipientBankId)) {
+                $query->where('virtual_sandbox_bank_code', SandboxVirtualBankService::bankCode());
+            } else {
+                $query->where('bank_id', $recipientBankId);
+            }
         }
         // accept_from_bank = lots that accept payment from this bank. Prefer accept_from_bank_swift over accept_from_bank_id
         $acceptFromBankId = null;
@@ -563,7 +569,26 @@ class ExchangeLotController extends Controller
             'rate' => 'nullable|numeric|min:0',
             'crypto_currency_id' => 'required|exists:crypto_currencies,id',
             'wallet_address' => 'required|string',
-            'bank_id' => 'nullable|exists:banks,id',
+            'bank_id' => [
+                'nullable',
+                'integer',
+                function (string $attribute, mixed $value, \Closure $fail) use ($request): void {
+                    if ($value === null || $value === '') {
+                        return;
+                    }
+                    $id = (int) $value;
+                    if (SandboxVirtualBankService::isVirtualBankId($id)) {
+                        if (! SandboxVirtualBankService::isSandboxApiHost($request->getHost())) {
+                            $fail('Virtual sandbox bank is only available on sandbox API hosts.');
+                        }
+
+                        return;
+                    }
+                    if (! Bank::query()->where('id', $id)->exists()) {
+                        $fail('The selected bank id is invalid.');
+                    }
+                },
+            ],
             'bank_ids' => 'nullable|array',
             'bank_ids.*' => 'integer|exists:banks,id',
             'bank_account' => 'nullable|string|max:100',
@@ -591,6 +616,18 @@ class ExchangeLotController extends Controller
         }
 
         $validated = $validator->validated();
+        if (isset($validated['bank_id']) && (int) $validated['bank_id'] === SandboxVirtualBankService::virtualBankId()) {
+            if (empty($validated['is_test'])) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => ['is_test' => ['Sandbox virtual bank requires is_test: true.']],
+                ], 422);
+            }
+            $validated['virtual_sandbox_bank_code'] = SandboxVirtualBankService::bankCode();
+            $validated['bank_id'] = null;
+        } else {
+            $validated['virtual_sandbox_bank_code'] = null;
+        }
         $buyAmounts = array_values(array_filter(array_map('floatval', $validated['buy_amounts']), fn($v) => $v > 0));
         if (empty($buyAmounts)) {
             return response()->json([
@@ -789,7 +826,26 @@ class ExchangeLotController extends Controller
             'buy_amounts' => 'required|array',
             'buy_amounts.*' => 'numeric|min:0',
             'rate' => 'nullable|numeric|min:0',
-            'bank_id' => 'nullable|exists:banks,id',
+            'bank_id' => [
+                'nullable',
+                'integer',
+                function (string $attribute, mixed $value, \Closure $fail) use ($request): void {
+                    if ($value === null || $value === '') {
+                        return;
+                    }
+                    $id = (int) $value;
+                    if (SandboxVirtualBankService::isVirtualBankId($id)) {
+                        if (! SandboxVirtualBankService::isSandboxApiHost($request->getHost())) {
+                            $fail('Virtual sandbox bank is only available on sandbox API hosts.');
+                        }
+
+                        return;
+                    }
+                    if (! Bank::query()->where('id', $id)->exists()) {
+                        $fail('The selected bank id is invalid.');
+                    }
+                },
+            ],
             'bank_ids' => 'nullable|array',
             'bank_ids.*' => 'integer|exists:banks,id',
             'test_group' => 'nullable|string|max:128',
@@ -874,8 +930,29 @@ class ExchangeLotController extends Controller
             'buy_amount_max' => max($buyAmounts),
             'buy_amounts' => $buyAmounts,
             'rate' => $rateValue,
-            'bank_id' => $validated['bank_id'] ?? null,
         ];
+        if (array_key_exists('bank_id', $validated)) {
+            $bid = $validated['bank_id'];
+            if ($bid !== null && (int) $bid === SandboxVirtualBankService::virtualBankId()) {
+                if (! SandboxVirtualBankService::isSandboxApiHost($request->getHost())) {
+                    return response()->json([
+                        'success' => false,
+                        'errors' => ['bank_id' => ['Virtual sandbox bank is only available on sandbox API hosts.']],
+                    ], 422);
+                }
+                if (! $lot->is_test) {
+                    return response()->json([
+                        'success' => false,
+                        'errors' => ['bank_id' => ['Virtual sandbox bank is allowed only on test lots.']],
+                    ], 422);
+                }
+                $updateData['bank_id'] = null;
+                $updateData['virtual_sandbox_bank_code'] = SandboxVirtualBankService::bankCode();
+            } else {
+                $updateData['bank_id'] = $bid;
+                $updateData['virtual_sandbox_bank_code'] = null;
+            }
+        }
         $updateData['test_group'] = !empty($validated['test_group'] ?? null)
             ? hash('sha256', trim($validated['test_group']))
             : null;
@@ -2233,6 +2310,218 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * Seller: real escrow token balance from Core (for deal window). Same auth as chat (seller wallet match).
+     */
+    public function sellerDealEscrowBalance(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        if (! $this->requesterIsSellerForLot($request, $lot)) {
+            return response()->json(['success' => false, 'message' => 'Only the lot seller can load escrow balance.'], 403);
+        }
+
+        $escrowTokenPublic = $request->header('X-Escrow-Token') ?? $request->input('escrow_token');
+        if (empty($escrowTokenPublic) || ! is_string($escrowTokenPublic)) {
+            return response()->json(['success' => false, 'message' => 'escrow_token (public part) required.'], 422);
+        }
+
+        try {
+            [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($escrowTokenPublic);
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] sellerDealEscrowBalance: core URL resolve failed', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json(['success' => false, 'message' => 'Core configuration error.'], 502);
+        }
+
+        $timeout = (int) config('services.core.timeout', 30);
+        $req = Http::timeout($timeout)->asJson();
+        if ($coreKey !== '') {
+            $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+        }
+        $resp = $req->post(rtrim($coreUrl, '/') . '/api/escrow-tokens/balance', [
+            'escrow_token' => $escrowTokenPublic,
+        ]);
+
+        $json = $resp->json();
+        if (! $resp->successful()) {
+            $message = is_array($json) ? (string) ($json['message'] ?? 'Balance request failed') : $resp->body();
+
+            return response()->json([
+                'success' => false,
+                'message' => $message,
+                'error_code' => is_array($json) ? ($json['error_code'] ?? 'balance_failed') : 'balance_failed',
+            ], $resp->status() >= 500 ? 502 : $resp->status());
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => is_array($json) ? ($json['data'] ?? $json) : [],
+        ]);
+    }
+
+    /**
+     * Seller: send reserved crypto to buyer address stored on the pending sale transaction (buyer-set-crypto-destination).
+     * Core endpoint is API-only (X-Core-Key); destination is taken only from DB, not from client body.
+     */
+    public function sellerCryptoPayoutToBuyer(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        if (! $this->requesterIsSellerForLot($request, $lot)) {
+            return response()->json(['success' => false, 'message' => 'Only the lot seller can send crypto payout.'], 403);
+        }
+
+        $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($buyerEmail === '') {
+            return response()->json(['success' => false, 'message' => 'No buyer in deal.'], 400);
+        }
+
+        $sellerEscrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+        if (empty($sellerEscrowToken) || ! is_string($sellerEscrowToken)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Full seller escrow_token required (X-Escrow-Token or body).',
+            ], 422);
+        }
+
+        return DB::transaction(function () use ($lot, $buyerEmail, $sellerEscrowToken): JsonResponse {
+            $transaction = Transaction::query()
+                ->where('exchange_lot_id', $lot->id)
+                ->where('buyer_lot_email', $buyerEmail)
+                ->where('tx_type', 'sale')
+                ->where('status', 'pending')
+                ->orderByDesc('id')
+                ->lockForUpdate()
+                ->first();
+
+            if ($transaction === null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No pending sale transaction for this deal.',
+                    'error_code' => 'no_pending_tx',
+                ], 400);
+            }
+
+            if (! empty($transaction->seller_crypto_payout_tx_hash)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Crypto payout already completed for this transaction.',
+                    'error_code' => 'payout_already_sent',
+                    'transaction_id' => $transaction->id,
+                    'crypto_tx_id' => $transaction->seller_crypto_payout_tx_hash,
+                ], 409);
+            }
+
+            $dest = trim((string) ($transaction->crypto_address ?? ''));
+            if ($dest === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Buyer has not set a crypto destination address yet.',
+                    'error_code' => 'buyer_crypto_address_missing',
+                ], 400);
+            }
+
+            $amount = (float) $transaction->amount;
+            if ($amount <= 0) {
+                return response()->json(['success' => false, 'message' => 'Invalid transaction amount.'], 422);
+            }
+
+            try {
+                $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($sellerEscrowToken)
+                    ?? self::coreCryptoTypeForSellerEscrow($lot);
+            } catch (\InvalidArgumentException $e) {
+                return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+            }
+
+            [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
+            $timeout = (int) config('services.core.timeout', 120);
+            $payload = [
+                'exchange_lot_id' => (string) $lot->id,
+                'laravel_transaction_id' => $transaction->id,
+                'escrow_token' => $sellerEscrowToken,
+                'destination_address' => $dest,
+                'amount' => $amount,
+                'crypto_type' => $cryptoType,
+                'native_amount' => 0.0,
+            ];
+
+            $req = Http::timeout($timeout)->asJson();
+            if ($coreKey !== '') {
+                $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+            }
+            $resp = $req->post(rtrim($coreUrl, '/') . '/api/deal-payout-to-buyer-address', $payload);
+
+            if (! $resp->successful()) {
+                $body = $resp->json();
+                $message = is_array($body) ? (string) ($body['message'] ?? 'Core payout failed') : $resp->body();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'error_code' => is_array($body) ? ($body['error_code'] ?? 'core_payout_failed') : 'core_payout_failed',
+                ], $resp->status() >= 500 ? 502 : 422);
+            }
+
+            $body = $resp->json();
+            $cryptoTxId = '';
+            if (is_array($body) && isset($body['data']['transaction_id'])) {
+                $cryptoTxId = trim((string) $body['data']['transaction_id']);
+            }
+            if ($cryptoTxId === '') {
+                $cryptoTxId = 'unknown';
+            }
+
+            $transaction->seller_crypto_payout_tx_hash = $cryptoTxId;
+            $transaction->status = 'completed';
+            $transaction->save();
+
+            try {
+                $reqDel = Http::timeout((int) config('services.core.timeout', 10));
+                if ($coreKey !== '') {
+                    $reqDel = $reqDel->withHeaders(['X-Core-Key' => $coreKey]);
+                }
+                $reqDel->post(rtrim($coreUrl, '/') . '/api/delete-reservation', [
+                    'exchange_lot_id' => (string) $lot->id,
+                    'escrow_token' => $sellerEscrowToken,
+                    'crypto_type' => $cryptoType,
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('[exchange-lots] sellerCryptoPayoutToBuyer: delete-reservation failed', [
+                    'lot_id' => $lot->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            $tagJson = json_encode([
+                't' => 'deal_completed_seller',
+                'lot_id' => (int) $lot->id,
+                'crypto_payout_tx' => $cryptoTxId,
+                'laravel_transaction_id' => $transaction->id,
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot)) ?? $lot->seller_lot_email;
+            $this->insertDealChatMessage(
+                $lot,
+                'seller',
+                $sellerEmailForChat ?? config('mail.from.address', 'noreply@xdexboard.com'),
+                $buyerEmail,
+                'Seller sent crypto to the buyer address on file. Deal completed.',
+                $tagJson
+            );
+            $tagArr = json_decode($tagJson, true);
+            $this->syncDisputeStateFromDealTag($lot, 'seller', is_array($tagArr) ? $tagArr : null);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Crypto sent to buyer address. Deal marked completed.',
+                'transaction_id' => $transaction->id,
+                'crypto_tx_id' => $cryptoTxId,
+                'destination_address' => $dest,
+                'core_response' => is_array($body) ? $body : [],
+            ]);
+        });
+    }
+
+    /**
      * Create a deal transaction and send payment details email to the buyer (seller only).
      * Subject is human-readable; structured tag is in X-XBoard-Deal-Tag header (JSON).
      * See docs/DEAL_EMAIL_SUBJECT_TAG.md.
@@ -2276,7 +2565,7 @@ class ExchangeLotController extends Controller
 
         $paymentType = $request->input('payment_type');
         // Bank is taken from the lot (buyer-selected bank in exchange_lots). We only need bank_data (transfer details).
-        if ($paymentType === 'bank' && $lot->bank_id === null) {
+        if ($paymentType === 'bank' && $lot->bank_id === null && ! SandboxVirtualBankService::lotUsesVirtualSandboxBank($lot)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Lot has no bank selected for this deal.',
@@ -2284,7 +2573,7 @@ class ExchangeLotController extends Controller
             ], 422);
         }
 
-        $lot->load(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency', 'bank']);
+        $lot->load(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency', 'bank', 'toFiatCurrency', 'fromFiatCurrency']);
         $buyerEmail = $lot->buyer_lot_email;
         if (empty($buyerEmail)) {
             Log::warning('[exchange-lots] sendPaymentDetails: no buyer in deal (e.g. buyer exited)', [
@@ -2408,7 +2697,9 @@ class ExchangeLotController extends Controller
             $tag['crypto'] = trim((string) $request->input('crypto_type', ''));
             $tag['address'] = $cryptoAddress;
         } else {
-            $tag['bank_id'] = (int) $lot->bank_id;
+            $tag['bank_id'] = SandboxVirtualBankService::lotUsesVirtualSandboxBank($lot)
+                ? SandboxVirtualBankService::virtualBankId()
+                : (int) $lot->bank_id;
             if ($bankDetails !== '') {
                 $tag['bank_data'] = $bankDetails;
             }
@@ -2445,6 +2736,10 @@ class ExchangeLotController extends Controller
                 'message' => 'Failed to send email: ' . $e->getMessage(),
                 'error_code' => 'mail_failed',
             ], 500);
+        }
+
+        if ($paymentType === 'bank' && SandboxVirtualBankService::lotUsesVirtualSandboxBank($lot)) {
+            $this->sendSandboxVirtualBankReceiptEmail($lot, $amount, (int) $transaction->id);
         }
 
         $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot)) ?? $lot->seller_lot_email;
@@ -2618,6 +2913,21 @@ class ExchangeLotController extends Controller
             'message' => 'Use IMAP on the client to read messages. This endpoint is deprecated.',
             'error_code' => 'use_imap_on_client',
         ], 410);
+    }
+
+    /**
+     * True when request escrow token matches the lot seller wallet (same logic as chatMessages).
+     */
+    private function requesterIsSellerForLot(Request $request, ExchangeLot $lot): bool
+    {
+        $tokenData = $request->input('escrow_token_data', []);
+        $requesterWallet = is_array($tokenData) ? ($tokenData['wallet_address'] ?? '') : '';
+        $lot->load(['cryptoCurrency']);
+        $lotWalletRaw = $lot->wallet_address !== null ? (json_decode((string) $lot->wallet_address, true)['wallet_address'] ?? $lot->wallet_address) : null;
+        $requesterWalletStr = $this->normalizeWalletAddressForComparison($requesterWallet);
+        $lotWalletStr = $lotWalletRaw !== null ? $this->normalizeWalletAddressForComparison($lotWalletRaw) : '';
+
+        return $requesterWalletStr !== '' && $lotWalletStr !== '' && hash_equals($lotWalletStr, $requesterWalletStr);
     }
 
     /**
@@ -3796,6 +4106,68 @@ class ExchangeLotController extends Controller
             ]);
         } catch (\Throwable $e) {
             Log::warning('[exchange-lots] storeReceiptLinksInLatestTransaction failed', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Sandbox-only synthetic RU bank: PDF receipt to PAYMENT_VERIFICATION_EMAIL (first address if list).
+     */
+    private function sendSandboxVirtualBankReceiptEmail(ExchangeLot $lot, float $amount, int $transactionId): void
+    {
+        if (! SandboxVirtualBankService::isSandboxApiHost(request()->getHost())) {
+            return;
+        }
+        $to = SandboxVirtualBankService::primaryPaymentVerificationEmail();
+        if ($to === null || $to === '') {
+            Log::warning('[exchange-lots] sendSandboxVirtualBankReceiptEmail: PAYMENT_VERIFICATION_EMAIL not set', [
+                'lot_id' => $lot->id,
+            ]);
+
+            return;
+        }
+
+        $fiatCode = 'FIAT';
+        if ($lot->toFiatCurrency) {
+            $fiatCode = (string) $lot->toFiatCurrency->code;
+        } elseif ($lot->fromFiatCurrency) {
+            $fiatCode = (string) $lot->fromFiatCurrency->code;
+        }
+
+        $pdf = SandboxTestReceiptPdf::build([
+            'Payment receipt (sandbox test bank, not a real bank)',
+            'Beneficiary bank (sandbox): ' . (string) config('sandbox_virtual_bank.name_en'),
+            'Public site: https://' . (string) config('sandbox_virtual_bank.website_host'),
+            'Lot ID: ' . $lot->id,
+            'Transaction ID: ' . $transactionId,
+            'Amount: ' . number_format($amount, 2, '.', ' ') . ' ' . $fiatCode,
+            'Reference: SB-' . $lot->id . '-' . $transactionId,
+        ]);
+
+        $headerName = (string) config('sandbox_virtual_bank.receipt_mime_header_name');
+        $headerVal = (string) config('sandbox_virtual_bank.receipt_mime_header_value');
+
+        try {
+            Mail::send([], [], function ($message) use ($to, $pdf, $lot, $transactionId, $headerName, $headerVal): void {
+                $message->to($to);
+                $message->subject('Sandbox test receipt PDF — Lot #' . $lot->id);
+                $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
+                $message->text('Synthetic PDF receipt for sandbox virtual bank (Lot #' . $lot->id . ', tx ' . $transactionId . ').');
+                $message->attachData($pdf, 'receipt-lot-' . $lot->id . '.pdf', ['mime' => 'application/pdf']);
+                if ($headerName !== '' && $headerVal !== '') {
+                    $message->getHeaders()->addTextHeader($headerName, $headerVal);
+                }
+                HighDeliveryPriority::apply($message);
+            });
+            Log::info('[exchange-lots] sendSandboxVirtualBankReceiptEmail: sent', [
+                'lot_id' => $lot->id,
+                'transaction_id' => $transactionId,
+                'to' => $to,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] sendSandboxVirtualBankReceiptEmail: failed', [
                 'lot_id' => $lot->id,
                 'error' => $e->getMessage(),
             ]);

@@ -36,6 +36,7 @@ class ExchangeLot extends Model
         'wallet_address',
         'wallet_hash',
         'bank_id',
+        'virtual_sandbox_bank_code',
         'bank_account',
         'payment_purpose',
         'contract_url',

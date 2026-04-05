@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Bank;
 use App\Models\Country;
+use App\Services\SandboxVirtualBankService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
@@ -37,23 +38,42 @@ class BankController extends Controller
             ->orderBy('name')
             ->get();
 
-        $data = $banks->map(function (Bank $bank) {
-            $arr = $bank->toArray();
-            $arr['supported_fiat_codes'] = $bank->fiatCurrencies->pluck('code')->values()->all();
-            return $arr;
-        });
+        $data = $banks->map(fn (Bank $bank) => SandboxVirtualBankService::mapBankModelToArray($bank));
+
+        if ($request->filled('country_id') && SandboxVirtualBankService::isSandboxApiHost($request->getHost())) {
+            $ru = Country::query()->whereRaw('UPPER(code) = ?', ['RU'])->first();
+            if ($ru && (int) $request->country_id === (int) $ru->id) {
+                $virtual = SandboxVirtualBankService::virtualBankArrayForCountry($ru);
+                if ($virtual !== null) {
+                    $data = $data->prepend($virtual)->values();
+                }
+            }
+        }
 
         Log::info('RefData: GET /banks response', ['count' => $data->count()]);
 
         return response()->json(['success' => true, 'data' => $data]);
     }
 
-    public function show(Bank $bank): JsonResponse
+    public function show(Request $request, string $bank): JsonResponse
     {
-        $bank->load(['country', 'fiatCurrencies']);
-        $arr = $bank->toArray();
-        $arr['supported_fiat_codes'] = $bank->fiatCurrencies->pluck('code')->values()->all();
-        return response()->json(['success' => true, 'data' => $arr]);
+        if (ctype_digit($bank) && SandboxVirtualBankService::isVirtualBankId((int) $bank)) {
+            if (! SandboxVirtualBankService::isSandboxApiHost($request->getHost())) {
+                return response()->json(['success' => false, 'message' => 'Not found'], 404);
+            }
+            $ru = Country::query()->whereRaw('UPPER(code) = ?', ['RU'])->first();
+            $virtual = SandboxVirtualBankService::virtualBankArrayForCountry($ru);
+            if ($virtual === null) {
+                return response()->json(['success' => false, 'message' => 'Not found'], 404);
+            }
+
+            return response()->json(['success' => true, 'data' => $virtual]);
+        }
+
+        $bankModel = Bank::query()->findOrFail((int) $bank);
+        $bankModel->load(['country', 'fiatCurrencies']);
+
+        return response()->json(['success' => true, 'data' => SandboxVirtualBankService::mapBankModelToArray($bankModel)]);
     }
 
     public function byCountry(Country $country, Request $request): JsonResponse
@@ -66,11 +86,8 @@ class BankController extends Controller
             ->orderBy('name')
             ->get();
 
-        $data = $banks->map(function (Bank $bank) {
-            $arr = $bank->toArray();
-            $arr['supported_fiat_codes'] = $bank->fiatCurrencies->pluck('code')->values()->all();
-            return $arr;
-        });
+        $data = $banks->map(fn (Bank $bank) => SandboxVirtualBankService::mapBankModelToArray($bank));
+        $data = SandboxVirtualBankService::prependVirtualRuForSandbox($request, $country, $data);
 
         return response()->json(['success' => true, 'data' => $data]);
     }
