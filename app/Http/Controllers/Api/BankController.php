@@ -40,15 +40,43 @@ class BankController extends Controller
 
         $data = $banks->map(fn (Bank $bank) => SandboxVirtualBankService::mapBankModelToArray($bank));
 
-        if ($request->filled('country_id') && SandboxVirtualBankService::isSandboxApiHost($request->getHost())) {
-            $ru = Country::query()->whereRaw('UPPER(code) = ?', ['RU'])->first();
-            if ($ru && (int) $request->country_id === (int) $ru->id) {
-                $virtual = SandboxVirtualBankService::virtualBankArrayForCountry($ru);
-                if ($virtual !== null) {
-                    $data = $data->prepend($virtual)->values();
-                }
+        $host = $request->getHost();
+        $sandboxHost = SandboxVirtualBankService::isSandboxApiHost($host);
+        $receiptCountryCode = SandboxVirtualBankService::receiptCountryCode();
+        $virtualDiag = [
+            'host' => $host,
+            'sandbox_host_match' => $sandboxHost,
+            'receipt_country_code' => $receiptCountryCode,
+            'country_id_query' => $request->query('country_id'),
+            'virtual_bank_id' => SandboxVirtualBankService::virtualBankId(),
+            'outcome' => 'not_attempted',
+        ];
+
+        // Clients (Search, Create lot) load GET /banks without country_id and filter by country in the app.
+        // Virtual sandbox receipt bank is appended at the end of the list; country_id filter is handled below.
+        if (! $sandboxHost) {
+            $virtualDiag['outcome'] = 'skipped_host';
+            $virtualDiag['hint'] = 'Host must match ^(sandbox.|dev.) or be listed in SANDBOX_VIRTUAL_BANK_EXTRA_PREPEND_HOSTS; see docs/SANDBOX_VIRTUAL_BANK.md';
+        } elseif (($ru = Country::query()->whereRaw('UPPER(TRIM(code)) = ?', [$receiptCountryCode])->first()) === null) {
+            $virtualDiag['outcome'] = 'skipped_no_ru_country';
+        } elseif (! (! $request->filled('country_id') || (int) $request->country_id === (int) $ru->id)) {
+            $virtualDiag['outcome'] = 'skipped_country_id_not_ru';
+            $virtualDiag['receipt_country_id'] = $ru->id;
+        } elseif (($virtual = SandboxVirtualBankService::virtualBankArrayForCountry($ru)) === null) {
+            $virtualDiag['outcome'] = 'skipped_virtual_array_null';
+        } else {
+            $vid = SandboxVirtualBankService::virtualBankId();
+            $already = $data->contains(fn ($row) => (int) ($row['id'] ?? 0) === $vid);
+            if ($already) {
+                $virtualDiag['outcome'] = 'already_present';
+            } else {
+                $data = $data->push($virtual)->values();
+                $virtualDiag['outcome'] = 'appended';
             }
         }
+
+        $virtualDiag['virtual_in_response'] = $data->contains(fn ($row) => (int) ($row['id'] ?? 0) === SandboxVirtualBankService::virtualBankId());
+        Log::info('RefData: GET /banks sandbox_virtual_bank', $virtualDiag);
 
         Log::info('RefData: GET /banks response', ['count' => $data->count()]);
 
@@ -61,7 +89,7 @@ class BankController extends Controller
             if (! SandboxVirtualBankService::isSandboxApiHost($request->getHost())) {
                 return response()->json(['success' => false, 'message' => 'Not found'], 404);
             }
-            $ru = Country::query()->whereRaw('UPPER(code) = ?', ['RU'])->first();
+            $ru = Country::query()->whereRaw('UPPER(TRIM(code)) = ?', [SandboxVirtualBankService::receiptCountryCode()])->first();
             $virtual = SandboxVirtualBankService::virtualBankArrayForCountry($ru);
             if ($virtual === null) {
                 return response()->json(['success' => false, 'message' => 'Not found'], 404);
@@ -87,7 +115,7 @@ class BankController extends Controller
             ->get();
 
         $data = $banks->map(fn (Bank $bank) => SandboxVirtualBankService::mapBankModelToArray($bank));
-        $data = SandboxVirtualBankService::prependVirtualRuForSandbox($request, $country, $data);
+        $data = SandboxVirtualBankService::appendVirtualReceiptBankForSandbox($request, $country, $data);
 
         return response()->json(['success' => true, 'data' => $data]);
     }

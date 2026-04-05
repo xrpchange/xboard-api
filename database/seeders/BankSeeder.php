@@ -105,7 +105,6 @@ class BankSeeder extends Seeder
             ['name' => 'T-Bank', 'swift_code' => 'TCSBRUMM', 'allowed_domain' => 'tinkoff.ru', 'currencies' => ['RUB', 'USD', 'EUR']],
             ['name' => 'Alfa-Bank', 'swift_code' => 'ALFARUMM', 'allowed_domain' => 'alfabank.ru', 'currencies' => ['RUB', 'USD', 'EUR']],
             ['name' => 'VTB', 'swift_code' => 'VTBRRUMM', 'allowed_domain' => 'vtb.ru', 'currencies' => ['RUB', 'USD', 'EUR']],
-            ['name' => 'Sberbank of Russia', 'swift_code' => 'SABRRUMM', 'allowed_domain' => 'sberbank.ru', 'currencies' => ['RUB', 'USD', 'EUR']],
             ['name' => 'Gazprombank', 'swift_code' => 'GAZPRUMM', 'allowed_domain' => 'gazprombank.ru', 'currencies' => ['RUB', 'USD', 'EUR']],
             ['name' => 'Raiffeisen Bank', 'swift_code' => 'RZBMRUMM', 'allowed_domain' => 'raiffeisen.ru', 'currencies' => ['RUB', 'USD', 'EUR']],
             ['name' => 'Rosbank', 'swift_code' => 'ROSRRUMM', 'allowed_domain' => 'rosbank.ru', 'currencies' => ['RUB', 'USD', 'EUR']],

@@ -26,10 +26,9 @@
                     </td>
                 </tr>
                 <tr>
-                    <td style="padding:14px 20px 12px 20px;text-align:center;">
-                        <p style="white-space:pre-wrap;margin:0;">
-                            {!! nl2br(e($body), false) !!}
-                        </p>
+                    <td style="padding:14px 20px 12px 20px;text-align:left;">
+                        {{-- No whitespace inside pre-wrap block: indentation in Blade would become visible indent. --}}
+                        <div style="white-space:pre-wrap;margin:0;padding:0;text-indent:0;">{!! nl2br(e($body), false) !!}</div>
                     </td>
                 </tr>
 
