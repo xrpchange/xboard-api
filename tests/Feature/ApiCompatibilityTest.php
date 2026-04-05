@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -12,7 +11,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
  * These tests ensure that API v1 maintains backward compatibility
  * and follows the expected response structure for external clients.
  */
-#[Group('sqlite-incompatible')]
 class ApiCompatibilityTest extends TestCase
 {
     use RefreshDatabase;

@@ -229,6 +229,42 @@ python3 check_rbl_blocks.py --log /var/log/mail.log --hours 6
 - видеть, какие провайдеры всё ещё режут письма (по доменам и MX);
 - принимать решение, когда можно возвращать массовые отправки кодов подтверждения на чувствительные домены.
 
+### 9.1 Проверка IP в Spamhaus ZEN с сервера
+
+Локальный `dig` через stub (`127.0.0.53`) или часть публичных резолверов может вернуть для `*.zen.spamhaus.org` ответ **`127.255.255.254`** — это **служебный код Spamhaus** (ограничение/политика запроса), **не** признак листинга IP.
+
+Надёжная быстрая проверка **с почтового сервера** (подставьте обратную запись своего IP; для `152.53.150.194` это `194.150.53.152`):
+
+```bash
+dig @208.67.222.222 +short 194.150.53.152.zen.spamhaus.org
+```
+
+- **Пустой вывод** при статусе **`NXDOMAIN`** в полном `dig` → IP **не** числится в ZEN.
+- Ответ вида **`127.0.0.*`** (кроме диапазона **`127.255.255.*`**) → смотрите [коды возврата Spamhaus](https://www.spamhaus.org/resource-hub/dnsbl/spamhaus-dnsbl-return-codes-technical-update/) и [проверку репутации IP](https://www.spamhaus.org/ip-reputation/check/).
+
+Сводная проверка по многим спискам: [MXToolbox Blacklist](https://mxtoolbox.com/blacklists.aspx) (ввести IP).
+
+### 9.2 Делистинг (прямые ссылки)
+
+Если IP попал в список, сначала устраните причину (релей, компрометация, всплеск спама), затем используйте официальные страницы:
+
+| Список | Назначение |
+|--------|------------|
+| [PSBL — Remove an IP](https://psbl.org/remove) | Снятие IP с Passive Spam Block List (часто достаточно одной формы). |
+| [PSBL — List query](https://psbl.org/listing) | Проверка статуса IP в PSBL. |
+| [UCEPROTECT — Query Database](https://www.uceprotect.net/en/rblcheck.php) | Узнать уровень листинга (1 / 2 / 3). |
+| [UCEPROTECT — Removal Policy](https://www.uceprotect.net/en/index.php?m=7&s=0) | Общая политика снятия. |
+| [UCEPROTECT — removed from Level 1](https://www.uceprotect.net/en/index.php?m=7&s=6) | Инструкции по снятию с **Level 1** (отдельный IP). |
+| [UCEPROTECT — removed from Level 2](https://www.uceprotect.net/en/index.php?m=7&s=7) | Снятие **Level 2** (сеть; обычно через провайдера). |
+| [UCEPROTECT — removed from Level 3](https://www.uceprotect.net/en/index.php?m=7&s=8) | Снятие **Level 3** (ASN; для провайдера). |
+| [Spamhaus — IP reputation check](https://www.spamhaus.org/ip-reputation/check/) | Проверка и контекст по Spamhaus (при листинге — сценарии снятия на стороне Spamhaus). |
+
+**Примечание:** UCEPROTECT известен жёсткой политикой; даже после делистинга Level 1 имеет смысл мониторить логи и скрипт `check_rbl_blocks.py` (см. начало раздела 9).
+
+### 9.3 PTR и имя сервера (доставляемость)
+
+Если `dig -x <IP>` возвращает имя VPS (например `supersrv.de`), а не **`mail.xdexboard.com`**, крупные провайдеры могут занижать доверие к письмам независимо от RBL. Настройка **обратной DNS** только у владельца IP (хостер); пошагово: раздел **4** в [MAIL_SPF_DKIM_DMARC.md](MAIL_SPF_DKIM_DMARC.md).
+
 ## 10. Связанные файлы в репозитории
 
 - Пример `main.cf`: `scripts/email-server/configs/postfix-main.cf.example` — `compatibility_level`, лимиты очереди.

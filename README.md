@@ -116,6 +116,9 @@ php artisan key:generate
 php artisan migrate
 php artisan db:seed
 ```
+
+- **`email_providers`:** заполняется `EmailProviderSeeder` (входит в `db:seed`). Обновить только эту таблицу: `php artisan db:seed --class=EmailProviderSeeder`. Список для клиента (`GET /v1/email-providers`) — строки с `is_active = true`; белый список доменов для email при создании escrow-токена — любая строка с совпадающим `domain` (в т.ч. неактивные, например `gmail.com`). Подробнее: [docs/TOKEN_CREATION_RATE_LIMIT.md](docs/TOKEN_CREATION_RATE_LIMIT.md).
+
 - Для уже существующих БД: миграция справочника `crypto_currencies` (синхронизация с Core) описана в [docs/CRYPTO_CURRENCIES_MIGRATION.md](docs/CRYPTO_CURRENCIES_MIGRATION.md). Пользователю БД нужны права `ALTER` на таблицу.
 
 5. **XRPChangeCore setup**
@@ -230,6 +233,14 @@ In `XRPChangeCore/public/echo.php` there should be an echo endpoint (default `/e
 - Critical data encryption
 
 ## Testing
+
+PHPUnit is configured for **MySQL** (see `phpunit.xml`: `DB_DATABASE=xboard_api_test` by default). Create an empty database before the first run, for example:
+
+```sql
+CREATE DATABASE xboard_api_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+Adjust `DB_HOST`, `DB_USERNAME`, `DB_PASSWORD` in `phpunit.xml` or export them in the shell if your local MySQL differs.
 
 ### Run tests
 ```bash
