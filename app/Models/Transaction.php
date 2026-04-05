@@ -6,6 +6,7 @@ use App\Services\ReceiptAttachmentStorage;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @OA\Schema(
@@ -114,6 +115,18 @@ class Transaction extends Model
             $links = $transaction->receipt_links_json;
             if (is_array($links) && count($links) > 0) {
                 ReceiptAttachmentStorage::deleteFilesFromReceiptLinks($links);
+            }
+
+            if ($transaction->exchange_lot_id !== null
+                && $transaction->status === 'completed'
+                && $transaction->tx_type === 'sale'
+            ) {
+                $amount = (float) $transaction->amount;
+                if ($amount > 0) {
+                    DB::table('exchange_lots')
+                        ->where('id', $transaction->exchange_lot_id)
+                        ->increment('sold_crypto_amount', $amount);
+                }
             }
         });
     }

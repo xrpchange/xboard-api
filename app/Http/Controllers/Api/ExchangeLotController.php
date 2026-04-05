@@ -15,6 +15,7 @@ use App\Mail\HighDeliveryPriority;
 use App\Services\EscrowTokenValidationService;
 use App\Services\Arbiter\ArbiterService;
 use App\Services\ReceiptAttachmentStorage;
+use App\Support\DealSaleTransactionCompletion;
 use App\Support\DealSellerOpenLinks;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -1484,6 +1485,13 @@ class ExchangeLotController extends Controller
                 dealTagData: $customDealTagData,
                 messageType: $messageType
             );
+            if (DealSaleTransactionCompletion::dealTagIsBuyerCompletedForLot($customDealTagData, $lot)) {
+                $completedCount = DealSaleTransactionCompletion::markPendingSaleTransactionsCompleted($lot);
+                Log::info('[exchange-lots] sendMessageToSeller: buyer completed deal — sale transactions marked completed', [
+                    'lot_id' => $lot->id,
+                    'updated_rows' => $completedCount,
+                ]);
+            }
             Log::info('[exchange-lots] sendMessageToSeller: mail sent successfully', [
                 'lot_id' => $lot->id,
                 'to' => $sellerEmail,
@@ -2906,6 +2914,175 @@ class ExchangeLotController extends Controller
         $count = DealChatMessage::where('exchange_lot_id', $lot->id)->whereNull($column)->update([$column => now()]);
         Log::info('[exchange-lots] markChatCleared', ['lot_id' => $lot->id, 'by' => $isSeller ? 'seller' : 'buyer', 'count' => $count]);
         return response()->json(['success' => true, 'message' => 'Chat marked as cleared.', 'count' => $count]);
+    }
+
+    /**
+     * Remove PII-heavy server-side artifacts for a successfully completed deal (buyer posted deal_completed_buyer in chat).
+     * Seller or buyer (escrow token) may call. Deletes deal chat rows, receipt files (and clears receipt JSON on transactions),
+     * clears lot mailboxes; keeps transaction rows for lot balance / partial-sale accounting.
+     * Clears buyer_lot_email and buyer_selected_amount; buyer_escrow_token_hash is retained so chat-messages can still authorize the same token and return [].
+     */
+    public function purgeCompletedDealData(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        $tokenData = $request->input('escrow_token_data', []);
+        $requesterWallet = is_array($tokenData) ? ($tokenData['wallet_address'] ?? '') : '';
+        $tokenHash = is_array($tokenData) && isset($tokenData['token_hash']) ? trim((string) $tokenData['token_hash']) : '';
+        $lot->load(['cryptoCurrency']);
+        $lotWalletRaw = $lot->wallet_address !== null ? (json_decode((string) $lot->wallet_address, true)['wallet_address'] ?? $lot->wallet_address) : null;
+        $requesterWalletStr = $this->normalizeWalletAddressForComparison($requesterWallet);
+        $lotWalletStr = $lotWalletRaw !== null ? $this->normalizeWalletAddressForComparison($lotWalletRaw) : '';
+        $isSeller = $requesterWalletStr !== '' && $lotWalletStr !== '' && hash_equals($lotWalletStr, $requesterWalletStr);
+        $isBuyer = $tokenHash !== '' && $lot->buyer_escrow_token_hash !== null && strcasecmp(trim((string) $lot->buyer_escrow_token_hash), $tokenHash) === 0;
+        if (! $isSeller && ! $isBuyer) {
+            return response()->json(['success' => false, 'message' => 'Not authorized to purge this deal.'], 403);
+        }
+
+        if (! $this->exchangeLotHasDealCompletedByBuyerInChat($lot)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Deal is not completed (no buyer completion message in chat history).',
+                'error_code' => 'deal_not_completed',
+            ], 409);
+        }
+
+        $validated = $request->validate([
+            'purge_notification_subject' => ['nullable', 'string', 'max:998'],
+            'purge_notification_body' => ['nullable', 'string', 'max:16000'],
+        ]);
+
+        $sellerNotify = $lot->seller_notification_email ? trim((string) $lot->seller_notification_email) : '';
+        $buyerNotifyRaw = $lot->getAttribute('buyer_notification_email');
+        $buyerNotify = is_string($buyerNotifyRaw) ? trim($buyerNotifyRaw) : '';
+
+        $notifiedRecipients = [];
+
+        try {
+            DB::transaction(function () use ($lot): void {
+                $lot->refresh();
+
+                $transactions = Transaction::query()->where('exchange_lot_id', $lot->id)->get();
+                foreach ($transactions as $tx) {
+                    $links = $tx->receipt_links_json;
+                    if (is_array($links) && count($links) > 0) {
+                        ReceiptAttachmentStorage::deleteFilesFromReceiptLinks($links);
+                    }
+                }
+
+                Transaction::query()->where('exchange_lot_id', $lot->id)->update(['receipt_links_json' => null]);
+
+                DealChatMessage::query()->where('exchange_lot_id', $lot->id)->delete();
+
+                $currency = self::sellerMailboxCryptoCode($lot);
+                if (! empty($lot->wallet_address)) {
+                    $this->lotMailboxService->cleanupMailbox((string) $lot->wallet_address, $currency);
+                }
+                $sellerLotMailbox = trim((string) ($lot->seller_lot_email ?? ''));
+                if ($sellerLotMailbox !== '') {
+                    $this->lotMailboxService->cleanupMailboxByEmail($sellerLotMailbox);
+                }
+                $buyerLotEmail = trim((string) ($lot->buyer_lot_email ?? ''));
+                if ($buyerLotEmail !== '') {
+                    $this->lotMailboxService->cleanupMailboxByEmail($buyerLotEmail);
+                }
+
+                $this->closeOpenDisputesForLot(
+                    lot: $lot,
+                    resolvedBy: 'system',
+                    resolution: 'Deal data purged after completion.'
+                );
+
+                // Clear mailbox-oriented PII; keep buyer_escrow_token_hash so ValidateEscrowToken + chat-messages
+                // still recognize the buyer and return an empty thread (otherwise GET chat-messages → 403 and clients keep stale UI).
+                ExchangeLot::query()->where('id', $lot->id)->update([
+                    'buyer_lot_email' => null,
+                    'buyer_selected_amount' => null,
+                ]);
+            });
+        } catch (\Throwable $e) {
+            Log::error('[exchange-lots] purgeCompletedDealData failed', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Purge failed.',
+                'error_code' => 'purge_failed',
+            ], 500);
+        }
+
+        $recipients = [];
+        if ($sellerNotify !== '') {
+            $recipients[strtolower($sellerNotify)] = $sellerNotify;
+        }
+        if ($buyerNotify !== '') {
+            $recipients[strtolower($buyerNotify)] = $buyerNotify;
+        }
+
+        $subject = trim((string) ($validated['purge_notification_subject'] ?? ''));
+        $body = trim((string) ($validated['purge_notification_body'] ?? ''));
+        if ($subject === '' || $body === '') {
+            // Legacy clients; fixed English only (no server-side locale maps).
+            $subject = sprintf('XBoard — Lot #%s: deal data removed from server', (string) $lot->id);
+            $body = sprintf(
+                "Automated notice from XBoard.\n\n".
+                "Exchange lot #%s: a participant removed deal artifacts from the exchange server.\n".
+                "Cleared where applicable: deal chat messages in the database, receipt PDF files linked to transactions (transaction rows are kept for accounting), and message files in the lot mailboxes on the mail server.\n\n".
+                "This email was sent because this address is stored as a notification email for this lot.\n",
+                (string) $lot->id
+            );
+        }
+
+        foreach ($recipients as $to) {
+            try {
+                Mail::raw($body, function ($message) use ($to, $subject): void {
+                    $message->to($to);
+                    $message->subject($subject);
+                    $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
+                    HighDeliveryPriority::apply($message);
+                });
+                $notifiedRecipients[] = $to;
+            } catch (\Throwable $e) {
+                Log::warning('[exchange-lots] purgeCompletedDealData: notification mail failed', [
+                    'to' => $to,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Deal data purged.',
+            'notified_addresses' => $notifiedRecipients,
+        ]);
+    }
+
+    private function exchangeLotHasDealCompletedByBuyerInChat(ExchangeLot $lot): bool
+    {
+        $lotId = (string) $lot->id;
+        $tags = DealChatMessage::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->whereNotNull('deal_tag')
+            ->pluck('deal_tag');
+        foreach ($tags as $raw) {
+            if (! is_string($raw) || $raw === '') {
+                continue;
+            }
+            $d = json_decode($raw, true);
+            if (! is_array($d)) {
+                continue;
+            }
+            if (($d['t'] ?? '') !== 'deal_completed_buyer') {
+                continue;
+            }
+            if ((string) ($d['lot_id'] ?? '') !== $lotId) {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     /**

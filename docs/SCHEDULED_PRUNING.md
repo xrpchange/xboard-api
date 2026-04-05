@@ -11,6 +11,10 @@ The API runs three Artisan commands daily to permanently delete old records and 
 
 Both are registered in **`bootstrap/app.php`** and run once per day when the Laravel scheduler is executed.
 
+### `transactions:prune` and lot accounting (`sold_crypto_amount`)
+
+Old `transactions` rows are deleted in small batches with per-model `delete()` so Eloquent `deleting` hooks run. For each removed row that is a **completed** `sale` tied to an `exchange_lot_id`, its `amount` is added to **`exchange_lots.sold_crypto_amount`**. That preserves how much crypto volume was settled on the lot after rows are pruned (same hook applies to any other code path that deletes a transaction row). **Remaining crypto on a partially sold lot** should be derived using both current transaction rows and this field (e.g. `sell_amount` minus sums of completed sale amounts still in `transactions` minus `sold_crypto_amount`, per your product rules).
+
 ### Manual run
 
 ```bash

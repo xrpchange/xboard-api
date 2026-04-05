@@ -20,6 +20,13 @@ php artisan test --group spec-ARB-004
 - **`API-*`** — General HTTP API contracts (health, etc.).
 - Future areas: e.g. `PAY-*` for payments, `LOT-*` for exchange lots (add sections below).
 
+## Exchange lots
+
+| ID | Document / route | Behavior (short) | Test(s) | Notes |
+|----|------------------|------------------|---------|--------|
+| LOT-001 | `POST /api/v1/exchange-lots/{lot}/purge-completed-deal-data` | Route registered (participant purge after `deal_completed_buyer`) | `tests/Feature/PurgeCompletedDealRouteTest.php` | Purge clears chat, mail, receipt files + nulls receipt JSON; **keeps** `transactions` for lot accounting; partial lots use `sold_crypto_amount` when rows are pruned (`transactions:prune`). Clears `buyer_lot_email` / `buyer_selected_amount`; **keeps** `buyer_escrow_token_hash` so `GET chat-messages` still authorizes the same buyer token and returns an empty list (avoids 403 + stale client UI). Optional JSON `purge_notification_subject` / `purge_notification_body` (client-localized; chosen from `seller_locale`) — server forwards as notification email; if either missing, fixed English fallback. |
+| LOT-002 | Buyer `POST …/send-message` with `deal_tag` `deal_completed_buyer` | Pending `sale` rows for that lot → `status=completed` | `tests/Unit/DealSaleTransactionCompletionTest.php` | Implemented in `App\Support\DealSaleTransactionCompletion`; runs after successful mail + `insertDealChatMessage`. |
+
 ## General API
 
 | ID | Document / route | Behavior (short) | Test(s) | Notes |
