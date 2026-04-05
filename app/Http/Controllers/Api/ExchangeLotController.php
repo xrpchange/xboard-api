@@ -1936,6 +1936,10 @@ class ExchangeLotController extends Controller
     /**
      * Buyer cancels the deal: deletes transaction(s) and reservation(s) in Core, clears buyer_lot_email, notifies seller.
      * Only the buyer (escrow token hash matches lot.buyer_escrow_token_hash) can call this.
+     *
+     * Unlike {@see sendMessageToBuyer} with seller_exited, buyer cancel is not blocked by the pending sale
+     * transaction timeout window nor by payment_details_set_by — the buyer may leave while payment details
+     * are shown; the seller remains subject to timeout / side rules on seller exit.
      */
     public function buyerCancelDeal(Request $request, ExchangeLot $lot): JsonResponse
     {
@@ -1987,28 +1991,6 @@ class ExchangeLotController extends Controller
                 'success' => false,
                 'message' => 'Only the buyer can cancel this deal.',
                 'error_code' => 'forbidden',
-            ], 403);
-        }
-
-        $lock = $this->getActiveDealExitLock($lot);
-        if ($lock !== null) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Deal cannot be cancelled yet. Transaction timeout has not passed.',
-                'error_code' => 'deal_exit_locked_by_transaction_timeout',
-                'locked_transaction_id' => $lock['transaction_id'],
-                'remaining_seconds' => $lock['remaining_seconds'],
-                'release_at' => $lock['release_at'],
-            ], 403);
-        }
-        $exitPermission = $this->getDealExitPermissionForTimeout($lot);
-        if ($exitPermission !== null && $exitPermission['allowed_side'] !== 'buyer') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Only the side that provided payment details can cancel the deal after timeout.',
-                'error_code' => 'deal_exit_not_allowed_for_side',
-                'allowed_side' => $exitPermission['allowed_side'],
-                'transaction_id' => $exitPermission['transaction_id'],
             ], 403);
         }
 
