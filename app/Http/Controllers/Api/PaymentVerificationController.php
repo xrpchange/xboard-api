@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Mail\HighDeliveryPriority;
 use App\Models\Bank;
 use App\Models\Transaction;
+use App\Services\SandboxVirtualBankService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -246,6 +247,21 @@ class PaymentVerificationController extends Controller
         $result['from'] = $senderInfo['from'];
 
         if ($expectedBankId !== null) {
+            if (SandboxVirtualBankService::isVirtualBankId($expectedBankId)) {
+                if (! SandboxVirtualBankService::isSandboxApiHost(request()->getHost())) {
+                    $result['error'] = 'Sandbox virtual bank sender checks apply only on sandbox API hosts.';
+                    return $result;
+                }
+                if (! SandboxVirtualBankService::senderDomainAllowedForVirtualBank((string) $senderInfo['domain'])) {
+                    $result['error'] = 'Sender domain does not match application mail domain for sandbox virtual bank.';
+                    return $result;
+                }
+                $result['valid'] = true;
+                $result['bank_name'] = (string) config('sandbox_virtual_bank.name_en');
+
+                return $result;
+            }
+
             $bank = Bank::withAllowedDomain()->where('id', $expectedBankId)->first();
             if (!$bank) {
                 $result['error'] = "Bank id '{$expectedBankId}' is not in DKIM whitelist";
@@ -262,21 +278,30 @@ class PaymentVerificationController extends Controller
 
             $result['error'] = "Sender domain '{$senderInfo['domain']}' does not match expected bank '{$bank->name}'";
             return $result;
-        } else {
-            $banks = Bank::withAllowedDomain()->get();
-            foreach ($banks as $bank) {
-                $allowedDomain = strtolower(trim($bank->allowed_domain ?? ''));
-                if ($allowedDomain === '') {
-                    continue;
-                }
-                // Exact match or subdomain (e.g. no-reply@sberbank.ru or mail.sberbank.ru)
-                if ($senderInfo['domain'] === $allowedDomain
-                    || substr($senderInfo['domain'], -strlen($allowedDomain) - 1) === '.' . $allowedDomain) {
-                    $result['valid'] = true;
-                    $result['bank_name'] = $bank->name;
-                    return $result;
-                }
+        }
+
+        $banks = Bank::withAllowedDomain()->get();
+        foreach ($banks as $bank) {
+            $allowedDomain = strtolower(trim($bank->allowed_domain ?? ''));
+            if ($allowedDomain === '') {
+                continue;
             }
+            // Exact match or subdomain (e.g. no-reply@sberbank.ru or mail.sberbank.ru)
+            if ($senderInfo['domain'] === $allowedDomain
+                || substr($senderInfo['domain'], -strlen($allowedDomain) - 1) === '.' . $allowedDomain) {
+                $result['valid'] = true;
+                $result['bank_name'] = $bank->name;
+                return $result;
+            }
+        }
+
+        if (SandboxVirtualBankService::isSandboxApiHost(request()->getHost())
+            && SandboxVirtualBankService::rawEmailHasSandboxReceiptHeader($rawEmail)
+            && SandboxVirtualBankService::senderDomainAllowedForVirtualBank((string) $senderInfo['domain'])) {
+            $result['valid'] = true;
+            $result['bank_name'] = (string) config('sandbox_virtual_bank.name_en');
+
+            return $result;
         }
 
         $result['error'] = "Domain '{$senderInfo['domain']}' not in allowed banks (unknown sender)";

@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\SandboxVirtualBankService;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class ExchangeLotResource extends JsonResource
@@ -41,8 +42,13 @@ class ExchangeLotResource extends JsonResource
             'to_crypto_code' => $this->relationLoaded('cryptoCurrency') && $this->cryptoCurrency ? $this->cryptoCurrency->code : null,
             'to_crypto_display' => $this->relationLoaded('cryptoCurrency') && $this->cryptoCurrency ? self::formatCryptoCodeForDisplay($this->cryptoCurrency->code) : null,
             'wallet_address' => $this->wallet_address ?? '',
-            'bank_id' => $this->bank_id,
-            'bank_name' => $this->relationLoaded('bank') && $this->bank ? $this->bank->name : null,
+            'bank_id' => SandboxVirtualBankService::lotUsesVirtualSandboxBank($this->resource)
+                ? SandboxVirtualBankService::virtualBankId()
+                : $this->bank_id,
+            'bank_name' => SandboxVirtualBankService::lotUsesVirtualSandboxBank($this->resource)
+                ? config('sandbox_virtual_bank.name_en')
+                : ($this->relationLoaded('bank') && $this->bank ? $this->bank->name : null),
+            'virtual_sandbox_bank_code' => $this->virtual_sandbox_bank_code,
             'bank_ids' => $this->relationLoaded('banks')
                 ? $this->banks->pluck('id')->values()->all()
                 : [],

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Models\Country;
+use App\Services\SandboxVirtualBankService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
@@ -63,9 +64,12 @@ class CountryController extends BaseApiController
         return $this->successResponse($country->load('banks'));
     }
 
-    public function banks(Country $country): JsonResponse
+    public function banks(Country $country, Request $request): JsonResponse
     {
-        $banks = $country->banks()->active()->with('country')->get();
-        return $this->successResponse($banks);
+        $banks = $country->banks()->active()->with(['country', 'fiatCurrencies'])->orderBy('name')->get();
+        $rows = $banks->map(fn (\App\Models\Bank $b) => SandboxVirtualBankService::mapBankModelToArray($b));
+        $rows = SandboxVirtualBankService::prependVirtualRuForSandbox($request, $country, $rows);
+
+        return $this->successResponse($rows->all());
     }
 } 
