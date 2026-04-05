@@ -2159,7 +2159,7 @@ class ExchangeLotController extends Controller
                 'message' => 'Buyer’s time to confirm completion has not expired yet.',
                 'error_code' => 'seller_completion_timer_active',
                 'remaining_seconds' => $remaining,
-                'release_at' => $deadline->toIso8601String(),
+                'release_at' => $this->toUtcIso8601($deadline),
             ], 403);
         }
 
@@ -3152,13 +3152,18 @@ class ExchangeLotController extends Controller
             ->get()
             ->map(fn (DealChatMessage $m) => [
                 'id' => $m->id,
-                'date' => $m->created_at->toIso8601String(),
+                'date' => $this->toUtcIso8601($m->created_at) ?? '',
                 'body' => $m->body,
                 'from_me' => $isSeller ? $m->sender_side === 'seller' : $m->sender_side === 'buyer',
                 'sender_side' => $m->sender_side,
                 'deal_tag' => $m->deal_tag,
             ]);
-        return response()->json(['success' => true, 'messages' => $messages]);
+        // Lets clients align step timers with device clock skew; all instants above are UTC regardless of app/DB TZ.
+        return response()->json([
+            'success' => true,
+            'server_time' => $this->toUtcIso8601(now()),
+            'messages' => $messages,
+        ]);
     }
 
     /**
@@ -3192,13 +3197,13 @@ class ExchangeLotController extends Controller
                 'id' => $activeDispute->id,
                 'status' => $activeDispute->status,
                 'opened_by' => $activeDispute->opened_by,
-                'opened_at' => optional($activeDispute->opened_at)->toIso8601String(),
+                'opened_at' => $this->toUtcIso8601($activeDispute->opened_at),
                 'resolved_by' => $activeDispute->resolved_by,
-                'resolved_at' => optional($activeDispute->resolved_at)->toIso8601String(),
-                'closed_at' => optional($activeDispute->closed_at)->toIso8601String(),
+                'resolved_at' => $this->toUtcIso8601($activeDispute->resolved_at),
+                'closed_at' => $this->toUtcIso8601($activeDispute->closed_at),
                 'arbiter_id' => $activeDispute->arbiter_id,
                 'arbiter_model_version' => $activeDispute->arbiter_model_version,
-                'last_activity_at' => optional($activeDispute->last_activity_at)->toIso8601String(),
+                'last_activity_at' => $this->toUtcIso8601($activeDispute->last_activity_at),
             ] : null,
         ]);
     }
@@ -3621,6 +3626,18 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * Serialize instants for JSON as ISO-8601 in UTC (Z/+00:00), regardless of APP_TIMEZONE or MySQL session TZ.
+     */
+    private function toUtcIso8601(?\Carbon\CarbonInterface $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return $value->clone()->utc()->toIso8601String();
+    }
+
+    /**
      * @param list<string> $fingerprints
      */
     private function hasEvidenceReplay(ExchangeLot $lot, array $fingerprints): bool
@@ -3755,7 +3772,7 @@ class ExchangeLotController extends Controller
                 $activeLock = [
                     'transaction_id' => (int) $transaction->id,
                     'remaining_seconds' => $remaining,
-                    'release_at' => $releaseAt->toIso8601String(),
+                    'release_at' => $this->toUtcIso8601($releaseAt),
                 ];
             }
         }
