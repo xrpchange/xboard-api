@@ -11,7 +11,7 @@ return [
     'code' => 'sandbox_ru_receipt',
 
     /** Fixed English label for API JSON only (client localizes UI). */
-    'name_en' => 'XBoard Sandbox Receipt Bank (RU)',
+    'name_en' => 'XBoard Sandbox Receipt Bank',
 
     'swift_code' => 'XBRDRUMMXXX',
 
