@@ -68,7 +68,7 @@ class CountryController extends BaseApiController
     {
         $banks = $country->banks()->active()->with(['country', 'fiatCurrencies'])->orderBy('name')->get();
         $rows = $banks->map(fn (\App\Models\Bank $b) => SandboxVirtualBankService::mapBankModelToArray($b));
-        $rows = SandboxVirtualBankService::prependVirtualRuForSandbox($request, $country, $rows);
+        $rows = SandboxVirtualBankService::appendVirtualReceiptBankForSandbox($request, $country, $rows);
 
         return $this->successResponse($rows->all());
     }

@@ -7,14 +7,22 @@ use App\Models\Country;
 use App\Models\ExchangeLot;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 
 final class SandboxVirtualBankService
 {
     public static function isSandboxApiHost(?string $host): bool
     {
         $host = strtolower(trim((string) $host));
+        if ($host === '') {
+            return false;
+        }
+        if (preg_match('/^(sandbox\.|dev\.)/', $host) === 1) {
+            return true;
+        }
+        $extras = config('sandbox_virtual_bank.extra_prepend_hosts', []);
 
-        return $host !== '' && preg_match('/^(sandbox\.|dev\.)/', $host) === 1;
+        return is_array($extras) && in_array($host, $extras, true);
     }
 
     public static function virtualBankId(): int
@@ -32,6 +40,26 @@ final class SandboxVirtualBankService
         return $id === self::virtualBankId();
     }
 
+    public static function virtualSwiftNormalized(): string
+    {
+        return strtoupper(trim((string) config('sandbox_virtual_bank.swift_code')));
+    }
+
+    /** Uppercase `countries.code` for the synthetic receipt bank (from `SANDBOX_VIRTUAL_BANK_COUNTRY_CODE`). */
+    public static function receiptCountryCode(): string
+    {
+        return strtoupper(trim((string) config('sandbox_virtual_bank.country_code')));
+    }
+
+    /** True when [swift] equals configured sandbox virtual bank SWIFT (no DB row). */
+    public static function matchesVirtualSwift(?string $swift): bool
+    {
+        $swift = strtoupper(trim((string) $swift));
+        $expected = self::virtualSwiftNormalized();
+
+        return $expected !== '' && $swift !== '' && $swift === $expected;
+    }
+
     public static function mapBankModelToArray(Bank $bank): array
     {
         $arr = $bank->toArray();
@@ -44,19 +72,16 @@ final class SandboxVirtualBankService
 
     public static function virtualBankArrayForCountry(?Country $country): ?array
     {
-        if ($country === null || strtoupper((string) $country->code) !== strtoupper((string) config('sandbox_virtual_bank.country_code', 'RU'))) {
-            return null;
-        }
-
-        $ru = Country::query()->whereRaw('UPPER(code) = ?', ['RU'])->first(['id']);
-        $countryId = $ru ? (int) $ru->id : null;
-        if ($countryId === null) {
+        $expected = self::receiptCountryCode();
+        if ($country === null || strtoupper(trim((string) $country->code)) !== $expected) {
             return null;
         }
 
         return [
             'id' => self::virtualBankId(),
-            'country_id' => $countryId,
+            'country_id' => (int) $country->id,
+            'country_code' => $expected,
+            'country' => ['code' => $expected],
             'name' => config('sandbox_virtual_bank.name_en'),
             'swift_code' => config('sandbox_virtual_bank.swift_code'),
             'supports_individuals' => true,
@@ -65,7 +90,10 @@ final class SandboxVirtualBankService
             'allowed_domain' => null,
             'website_host' => config('sandbox_virtual_bank.website_host'),
             'is_sandbox_virtual' => true,
-            'supported_fiat_codes' => [],
+            'supported_fiat_codes' => array_values(array_map(
+                static fn ($c): string => strtoupper(trim((string) $c)),
+                config('sandbox_virtual_bank.supported_fiat_codes', [])
+            )),
             'created_at' => null,
             'updated_at' => null,
         ];
@@ -75,17 +103,39 @@ final class SandboxVirtualBankService
      * @param  Collection<int, Bank>  $mappedRows  Already mapped to arrays
      * @return Collection<int, array<string, mixed>>
      */
-    public static function prependVirtualRuForSandbox(Request $request, Country $country, Collection $mappedRows): Collection
+    public static function appendVirtualReceiptBankForSandbox(Request $request, Country $country, Collection $mappedRows): Collection
     {
-        if (! self::isSandboxApiHost($request->getHost())) {
+        $host = $request->getHost();
+        if (! self::isSandboxApiHost($host)) {
+            Log::info('RefData: sandbox_virtual_bank skipped (byCountry)', [
+                'reason' => 'host_not_sandbox_or_dev_subdomain',
+                'host' => $host,
+                'country_code' => $country->code,
+                'hint' => 'HTTP Host must match ^(sandbox.|dev.) e.g. sandbox.api.example.com',
+            ]);
+
             return $mappedRows;
         }
         $virtual = self::virtualBankArrayForCountry($country);
         if ($virtual === null) {
+            Log::info('RefData: sandbox_virtual_bank skipped (byCountry)', [
+                'reason' => 'virtual_only_for_configured_country',
+                'host' => $host,
+                'country_code' => $country->code,
+                'expected_country' => self::receiptCountryCode(),
+            ]);
+
             return $mappedRows;
         }
 
-        return $mappedRows->prepend($virtual)->values();
+        Log::info('RefData: sandbox_virtual_bank appended (byCountry)', [
+            'host' => $host,
+            'country_code' => $country->code,
+            'virtual_bank_id' => self::virtualBankId(),
+            'swift' => config('sandbox_virtual_bank.swift_code'),
+        ]);
+
+        return $mappedRows->push($virtual)->values();
     }
 
     public static function lotUsesVirtualSandboxBank(ExchangeLot $lot): bool

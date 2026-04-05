@@ -370,8 +370,13 @@ class ExchangeLotController extends Controller
         // bank = recipient bank (where seller receives money). Prefer bank_swift (cross-node) over bank_id
         $recipientBankId = null;
         if ($request->filled('bank_swift')) {
-            $bank = Bank::where('swift_code', trim($request->bank_swift))->first();
-            $recipientBankId = $bank?->id;
+            $swift = trim((string) $request->bank_swift);
+            $bank = Bank::whereRaw('UPPER(TRIM(swift_code)) = ?', [strtoupper($swift)])->first();
+            if ($bank !== null) {
+                $recipientBankId = (int) $bank->id;
+            } elseif (SandboxVirtualBankService::matchesVirtualSwift($swift)) {
+                $recipientBankId = SandboxVirtualBankService::virtualBankId();
+            }
         }
         if ($recipientBankId === null && $request->filled('bank_id')) {
             $recipientBankId = (int) $request->bank_id;
