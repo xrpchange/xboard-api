@@ -15,8 +15,8 @@ Additionally, deal exit/cancel is protected by a **transaction-level timeout win
 |-----------|------------------------|
 | `buyer_lot_email` empty | No deal; exit not applicable. |
 | `buyer_lot_email` set, no pending sale transactions for **this buyer** on this lot | Exit/cancel allowed by existing role rules. |
-| `buyer_lot_email` set, there are pending sale transactions and **at least one transaction timeout is not finished yet** | **No one can break the deal yet** (`seller_exited` and `buyer-cancel-deal` both return 403 `deal_exit_locked_by_transaction_timeout`). |
-| `buyer_lot_email` set, pending sale transactions exist but all their timeouts have expired | Exit/cancel is allowed only for the side that provided payment details for the active transaction (`transactions.payment_details_set_by`). |
+| `buyer_lot_email` set, there are pending sale transactions and **at least one transaction timeout is not finished yet** | **Seller** cannot use `seller_exited` (403 `deal_exit_locked_by_transaction_timeout`). **Buyer** can still call `buyer-cancel-deal` (not blocked by this window). |
+| `buyer_lot_email` set, pending sale transactions exist but all their timeouts have expired | **Seller** `seller_exited`: may still be restricted by `payment_details_set_by` (403 `deal_exit_not_allowed_for_side` when the rule says only the other side). **Buyer** `buyer-cancel-deal`: allowed (token-authorised buyer cancel does not use timeout / payment-details-side gates). |
 
 Timeout is checked **per transaction**, not as one common timer for the whole deal:
 
@@ -31,10 +31,8 @@ So deal lock is still **per buyer** and now also **per transaction time window**
 
 - **transactions.buyer_lot_email**: Set when creating a transaction in `sendPaymentDetails` (from `$lot->buyer_lot_email`). Used to filter transactions by buyer.
 - **sendMessageToBuyer** (seller_exited): We require `buyer_lot_email` on the lot (otherwise 400). We block with 403 `deal_exit_locked_by_transaction_timeout` if there is at least one pending sale transaction for this lot+buyer where timeout has not passed yet.
-- **buyer-cancel-deal**: Buyer is authorised by matching requestor’s token hash to `lot.buyer_escrow_token_hash`; then we delete only **this buyer’s** transactions (`where('buyer_lot_email', $lot->buyer_lot_email)`), call Core to delete reservations, clear `buyer_lot_email`, and notify the seller.
-
-- **buyer-cancel-deal**: Same timeout lock as seller exit. If any pending transaction is still inside timeout window, API returns 403 `deal_exit_locked_by_transaction_timeout`.
-- **After timeout ownership rule:** API additionally checks who provided transfer/payment details for the deal transaction (`transactions.payment_details_set_by` = `seller` or `buyer`). Only that side can break the deal after timeout. Otherwise API returns 403 `deal_exit_not_allowed_for_side`.
+- **buyer-cancel-deal**: Buyer is authorised by matching requestor’s token hash to `lot.buyer_escrow_token_hash`; then we delete only **this buyer’s** transactions (`where('buyer_lot_email', $lot->buyer_lot_email)`), call Core to delete reservations, clear `buyer_lot_email`, and notify the seller. **No** `deal_exit_locked_by_transaction_timeout` / `deal_exit_not_allowed_for_side` checks here — those apply to **seller** exit only.
+- **After timeout ownership rule (seller exit only):** For `seller_exited`, API checks who provided payment details (`transactions.payment_details_set_by`). Only the allowed side can exit after the timeout window; otherwise 403 `deal_exit_not_allowed_for_side`.
 - **Core URL for reservations:** When calling Core (`/api/reservations`, `/api/reservations/set-transaction-id`, `/api/cancel-reservation-by-transaction`), the API uses **the escrow token’s environment** to choose Core URL and key via `EscrowTokenValidationService::getCoreUrlAndKeyForToken($escrowToken)`. So the same Core (and TOKEN_HASH_SALT) as at token creation is used. See `docs/ESCROW_TOKEN_AUTHENTICATION.md` (§ Calling Core API: URL by token environment).
 
 See also client doc: `xboard-client/docs/DEAL_IN_PROGRESS_SCREENS.md` (§ 5).
