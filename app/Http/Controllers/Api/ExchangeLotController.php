@@ -1487,13 +1487,10 @@ class ExchangeLotController extends Controller
                 }
 
                 // Optional external notification for buyer: "you entered the deal, seller is notified", with deep links.
+                // Use ONLY the email from this request ($buyerNotificationEmailForExternal). Do not fall back to
+                // $lot->buyer_notification_email: that column can still hold a previous buyer's address (e.g. removed
+                // from the device) when the client omits buyer_notification_email — which would send to the wrong mailbox.
                 $buyerExternalEmail = $buyerNotificationEmailForExternal;
-                if ($buyerExternalEmail === null && !empty($lot->buyer_notification_email)) {
-                    $candidate = trim((string) $lot->buyer_notification_email);
-                    if ($candidate !== '' && filter_var($candidate, FILTER_VALIDATE_EMAIL)) {
-                        $buyerExternalEmail = $candidate;
-                    }
-                }
                 if ($buyerExternalEmail !== null) {
                     if (!$this->incrementEmailTestCounter($buyerExternalEmail)) {
                         Log::warning('[exchange-lots] sendMessageToSeller: start_deal external buyer notification skipped (daily limit)', [
