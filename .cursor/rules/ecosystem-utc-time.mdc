@@ -1,0 +1,12 @@
+---
+description: Strict UTC+0 for all persisted times, API payloads, and comparisons (ecosystem-wide)
+alwaysApply: true
+---
+
+# Strict UTC+0 (ecosystem)
+
+**All XBoard work assumes UTC+0** for anything that is stored, compared on the server, or sent on the wire as a clock instant — **independently** of the host OS timezone, DB global/session timezone, or regional defaults.
+
+- **Do not** rely on “server local time” or implicit MySQL timezone for business rules, TTLs, deal timers, or audit fields. This API uses `APP_TIMEZONE` UTC and PDO `SET time_zone='+00:00'`; still **explicitly** emit UTC in JSON where needed (`clone()->utc()` for Carbon).
+- **Serialize** instants as ISO-8601 in UTC. **Persist** UTC in `datetime`/`timestamp` columns (no wall-clock local values without conversion).
+- **Cross-repo:** same rule in **xboard-client**, **xboard-core**, **xboard-monero-balance** — see each `AGENTS.md` / README.

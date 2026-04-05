@@ -12,6 +12,8 @@ Start by reading:
 Key points:
 - **No localized texts on the server.** All user-facing strings are localized in the client (xboard-client). The API must not contain locale-dependent text (no translation arrays/maps in PHP). See `.cursor/rules/no-localized-texts-on-server.mdc`.
 - Backend: PHP 8+, Laravel. Configuration via `.env` and `config/*.php`, no hardcoded `127.0.0.1`.
+- **Database time:** Treat all persisted timestamps as **UTC**. `APP_TIMEZONE` must stay UTC; MySQL/MariaDB use `SET time_zone='+00:00'` on connect (`config/database.php`). Do not write local-wall-clock values into `datetime`/`timestamp` columns without converting to UTC first.
+- **Ecosystem UTC:** The same rule applies across sibling repos: **xboard-core** sets `date_default_timezone_set('UTC')` at `public/api.php` bootstrap; **xboard-monero-balance** sets `time.Local = time.UTC` in service CLIs; **xboard-client** treats API datetimes as instants (ISO-8601 UTC) and aligns deal timers to server time from chat responses.
 - **NO fallback by host on server:** For `.env.xrpchange` (api.xrpchange.site), `APP_ENV` MUST be set explicitly via Apache `SetEnv` (or equivalent). Do NOT add fallback detection by `HTTP_HOST` or any other implicit method on production.
 - `nodes` table — source of available nodes for clients; keep migrations and schema up to date (including `weight`, `max_connections` if applicable).
 

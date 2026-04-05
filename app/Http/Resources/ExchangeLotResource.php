@@ -3,6 +3,8 @@
 namespace App\Http\Resources;
 
 use App\Services\SandboxVirtualBankService;
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class ExchangeLotResource extends JsonResource
@@ -65,9 +67,19 @@ class ExchangeLotResource extends JsonResource
             'buyer_payment_timeout_minutes' => isset($this->buyer_payment_timeout_minutes) ? (int) $this->buyer_payment_timeout_minutes : 30,
             'seller_notification_email' => $this->seller_notification_email ? (string) $this->seller_notification_email : null,
             'buyer_notification_email' => $this->buyer_notification_email ? (string) $this->buyer_notification_email : null,
-            'created_at' => $this->created_at?->toISOString() ?? now()->toISOString(),
-            'expires_at' => $this->expires_at?->toISOString() ?? '',
+            'created_at' => self::toUtcIso8601($this->created_at) ?? Carbon::now('UTC')->toIso8601String(),
+            'expires_at' => self::toUtcIso8601($this->expires_at) ?? '',
         ];
+    }
+
+    /** API lot timestamps in UTC regardless of APP_TIMEZONE / DB session. */
+    private static function toUtcIso8601(?CarbonInterface $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return $value->clone()->utc()->toIso8601String();
     }
 
     /**

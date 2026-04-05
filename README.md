@@ -198,6 +198,7 @@ After starting the server, documentation is available at:
 ### Backend
 - **Framework**: Laravel 10.x
 - **Database**: MySQL 8.0+
+- **Time**: `APP_TIMEZONE` is UTC. Each MySQL/MariaDB connection sets `time_zone` to `+00:00` so session `NOW()` / `CURRENT_TIMESTAMP` and Laravel’s datetime casting align with **UTC storage** (see `config/database.php`). Persisted instants are always UTC; local time is only for display or domain-specific fields (e.g. bank time + IANA tz) normalized before storage. Same **UTC-first** convention is documented for **xboard-core**, **xboard-monero-balance**, and **xboard-client** (`AGENTS.md` and/or README).
 - **API**: REST API with Escrow token authentication
 - **Documentation**: Swagger/OpenAPI 3.0
 
