@@ -723,6 +723,7 @@ class ExchangeLotController extends Controller
             'seller_notification_email' => 'nullable|string|email|max:255',
             'buyer_notification_email' => 'nullable|string|email|max:255',
             'expires_at' => 'nullable|date',
+            'escrow_multisig_2_of_3_required' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -783,6 +784,12 @@ class ExchangeLotController extends Controller
         if (!$toFiat && !$toCrypto) {
             return response()->json(['success' => false, 'errors' => ['to_currency' => ['Unknown currency code.']]], 422);
         }
+        $reqMultisig = (bool) ($validated['escrow_multisig_2_of_3_required'] ?? false);
+        $multisigErr = $this->validateEscrowMultisig2Of3LotRules($reqMultisig, $buyAmounts, $fromCrypto, $toCrypto);
+        if ($multisigErr !== null) {
+            return $multisigErr;
+        }
+        $validated['escrow_multisig_2_of_3_required'] = $reqMultisig;
         $validated['from_fiat_currency_id'] = $fromFiat?->id;
         $validated['from_crypto_currency_id'] = $fromCrypto?->id;
         $validated['to_fiat_currency_id'] = $toFiat?->id;
@@ -972,6 +979,7 @@ class ExchangeLotController extends Controller
             'aml' => 'nullable|integer|min:0|max:100',
             'buyer_payment_timeout_minutes' => 'nullable|integer|in:15,20,30',
             'seller_notification_email' => 'nullable|string|email|max:255',
+            'escrow_multisig_2_of_3_required' => 'sometimes|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -1035,6 +1043,16 @@ class ExchangeLotController extends Controller
             return response()->json(['success' => false, 'errors' => ['to_currency' => ['Unknown currency code.']]], 422);
         }
 
+        // Effective flag: DB value unless the client sends an update (prevents multi-tier buy_amounts on multisig lots when the key is omitted).
+        $effectiveMultisig = (bool) ($lot->escrow_multisig_2_of_3_required ?? false);
+        if ($request->exists('escrow_multisig_2_of_3_required')) {
+            $effectiveMultisig = $request->boolean('escrow_multisig_2_of_3_required');
+        }
+        $multisigErr = $this->validateEscrowMultisig2Of3LotRules($effectiveMultisig, $buyAmounts, $fromCrypto, $toCrypto);
+        if ($multisigErr !== null) {
+            return $multisigErr;
+        }
+
         $updateData = [
             'from_fiat_currency_id' => $fromFiat?->id,
             'from_crypto_currency_id' => $fromCrypto?->id,
@@ -1048,6 +1066,9 @@ class ExchangeLotController extends Controller
             'buy_amounts' => $buyAmounts,
             'rate' => $rateValue,
         ];
+        if ($request->exists('escrow_multisig_2_of_3_required')) {
+            $updateData['escrow_multisig_2_of_3_required'] = $request->boolean('escrow_multisig_2_of_3_required');
+        }
         if (array_key_exists('bank_id', $validated)) {
             $bid = $validated['bank_id'];
             if ($bid !== null && (int) $bid === SandboxVirtualBankService::virtualBankId()) {
@@ -1327,6 +1348,34 @@ class ExchangeLotController extends Controller
         }
 
         $messageType = $request->input('message_type');
+        if ($messageType === 'start_deal' && ($lot->escrow_multisig_2_of_3_required ?? false)) {
+            $amounts = is_array($lot->buy_amounts) ? $lot->buy_amounts : [];
+            if (count($amounts) !== 1) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Lot is misconfigured for 2-of-3 multisig escrow (expected exactly one buy amount).',
+                    'error_code' => 'multisig_2_of_3_lot_misconfigured',
+                ], 409);
+            }
+            $expected = (float) $amounts[0];
+            $sel = $request->input('selected_amount');
+            if (! is_numeric($sel)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'selected_amount is required and must match the lot buy amount for this multisig lot.',
+                    'error_code' => 'multisig_2_of_3_selected_amount_required',
+                ], 422);
+            }
+            $got = (float) $sel;
+            $tol = max(1e-6, 1e-8 * max(abs($expected), abs($got), 1.0));
+            if (abs($got - $expected) > $tol) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'selected_amount must equal the lot\'s single buy amount (full lot only).',
+                    'error_code' => 'multisig_2_of_3_selected_amount_mismatch',
+                ], 422);
+            }
+        }
         $buyerNotificationEmailForExternal = null;
         $buyerExternalSubject = $request->input('buyer_notification_subject');
         $buyerExternalBody = $request->input('buyer_notification_body');
@@ -3721,6 +3770,53 @@ class ExchangeLotController extends Controller
                 resolution: 'Deal completed by participants.'
             );
         }
+    }
+
+    /**
+     * @param  array<int, float|int|string>  $buyAmounts
+     */
+    private function validateEscrowMultisig2Of3LotRules(
+        bool $required,
+        array $buyAmounts,
+        ?CryptoCurrency $fromCrypto,
+        ?CryptoCurrency $toCrypto,
+    ): ?JsonResponse {
+        if (! $required) {
+            return null;
+        }
+        if (! $this->cryptoPairInvolvesTron($fromCrypto, $toCrypto)) {
+            return response()->json([
+                'success' => false,
+                'errors' => [
+                    'escrow_multisig_2_of_3_required' => [
+                        '2-of-3 multisig escrow is only allowed when the lot involves Tron TRC-20 on at least one side (currency code ending with _tron).',
+                    ],
+                ],
+            ], 422);
+        }
+        if (count($buyAmounts) !== 1) {
+            return response()->json([
+                'success' => false,
+                'errors' => [
+                    'buy_amounts' => [
+                        'When 2-of-3 multisig escrow is required, specify exactly one buy amount: the full lot only (no tiers, no partial tranches).',
+                    ],
+                ],
+            ], 422);
+        }
+
+        return null;
+    }
+
+    private function cryptoPairInvolvesTron(?CryptoCurrency $fromCrypto, ?CryptoCurrency $toCrypto): bool
+    {
+        foreach ([$fromCrypto, $toCrypto] as $c) {
+            if ($c !== null && str_ends_with(strtolower((string) ($c->code ?? '')), '_tron')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function normalizeBankTimeToUtc(string $rawValue, string $timezone): ?string

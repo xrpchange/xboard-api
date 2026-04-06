@@ -56,6 +56,7 @@ class ExchangeLot extends Model
         'buyer_payment_timeout_minutes',
         'seller_notification_email',
         'expires_at',
+        'escrow_multisig_2_of_3_required',
     ];
 
     protected $casts = [
@@ -73,6 +74,7 @@ class ExchangeLot extends Model
         'aml' => 'integer',
         'buyer_payment_timeout_minutes' => 'integer',
         'expires_at' => 'datetime',
+        'escrow_multisig_2_of_3_required' => 'boolean',
     ];
 
     /**
