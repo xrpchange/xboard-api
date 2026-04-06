@@ -18,7 +18,6 @@ class DatabaseSeeder extends Seeder
             BankSeeder::class,
             BankFiatCurrencySeeder::class,
             NodeSeeder::class,
-            ExchangeLotSeeder::class,
             EmailProviderSeeder::class,
         ]);
     }
