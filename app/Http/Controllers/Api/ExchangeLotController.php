@@ -515,12 +515,10 @@ class ExchangeLotController extends Controller
                     ->orWhereDoesntHave('banks');
             });
         }
-        // AML: when aml_max is set, only lots with AML filled and <= threshold (exclude lots with null AML)
+        // AML: when aml_max is set, show only lots where AML wallet check is enabled.
+        // Numeric threshold filtering is done on the client using per-node Core /info.
         if ($request->filled('aml_max')) {
-            $amlMax = (int) $request->aml_max;
-            if ($amlMax >= 0 && $amlMax <= 100) {
-                $query->whereNotNull('aml')->where('aml', '<=', $amlMax);
-            }
+            $query->where('aml', true);
         }
         $walletAddresses = $request->input('wallet_address') ?? $request->input('wallet_address[]');
         $hashes = [];
@@ -718,7 +716,7 @@ class ExchangeLotController extends Controller
             'main_group' => 'nullable|string|max:128',  // plain text from client, hashed before storing
             'note' => 'nullable|string|max:65535',
             'seller_locale' => 'required|string|max:10',
-            'aml' => 'nullable|integer|min:0|max:100',
+            'aml' => 'nullable|boolean',
             'buyer_payment_timeout_minutes' => 'nullable|integer|in:15,20,30',
             'seller_notification_email' => 'nullable|string|email|max:255',
             'buyer_notification_email' => 'nullable|string|email|max:255',
@@ -851,12 +849,12 @@ class ExchangeLotController extends Controller
             ]);
             if (\is_array($decoded) && array_key_exists('aml', $decoded)) {
                 $v = $decoded['aml'];
-                $validated['aml'] = ($v === null || $v === '') ? null : (int) $v;
+                $validated['aml'] = $this->normalizeNullableAmlFlag($v);
                 Log::info('[exchange-lots] store AML set from raw', ['validated_aml' => $validated['aml']]);
             }
         } elseif (array_key_exists('aml', $input)) {
             $v = $input['aml'];
-            $validated['aml'] = ($v === null || $v === '') ? null : (int) $v;
+            $validated['aml'] = $this->normalizeNullableAmlFlag($v);
             Log::info('[exchange-lots] store AML set from input', ['validated_aml' => $validated['aml']]);
         }
 
@@ -976,7 +974,7 @@ class ExchangeLotController extends Controller
             'main_group' => 'nullable|string|max:128',
             'note' => 'nullable|string|max:65535',
             'seller_locale' => 'nullable|string|max:10',
-            'aml' => 'nullable|integer|min:0|max:100',
+            'aml' => 'nullable|boolean',
             'buyer_payment_timeout_minutes' => 'nullable|integer|in:15,20,30',
             'seller_notification_email' => 'nullable|string|email|max:255',
             'escrow_multisig_2_of_3_required' => 'sometimes|boolean',
@@ -1129,13 +1127,13 @@ class ExchangeLotController extends Controller
             ]);
             if (\is_array($decoded) && array_key_exists('aml', $decoded)) {
                 $v = $decoded['aml'];
-                $updateData['aml'] = ($v === null || $v === '') ? null : (int) $v;
+                $updateData['aml'] = $this->normalizeNullableAmlFlag($v);
                 Log::info('[exchange-lots] update AML set from raw', ['updateData_aml' => $updateData['aml']]);
             }
         } else {
             if (array_key_exists('aml', $input)) {
                 $v = $input['aml'];
-                $updateData['aml'] = ($v === null || $v === '') ? null : (int) $v;
+                $updateData['aml'] = $this->normalizeNullableAmlFlag($v);
                 Log::info('[exchange-lots] update AML set from input', ['updateData_aml' => $updateData['aml']]);
             }
         }
@@ -2984,6 +2982,7 @@ class ExchangeLotController extends Controller
                 'escrow_token' => $sellerEscrowToken,
                 'crypto_type' => $coreSellerCryptoType,
                 'is_legal_entity' => false,
+                'reservation_side' => 'seller',
             ];
             if (!empty($lot->buyer_escrow_token_hash)) {
                 $reservationPayload['buyer_escrow_token_hash'] = $lot->buyer_escrow_token_hash;
@@ -4112,6 +4111,25 @@ class ExchangeLotController extends Controller
         return strtoupper($code);
     }
 
+    /** AML lot flag: null (not specified) / true (check required) / false (check disabled). */
+    private function normalizeNullableAmlFlag(mixed $value): ?bool
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $parsed = filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        if ($parsed !== null) {
+            return (bool) $parsed;
+        }
+
+        if (is_numeric($value)) {
+            return ((int) $value) !== 0;
+        }
+
+        return null;
+    }
+
     /**
      * Email body: deal summary (same info as on Deal screen) in buyer's language, then buyer's message.
      * Labels localized by buyer_locale; no seller language in body.
@@ -4131,8 +4149,9 @@ class ExchangeLotController extends Controller
         $maxAmount = (float) $lot->buy_amount_max;
         $aml = $lot->aml;
         $amlLabel = $strings['aml'];
-        $amlNotConsidered = $strings['aml_not_considered'];
-        $amlText = $aml !== null ? "{$amlLabel}: {$aml}%" : "{$amlLabel}: {$amlNotConsidered}";
+        $amlRequired = $strings['aml_required'];
+        $amlNotRequired = $strings['aml_not_required'];
+        $amlText = "{$amlLabel}: " . ((bool) $aml ? $amlRequired : $amlNotRequired);
 
         $lines = [
             $strings['summary_title'],
@@ -4181,7 +4200,8 @@ class ExchangeLotController extends Controller
             'rate' => 'Rate',
             'for_amount_you_get' => 'For %s %s (of %s %s): you get %s %s',
             'aml' => 'AML',
-            'aml_not_considered' => '—',
+            'aml_required' => 'wallet check required',
+            'aml_not_required' => 'wallet check not required',
             'lot_id' => 'Lot ID',
             'accept_from_banks' => 'Accept from banks',
             'buyer_message' => 'Buyer\'s message:',
