@@ -3784,12 +3784,12 @@ class ExchangeLotController extends Controller
         if (! $required) {
             return null;
         }
-        if (! $this->cryptoPairInvolvesTron($fromCrypto, $toCrypto)) {
+        if (! $this->cryptoPairAllowsEscrowMultisig2Of3($fromCrypto, $toCrypto)) {
             return response()->json([
                 'success' => false,
                 'errors' => [
                     'escrow_multisig_2_of_3_required' => [
-                        '2-of-3 multisig escrow is only allowed when the lot involves Tron TRC-20 on at least one side (currency code ending with _tron).',
+                        '2-of-3 multisig escrow is only allowed when the lot involves XRP, XMR, Stellar (code ending with _stellar), or Tron TRC-20 (code ending with _tron) on at least one side. Other networks are not enabled yet.',
                     ],
                 ],
             ], 422);
@@ -3808,15 +3808,26 @@ class ExchangeLotController extends Controller
         return null;
     }
 
-    private function cryptoPairInvolvesTron(?CryptoCurrency $fromCrypto, ?CryptoCurrency $toCrypto): bool
+    private function cryptoCurrencyCodeAllowsEscrowMultisig2Of3(?CryptoCurrency $c): bool
     {
-        foreach ([$fromCrypto, $toCrypto] as $c) {
-            if ($c !== null && str_ends_with(strtolower((string) ($c->code ?? '')), '_tron')) {
-                return true;
-            }
+        if ($c === null) {
+            return false;
+        }
+        $code = strtolower(trim((string) ($c->code ?? '')));
+        if ($code === '') {
+            return false;
+        }
+        if ($code === 'xrp' || $code === 'xmr') {
+            return true;
         }
 
-        return false;
+        return str_ends_with($code, '_stellar') || str_ends_with($code, '_tron');
+    }
+
+    private function cryptoPairAllowsEscrowMultisig2Of3(?CryptoCurrency $fromCrypto, ?CryptoCurrency $toCrypto): bool
+    {
+        return $this->cryptoCurrencyCodeAllowsEscrowMultisig2Of3($fromCrypto)
+            || $this->cryptoCurrencyCodeAllowsEscrowMultisig2Of3($toCrypto);
     }
 
     private function normalizeBankTimeToUtc(string $rawValue, string $timezone): ?string
@@ -4532,16 +4543,20 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * Sandbox-only synthetic RU bank: PDF receipt to PAYMENT_VERIFICATION_EMAIL (first address if list).
+     * Sandbox-only synthetic RU bank: send PDF receipt to the deal participant mailbox
+     * (buyer first, fallback to seller). This lets the user verify the receipt from their own inbox.
      */
     private function sendSandboxVirtualBankReceiptEmail(ExchangeLot $lot, float $amount, int $transactionId): void
     {
         if (! SandboxVirtualBankService::isSandboxApiHost(request()->getHost())) {
             return;
         }
-        $to = SandboxVirtualBankService::primaryPaymentVerificationEmail();
+        $to = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($to === '') {
+            $to = trim((string) ($lot->seller_lot_email ?? ''));
+        }
         if ($to === null || $to === '') {
-            Log::warning('[exchange-lots] sendSandboxVirtualBankReceiptEmail: PAYMENT_VERIFICATION_EMAIL not set', [
+            Log::warning('[exchange-lots] sendSandboxVirtualBankReceiptEmail: recipient mailbox is empty', [
                 'lot_id' => $lot->id,
             ]);
 
