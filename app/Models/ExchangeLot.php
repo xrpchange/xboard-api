@@ -71,7 +71,7 @@ class ExchangeLot extends Model
         'is_for_legal_entities' => 'boolean',
         'is_active' => 'boolean',
         'is_test' => 'boolean',
-        'aml' => 'integer',
+        'aml' => 'boolean',
         'buyer_payment_timeout_minutes' => 'integer',
         'expires_at' => 'datetime',
         'escrow_multisig_2_of_3_required' => 'boolean',

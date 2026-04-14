@@ -63,7 +63,7 @@ class ExchangeLotResource extends JsonResource
             'buyer_selected_amount' => isset($this->buyer_selected_amount) && (float) $this->buyer_selected_amount > 0 ? (float) $this->buyer_selected_amount : null,
             'seller_lot_email' => $this->seller_lot_email ? (string) $this->seller_lot_email : null,
             'payment_purpose' => $this->payment_purpose ?? '',
-            'aml' => $this->aml !== null ? (int) $this->aml : null,
+            'aml' => $this->aml !== null ? (bool) $this->aml : null,
             'buyer_payment_timeout_minutes' => isset($this->buyer_payment_timeout_minutes) ? (int) $this->buyer_payment_timeout_minutes : 30,
             'seller_notification_email' => $this->seller_notification_email ? (string) $this->seller_notification_email : null,
             'buyer_notification_email' => $this->buyer_notification_email ? (string) $this->buyer_notification_email : null,
