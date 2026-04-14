@@ -17,7 +17,10 @@ Check Laravel log line **`RefData: GET /banks sandbox_virtual_bank`**:
 
 - Merged into bank list responses for the country whose `countries.code` matches **`SANDBOX_VIRTUAL_BANK_COUNTRY_CODE`** (default `RUS`) when the request host matches the rules above.
 - Lots use `virtual_sandbox_bank_code` in the database (`bank_id` stays `null`). The API still exposes a stable **`bank_id`** for clients (see below).
-- After **send payment details** (bank flow), the API can email a **PDF receipt** to `PAYMENT_VERIFICATION_EMAIL` (first address if comma-separated).
+- After **send payment details** (bank flow) for the virtual sandbox bank, the API sends a synthetic **PDF receipt** to the counterparty notification email from the lot:
+  - if `transactions.payment_details_set_by = seller` -> recipient is `exchange_lots.buyer_notification_email`;
+  - if `transactions.payment_details_set_by = buyer` -> recipient is `exchange_lots.seller_notification_email`.
+- Receipt recipient is determined by deal side (who set payment details), not by mailbox discovery and not by `PAYMENT_VERIFICATION_EMAIL`.
 - **DKIM / sender checks:** documented in code via `SandboxVirtualBankService` and `PaymentVerificationController::verifySender` (virtual id + optional `X-XBoard-Sandbox-Test-Bank-Receipt` header).
 
 ## Configuration
@@ -44,5 +47,6 @@ Example (commented) lines: see repository **`.env.example`**.
 
 ## Related
 
-- `PAYMENT_VERIFICATION_EMAIL` — recipient for the sandbox PDF receipt mail (`config/mail.php` → `mail.verification_email`).
+- `PAYMENT_VERIFICATION_EMAIL` (`config/mail.php` -> `mail.verification_email`) is used by payment-verification flows and service routing, but not as the recipient of sandbox virtual-bank synthetic receipts.
 - XRPChange-specific env file: `docs/ENV_XRPCHANGE.md`.
+- Production logging baseline: `docs/PRODUCTION_LOGGING_PROFILE.md`.

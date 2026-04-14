@@ -208,6 +208,7 @@ curl -X POST "http://localhost:8000/api/v1/exchange-lots" \
 ## Payment Verification (Email) - Testing Mode
 
 Email verification endpoints for testing DKIM validation and email processing. See [EMAIL_VERIFICATION_METHODS.md](EMAIL_VERIFICATION_METHODS.md) for complete documentation.
+For sandbox synthetic receipt-bank behavior see [SANDBOX_VIRTUAL_BANK.md](SANDBOX_VIRTUAL_BANK.md). For production log-noise control see [PRODUCTION_LOGGING_PROFILE.md](PRODUCTION_LOGGING_PROFILE.md).
 
 **Email List/Raw Email (OAuth token required):**
 - `GET /api/v1/payments/emails` - Get email list from OAuth-connected account
