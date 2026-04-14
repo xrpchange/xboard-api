@@ -15,8 +15,12 @@ class EscrowTokenService
      * Create escrow token through core API
      * Stage 1: Get open part of token
      */
-    public function createToken(string $cryptoType, float $amount = 0.0): array
-    {
+    public function createToken(
+        string $cryptoType,
+        float $amount = 0.0,
+        ?string $network = null,
+        bool $escrowMultisig2Of3Required = false
+    ): array {
         // Determine Core URL and key based on current API host (preserve environment)
         $host = $_SERVER['HTTP_HOST'] ?? '';
         $coreUrl = config('services.core.url'); // default (sandbox)
@@ -39,10 +43,19 @@ class EscrowTokenService
                 ]);
             }
             
-            $response = $request->post($coreUrl . '/api/escrow-tokens/create', [
+            $body = [
                 'crypto_type' => $cryptoType,
-                'amount' => $amount
-            ]);
+                'amount' => $amount,
+            ];
+            $networkNorm = $network !== null ? strtolower(trim($network)) : '';
+            if ($networkNorm !== '') {
+                $body['network'] = $networkNorm;
+            }
+            if ($escrowMultisig2Of3Required) {
+                $body['escrow_multisig_2_of_3_required'] = true;
+            }
+
+            $response = $request->post($coreUrl . '/api/escrow-tokens/create', $body);
 
             if (!$response->successful()) {
                 $errorData = $response->json();

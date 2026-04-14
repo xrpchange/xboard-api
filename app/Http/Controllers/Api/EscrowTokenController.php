@@ -172,6 +172,8 @@ class EscrowTokenController extends BaseApiController
         $validated = $request->validate([
             'crypto_type' => 'required|string',
             'amount' => 'nullable|numeric|min:0',
+            'network' => 'nullable|string|max:32',
+            'escrow_multisig_2_of_3_required' => 'nullable|boolean',
             'email' => 'required|string|email',
             'verification_code' => 'required|string|size:6',
         ]);
@@ -218,9 +220,12 @@ class EscrowTokenController extends BaseApiController
         }
 
         try {
+            $network = isset($validated['network']) ? trim((string) $validated['network']) : null;
             $result = $this->escrowTokenService->createToken(
                 $validated['crypto_type'],
-                (float)($validated['amount'] ?? 0.0)
+                (float)($validated['amount'] ?? 0.0),
+                $network !== '' ? $network : null,
+                (bool)($validated['escrow_multisig_2_of_3_required'] ?? false)
             );
 
             Cache::forget($cacheKey);
