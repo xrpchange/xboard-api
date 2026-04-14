@@ -1348,6 +1348,15 @@ class ExchangeLotController extends Controller
         }
 
         $messageType = $request->input('message_type');
+        if ($messageType === 'start_deal') {
+            Log::info('[exchange-lots] sendMessageToSeller: start_deal request context', [
+                'lot_id' => $lot->id,
+                'seller_mailbox_email' => $sellerEmail,
+                'seller_notification_email' => $lot->seller_notification_email,
+                'buyer_notification_email_in_request' => $request->input('buyer_notification_email'),
+                'requester_mailbox_email' => $requesterMailboxEmail,
+            ]);
+        }
         if ($messageType === 'start_deal' && ($lot->escrow_multisig_2_of_3_required ?? false)) {
             $amounts = is_array($lot->buy_amounts) ? $lot->buy_amounts : [];
             if (count($amounts) !== 1) {
@@ -1593,10 +1602,15 @@ class ExchangeLotController extends Controller
                 $sellerNotificationEmail = $lot->seller_notification_email ? trim((string) $lot->seller_notification_email) : null;
                 if (
                     $sellerNotificationEmail &&
-                    filter_var($sellerNotificationEmail, FILTER_VALIDATE_EMAIL) &&
-                    strcasecmp($sellerNotificationEmail, $sellerEmail) !== 0
+                    filter_var($sellerNotificationEmail, FILTER_VALIDATE_EMAIL)
                 ) {
-                    if (!$this->incrementEmailTestCounter($sellerNotificationEmail)) {
+                    Log::info('[exchange-lots] sendMessageToSeller: start_deal seller external candidate', [
+                        'lot_id' => $lot->id,
+                        'to' => $sellerNotificationEmail,
+                        'seller_mailbox_email' => $sellerEmail,
+                    ]);
+                    $sellerLimitAllowed = $this->incrementEmailTestCounter($sellerNotificationEmail);
+                    if (!$sellerLimitAllowed) {
                         Log::warning('[exchange-lots] sendMessageToSeller: start_deal external seller notification skipped (daily limit)', [
                             'lot_id' => $lot->id,
                             'to' => $sellerNotificationEmail,
@@ -1653,7 +1667,12 @@ class ExchangeLotController extends Controller
                 // from the device) when the client omits buyer_notification_email — which would send to the wrong mailbox.
                 $buyerExternalEmail = $buyerNotificationEmailForExternal;
                 if ($buyerExternalEmail !== null) {
-                    if (!$this->incrementEmailTestCounter($buyerExternalEmail)) {
+                    Log::info('[exchange-lots] sendMessageToSeller: start_deal buyer external candidate', [
+                        'lot_id' => $lot->id,
+                        'to' => $buyerExternalEmail,
+                    ]);
+                    $buyerLimitAllowed = $this->incrementEmailTestCounter($buyerExternalEmail);
+                    if (!$buyerLimitAllowed) {
                         Log::warning('[exchange-lots] sendMessageToSeller: start_deal external buyer notification skipped (daily limit)', [
                             'lot_id' => $lot->id,
                             'to' => $buyerExternalEmail,
@@ -3086,7 +3105,7 @@ class ExchangeLotController extends Controller
         }
 
         if ($paymentType === 'bank' && SandboxVirtualBankService::lotUsesVirtualSandboxBank($lot)) {
-            $this->sendSandboxVirtualBankReceiptEmail($lot, $amount, (int) $transaction->id);
+            $this->sendSandboxVirtualBankReceiptEmail($lot, $transaction, $amount);
         }
 
         $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot)) ?? $lot->seller_lot_email;
@@ -4366,7 +4385,8 @@ class ExchangeLotController extends Controller
     {
         $limit = (int) config('mail.test_email_daily_limit', 30);
         if ($limit <= 0) {
-            return false;
+            // 0 or negative means "no limit" (do not block sends).
+            return true;
         }
 
         $normalized = strtolower(trim($email));
@@ -4546,18 +4566,25 @@ class ExchangeLotController extends Controller
      * Sandbox-only synthetic RU bank: send PDF receipt to the deal participant mailbox
      * (buyer first, fallback to seller). This lets the user verify the receipt from their own inbox.
      */
-    private function sendSandboxVirtualBankReceiptEmail(ExchangeLot $lot, float $amount, int $transactionId): void
+    private function sendSandboxVirtualBankReceiptEmail(ExchangeLot $lot, Transaction $transaction, float $amount): void
     {
         if (! SandboxVirtualBankService::isSandboxApiHost(request()->getHost())) {
             return;
         }
-        $to = trim((string) ($lot->buyer_lot_email ?? ''));
-        if ($to === '') {
-            $to = trim((string) ($lot->seller_lot_email ?? ''));
-        }
+        $setBy = strtolower(trim((string) ($transaction->payment_details_set_by ?? '')));
+        // Receipt goes to the counterparty for whom payment details are shown.
+        $to = match ($setBy) {
+            'seller' => trim((string) ($lot->buyer_notification_email ?? '')),
+            'buyer' => trim((string) ($lot->seller_notification_email ?? '')),
+            default => '',
+        };
         if ($to === null || $to === '') {
-            Log::warning('[exchange-lots] sendSandboxVirtualBankReceiptEmail: recipient mailbox is empty', [
+            Log::warning('[exchange-lots] sendSandboxVirtualBankReceiptEmail: recipient by payment_details_set_by is empty', [
                 'lot_id' => $lot->id,
+                'transaction_id' => $transaction->id,
+                'payment_details_set_by' => $transaction->payment_details_set_by,
+                'buyer_notification_email_present' => !empty($lot->buyer_notification_email),
+                'seller_notification_email_present' => !empty($lot->seller_notification_email),
             ]);
 
             return;
@@ -4570,25 +4597,41 @@ class ExchangeLotController extends Controller
             $fiatCode = (string) $lot->fromFiatCurrency->code;
         }
 
+        $paymentAtUtc = ($transaction->created_at ?? now())->clone()->utc();
+        $generatedAtUtc = now()->utc();
+        $operationNo = 'SB' . $paymentAtUtc->format('dmy') . sprintf('%06d', (int) $transaction->id);
+        $authCode = strtoupper(substr(hash('sha256', (string) $transaction->tx_hash), 0, 6));
+        $terminalCode = str_pad((string) (($lot->id * 97 + $transaction->id * 13) % 1_000_000), 6, '0', STR_PAD_LEFT);
+
         $pdf = SandboxTestReceiptPdf::build([
-            'Payment receipt (sandbox test bank, not a real bank)',
-            'Beneficiary bank (sandbox): ' . (string) config('sandbox_virtual_bank.name_en'),
-            'Public site: https://' . (string) config('sandbox_virtual_bank.website_host'),
-            'Lot ID: ' . $lot->id,
-            'Transaction ID: ' . $transactionId,
-            'Amount: ' . number_format($amount, 2, '.', ' ') . ' ' . $fiatCode,
-            'Reference: SB-' . $lot->id . '-' . $transactionId,
+            'Transfer receipt (sandbox test bank)',
+            'Generated at: ' . $generatedAtUtc->format('d.m.Y H:i:s') . ' UTC',
+            'Payment date/time: ' . $paymentAtUtc->format('d.m.Y H:i:s') . ' UTC',
+            'Beneficiary bank: ' . (string) config('sandbox_virtual_bank.name_en'),
+            'Payment amount: ' . number_format($amount, 2, '.', ' ') . ' ' . $fiatCode,
+            'Fee: 0.00 ' . $fiatCode,
+            'Authorization code: ' . $authCode,
+            'Terminal code: ' . $terminalCode,
+            'Bank operation number: ' . $operationNo,
+            'Reference: SB-' . $lot->id . '-' . $transaction->id,
         ]);
 
         $headerName = (string) config('sandbox_virtual_bank.receipt_mime_header_name');
         $headerVal = (string) config('sandbox_virtual_bank.receipt_mime_header_value');
 
         try {
-            Mail::send([], [], function ($message) use ($to, $pdf, $lot, $transactionId, $headerName, $headerVal): void {
+            Log::debug('[exchange-lots] sendSandboxVirtualBankReceiptEmail: preparing send', [
+                'lot_id' => $lot->id,
+                'transaction_id' => $transaction->id,
+                'payment_details_set_by' => $transaction->payment_details_set_by,
+                'to' => $to,
+                'host' => request()->getHost(),
+            ]);
+            Mail::send([], [], function ($message) use ($to, $pdf, $lot, $transaction, $headerName, $headerVal): void {
                 $message->to($to);
                 $message->subject('Sandbox test receipt PDF — Lot #' . $lot->id);
                 $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
-                $message->text('Synthetic PDF receipt for sandbox virtual bank (Lot #' . $lot->id . ', tx ' . $transactionId . ').');
+                $message->text('Synthetic PDF receipt for sandbox virtual bank (Lot #' . $lot->id . ', tx ' . $transaction->id . ').');
                 $message->attachData($pdf, 'receipt-lot-' . $lot->id . '.pdf', ['mime' => 'application/pdf']);
                 if ($headerName !== '' && $headerVal !== '') {
                     $message->getHeaders()->addTextHeader($headerName, $headerVal);
@@ -4597,7 +4640,8 @@ class ExchangeLotController extends Controller
             });
             Log::info('[exchange-lots] sendSandboxVirtualBankReceiptEmail: sent', [
                 'lot_id' => $lot->id,
-                'transaction_id' => $transactionId,
+                'transaction_id' => $transaction->id,
+                'payment_details_set_by' => $transaction->payment_details_set_by,
                 'to' => $to,
             ]);
         } catch (\Throwable $e) {
