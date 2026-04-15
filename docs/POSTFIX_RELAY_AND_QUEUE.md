@@ -115,7 +115,7 @@ sudo tail -n 50 /var/log/mail.log
 - Для XBoard исходящий SMTP должен оставаться жёстким:
 
   - Допустимые внешние отправители задаются **только** через `smtpd_sender_login_maps`
-    (в продакшене — `noreply@xdexboard.com` и, при необходимости, технический `check@xdexboard.com`).
+    (в продакшене — только `noreply@xdexboard.com`, если отдельно не согласован другой технический ящик).
   - Для `submission` / `submissions` нужно явно подставить такие же ограничения, как в `main.cf`:
 
     ```text
@@ -139,7 +139,7 @@ sudo tail -n 50 /var/log/mail.log
    sudo postconf smtpd_sender_restrictions smtpd_sender_login_maps
    ```
 
-2. Убедиться, что `sender_login_maps` содержит только разрешённые внешние адреса (`noreply@xdexboard.com`, `check@xdexboard.com`).
+2. Убедиться, что `sender_login_maps` содержит только разрешённые внешние адреса (`noreply@xdexboard.com`).
 
 3. Проверить блоки `submission` / `submissions` в `/etc/postfix/master.cf`:
 
