@@ -204,6 +204,7 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
         Route::post('/request-fee-wallet-verification-code', [EscrowTokenController::class, 'requestFeeWalletVerificationCode']);
         Route::post('/set-fee-wallet-address', [EscrowTokenController::class, 'setFeeWalletAddress']);
         Route::post('/change-admin-password', [EscrowTokenController::class, 'changeAdminPassword']);
+        Route::post('/change-admin-mode-password', [EscrowTokenController::class, 'changeAdminModePassword']);
     });
 
 });
