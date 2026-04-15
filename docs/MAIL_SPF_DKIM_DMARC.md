@@ -79,15 +79,15 @@ v=DKIM1; h=sha256; k=rsa; t=y; p=<длинный_ключ_base64>
 _dmarc.xdexboard.com
 ```
 
-Значение (пример):
+Значение (пример без `rua`):
 
 ```
-v=DMARC1; p=quarantine; rua=mailto:check@xdexboard.com; pct=100; adkim=r; aspf=r
+v=DMARC1; p=quarantine; pct=100; adkim=s; aspf=s; fo=1
 ```
 
 - `p=quarantine` — письма, не прошедшие проверку, помещать в спам (можно начать с `p=none` для мониторинга).
-- `rua=mailto:check@xdexboard.com` — отчёты о проверках на этот адрес.
-- `adkim=r`, `aspf=r` — выравнивание relaxed (рекомендуется).
+- `adkim=s`, `aspf=s` — более строгое выравнивание From/SPF/DKIM.
+- `fo=1` — форензик-отчёт при любой ошибке аутентификации (если принимающая сторона его отправляет).
 
 После настройки DNS подождите распространения (5–60 минут, иногда дольше).
 
@@ -140,6 +140,40 @@ Yandex и многие другие проверяют **PTR** (reverse DNS) д�
 - Типичная проблема: PTR показывает **внутреннее имя VPS** провайдера (например `supersrv.de.`), а не `mail.xdexboard.com` — это нужно исправить в панели хостера (Reverse DNS для этого IP).
 - Проверка с любого хоста: `dig -x 152.53.150.194 +short` — должен вернуться `mail.xdexboard.com.`
 - Настройка PTR делается в панели VPS/хостинга (Reverse DNS / PTR record для этого IP). На обычном DNS у регистратора домена PTR не настраивается — только у того, кто выдаёт IP.
+
+#### Типичная ловушка: локальный "ложный PTR" из `/etc/hosts`
+
+Даже после правильной настройки PTR у хостера сервер может показывать старое имя (например `supersrv.de`) из-за локальной строки в `/etc/hosts`.
+
+Пример проблемной строки:
+
+```text
+152.53.150.194 supersrv.de supersrv
+```
+
+Из-за неё `systemd-resolved` может вернуть "синтетический" reverse-ответ, который не совпадает с публичным DNS.
+
+Проверяйте и внешне, и локально:
+
+```bash
+# Публичный DNS (источник истины)
+dig @1.1.1.1 +short -x 152.53.150.194
+
+# Локальный stub на сервере
+dig @127.0.0.53 +short -x 152.53.150.194
+```
+
+Если локально не совпадает, исправьте `/etc/hosts` на:
+
+```text
+152.53.150.194 mail.xdexboard.com
+```
+
+и очистите кэш:
+
+```bash
+sudo resolvectl flush-caches
+```
 
 ### 4.2. Совпадение PTR и myhostname (HELO)
 
@@ -196,7 +230,7 @@ smtp_tls_note_starttls_offer = yes
 | A для mail.xdexboard.com | В DNS домена: A mail.xdexboard.com → 152.53.150.194 |
 | SPF | TXT xdexboard.com: `v=spf1 mx a:mail.xdexboard.com ip4:152.53.150.194 -all` |
 | DKIM | TXT mail._domainkey.xdexboard.com — значение из `/etc/opendkim/keys/xdexboard.com/mail.txt` |
-| DMARC | TXT _dmarc.xdexboard.com: `v=DMARC1; p=quarantine; rua=mailto:check@xdexboard.com; adkim=r; aspf=r` |
+| DMARC | TXT _dmarc.xdexboard.com: `v=DMARC1; p=quarantine; adkim=s; aspf=s; fo=1` |
 | myhostname | В main.cf: `myhostname = mail.xdexboard.com` |
 | OpenDKIM | `systemctl status opendkim`, порт 8891 слушает |
 | После правок DNS | Подождать 5–60 мин, затем `sudo systemctl restart postfix opendkim` |
