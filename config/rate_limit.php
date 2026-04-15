@@ -43,4 +43,15 @@ return [
         'token_ttl_seconds' => (int) env('RATE_LIMIT_PUZZLE_TOKEN_TTL', 300),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Admin mode enable attempts (client-side Developer Settings)
+    |--------------------------------------------------------------------------
+    | Limits password authorization attempts to enable Administrator mode.
+    | Applies per device_id (or IP fallback) in a daily window.
+    */
+    'admin_mode_enable' => [
+        'attempts_per_day' => (int) env('RATE_LIMIT_ADMIN_MODE_ATTEMPTS_PER_DAY', 10),
+    ],
+
 ];
