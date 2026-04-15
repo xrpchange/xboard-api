@@ -170,6 +170,95 @@ class EscrowTokenController extends BaseApiController
     }
 
     /**
+     * Authorize enabling Administrator mode in client Developer settings.
+     * Uses dedicated admin_mode_password from Core and daily attempt limit (10/day by default).
+     */
+    public function authorizeAdminMode(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'admin_mode_password' => 'required|string|min:1|max:256',
+            'device_id' => 'nullable|string|max:128',
+        ]);
+
+        $identifierRaw = trim((string)($validated['device_id'] ?? ''));
+        $identifier = $identifierRaw !== '' ? ('device:' . strtolower($identifierRaw)) : ('ip:' . ($request->ip() ?? '0.0.0.0'));
+
+        if (!$this->checkAndIncrementAdminModeEnableAttempt($identifier)) {
+            return response()->json([
+                'message' => 'Daily limit reached for administrator mode enable attempts.',
+                'error_code' => 'admin_mode_attempt_limit_reached',
+            ], 429);
+        }
+
+        [$coreUrl, $coreKey] = $this->resolveCoreUrlAndKeyByHost($request);
+        $req = Http::timeout((int) config('services.core.timeout', 10));
+        if ($coreKey !== '') {
+            $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+        }
+
+        try {
+            $coreResponse = $req->post(rtrim($coreUrl, '/') . '/api/admin/authorize-mode', [
+                'admin_mode_password' => (string) $validated['admin_mode_password'],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Core is unavailable: ' . $e->getMessage(),
+                'error_code' => 'core_unavailable',
+            ], 502);
+        }
+
+        $payload = $coreResponse->json();
+        if (!$coreResponse->successful()) {
+            return response()->json([
+                'message' => $payload['message'] ?? 'Admin mode authorization failed.',
+                'error_code' => $payload['error_code'] ?? 'admin_mode_authorization_failed',
+            ], $coreResponse->status());
+        }
+
+        return response()->json(['success' => true]);
+    }
+
+    /**
+     * Fetch admin_email for enabled admin mode using admin_mode_password.
+     */
+    public function getAdminEmail(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'admin_mode_password' => 'required|string|min:1|max:256',
+        ]);
+
+        [$coreUrl, $coreKey] = $this->resolveCoreUrlAndKeyByHost($request);
+        $req = Http::timeout((int) config('services.core.timeout', 10));
+        if ($coreKey !== '') {
+            $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+        }
+
+        try {
+            $coreResponse = $req->post(rtrim($coreUrl, '/') . '/api/admin/get-email', [
+                'admin_mode_password' => (string) $validated['admin_mode_password'],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Core is unavailable: ' . $e->getMessage(),
+                'error_code' => 'core_unavailable',
+            ], 502);
+        }
+
+        $payload = $coreResponse->json();
+        if (!$coreResponse->successful()) {
+            return response()->json([
+                'message' => $payload['message'] ?? 'Failed to get admin email.',
+                'error_code' => $payload['error_code'] ?? 'admin_email_fetch_failed',
+            ], $coreResponse->status());
+        }
+
+        return response()->json([
+            'success' => true,
+            'admin_email' => (string)($payload['admin_email'] ?? ''),
+        ]);
+    }
+
+    /**
      * Set one Core fee-wallet config parameter (clean/dirty) after email verification and admin password check in Core.
      */
     public function setFeeWalletAddress(Request $request): JsonResponse
@@ -561,6 +650,39 @@ class EscrowTokenController extends BaseApiController
 
             return true;
         });
+    }
+
+    private function resolveCoreUrlAndKeyByHost(Request $request): array
+    {
+        $host = $request->getHost();
+        $isProduction = !preg_match('/^(sandbox\.|dev\.)/', $host);
+        $coreUrl = $isProduction ? config('services.core_production.url') : config('services.core.url');
+        $coreKey = $isProduction ? config('services.core_production.key') : config('services.core.key');
+
+        return [rtrim((string) $coreUrl, '/'), (string) $coreKey];
+    }
+
+    private function checkAndIncrementAdminModeEnableAttempt(string $identifier): bool
+    {
+        $limit = (int) config('rate_limit.admin_mode_enable.attempts_per_day', 10);
+        if ($limit <= 0) {
+            return true;
+        }
+
+        $normalized = trim(strtolower($identifier));
+        if ($normalized === '') {
+            return false;
+        }
+
+        $dayKey = date('Ymd');
+        $cacheKey = "admin_mode_enable_attempts:{$normalized}:{$dayKey}";
+        $current = (int) Cache::get($cacheKey, 0);
+        if ($current >= $limit) {
+            return false;
+        }
+
+        Cache::put($cacheKey, $current + 1, now()->endOfDay());
+        return true;
     }
 }
 

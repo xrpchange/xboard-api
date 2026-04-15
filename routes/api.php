@@ -132,6 +132,8 @@ Route::prefix('v1')->group(function () {
         Route::get('/available-cryptos', [EscrowTokenController::class, 'getAvailableCryptos']);
         Route::get('/verification-puzzle', [EscrowTokenController::class, 'getVerificationPuzzle']);
         Route::post('/request-verification-code', [EscrowTokenController::class, 'requestVerificationCode']);
+        Route::post('/authorize-admin-mode', [EscrowTokenController::class, 'authorizeAdminMode']);
+        Route::post('/admin-email', [EscrowTokenController::class, 'getAdminEmail']);
         Route::post('/create', [EscrowTokenController::class, 'create']);
     });
     
