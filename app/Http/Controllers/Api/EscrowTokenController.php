@@ -395,6 +395,71 @@ class EscrowTokenController extends BaseApiController
     }
 
     /**
+     * Change Core admin mode password after mailbox verification.
+     */
+    public function changeAdminModePassword(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => 'required|string|email',
+            'verification_code' => 'required|string|size:6',
+            'current_admin_mode_password' => 'required|string|min:1|max:256',
+            'new_admin_mode_password' => 'required|string|min:1|max:256',
+        ]);
+
+        $email = strtolower(trim((string) $validated['email']));
+        $cacheKey = self::CACHE_KEY_PREFIX . 'fee_wallet:' . $email;
+        $cachedCode = Cache::get($cacheKey);
+        if ($cachedCode === null || $cachedCode !== $validated['verification_code']) {
+            return response()->json([
+                'message' => 'Invalid or expired verification code. Request a new code.',
+                'error_code' => 'invalid_verification_code',
+            ], 422);
+        }
+
+        $escrowToken = (string) ($request->header('X-Escrow-Token') ?? '');
+        if ($escrowToken === '') {
+            return response()->json([
+                'message' => 'Escrow token header is required.',
+                'error_code' => 'escrow_token_missing',
+            ], 401);
+        }
+
+        [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($escrowToken);
+
+        $req = Http::timeout((int) config('services.core.timeout', 10));
+        if ($coreKey !== '') {
+            $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+        }
+
+        try {
+            $coreResponse = $req->post(rtrim($coreUrl, '/') . '/api/admin/change-mode-password', [
+                'admin_email' => $email,
+                'current_admin_mode_password' => $validated['current_admin_mode_password'],
+                'new_admin_mode_password' => $validated['new_admin_mode_password'],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Core is unavailable: ' . $e->getMessage(),
+                'error_code' => 'core_unavailable',
+            ], 502);
+        }
+
+        $payload = $coreResponse->json();
+        if (!$coreResponse->successful()) {
+            return response()->json([
+                'message' => $payload['message'] ?? 'Failed to change admin mode password.',
+                'error_code' => $payload['error_code'] ?? 'admin_mode_password_change_failed',
+            ], $coreResponse->status());
+        }
+
+        Cache::forget($cacheKey);
+
+        return response()->json([
+            'success' => true,
+        ]);
+    }
+
+    /**
      * Get available cryptocurrencies from Core
      */
     public function getAvailableCryptos(): JsonResponse
