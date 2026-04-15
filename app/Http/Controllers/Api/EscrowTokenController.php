@@ -4,10 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Mail\MailboxVerificationCodeMail;
 use App\Services\EscrowTokenService;
+use App\Services\EscrowTokenValidationService;
 use App\Services\TokenCreationRateLimitService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 
 class EscrowTokenController extends BaseApiController
@@ -20,10 +23,17 @@ class EscrowTokenController extends BaseApiController
 
     protected TokenCreationRateLimitService $rateLimitService;
 
-    public function __construct(EscrowTokenService $escrowTokenService, TokenCreationRateLimitService $rateLimitService)
+    protected EscrowTokenValidationService $escrowTokenValidation;
+
+    public function __construct(
+        EscrowTokenService $escrowTokenService,
+        TokenCreationRateLimitService $rateLimitService,
+        EscrowTokenValidationService $escrowTokenValidation
+    )
     {
         $this->escrowTokenService = $escrowTokenService;
         $this->rateLimitService = $rateLimitService;
+        $this->escrowTokenValidation = $escrowTokenValidation;
     }
 
     /**
@@ -59,25 +69,13 @@ class EscrowTokenController extends BaseApiController
             'puzzle_answer' => 'required|string|max:64',
         ]);
         $email = $validated['email'];
-        $puzzleToken = $validated['puzzle_token'];
-        $puzzleAnswer = $validated['puzzle_answer'];
-
-        $cacheKey = self::PUZZLE_CACHE_PREFIX . $puzzleToken;
-        $storedPrefix = Cache::get($cacheKey);
-        if ($storedPrefix === null) {
-            return response()->json([
-                'message' => 'Invalid or expired puzzle. Request a new one.',
-                'error_code' => 'puzzle_invalid_or_expired',
-            ], 400);
+        $puzzleError = $this->consumePuzzle(
+            $validated['puzzle_token'],
+            $validated['puzzle_answer']
+        );
+        if ($puzzleError !== null) {
+            return $puzzleError;
         }
-        $hash = hash('sha256', $puzzleToken . $puzzleAnswer);
-        if (substr($hash, 0, strlen($storedPrefix)) !== $storedPrefix) {
-            return response()->json([
-                'message' => 'Invalid puzzle solution.',
-                'error_code' => 'puzzle_invalid',
-            ], 400);
-        }
-        Cache::forget($cacheKey);
 
         if (!$this->rateLimitService->isEmailAllowed($email)) {
             return response()->json([
@@ -115,6 +113,130 @@ class EscrowTokenController extends BaseApiController
         return response()->json([
             'success' => true,
             'expires_in_minutes' => $ttlMinutes,
+        ]);
+    }
+
+    /**
+     * Request verification code for fee-wallet update flow.
+     * Uses the same mailbox code email as token creation, with existing daily external email limit.
+     */
+    public function requestFeeWalletVerificationCode(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => 'required|string|email',
+            'puzzle_token' => 'required|string|max:128',
+            'puzzle_answer' => 'required|string|max:64',
+        ]);
+        $email = strtolower(trim((string) $validated['email']));
+
+        $puzzleError = $this->consumePuzzle(
+            $validated['puzzle_token'],
+            $validated['puzzle_answer']
+        );
+        if ($puzzleError !== null) {
+            return $puzzleError;
+        }
+
+        if (!$this->rateLimitService->checkAndIncrementVerificationCodeRequestByEmail($email)) {
+            return response()->json([
+                'message' => 'Too many verification codes sent to this email. Try again later.',
+                'error_code' => 'verification_code_email_limit_exceeded',
+            ], 429);
+        }
+
+        if (!$this->incrementEmailTestCounter($email)) {
+            return response()->json([
+                'message' => 'Daily limit for external emails reached for this address.',
+                'error_code' => 'external_email_daily_limit_reached',
+            ], 429);
+        }
+
+        $ttlMinutes = (int) config('mail.mailbox_verification.code_ttl_minutes', 30);
+        $code = (string) random_int(100000, 999999);
+        $cacheKey = self::CACHE_KEY_PREFIX . 'fee_wallet:' . $email;
+        Cache::put($cacheKey, $code, now()->addMinutes($ttlMinutes));
+
+        try {
+            Mail::send(new MailboxVerificationCodeMail($code, $email));
+        } catch (\Throwable $e) {
+            Cache::forget($cacheKey);
+            return $this->errorResponse('Failed to send verification email: ' . $e->getMessage(), 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'expires_in_minutes' => $ttlMinutes,
+        ]);
+    }
+
+    /**
+     * Set one Core fee-wallet config parameter (clean/dirty) after email verification and admin password check in Core.
+     */
+    public function setFeeWalletAddress(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => 'required|string|email',
+            'verification_code' => 'required|string|size:6',
+            'admin_password' => 'required|string|min:1|max:256',
+            'wallet_param' => 'required|string|regex:/^[a-z0-9_]+$/',
+            'wallet_address' => 'nullable|string|max:512',
+        ]);
+
+        $email = strtolower(trim((string) $validated['email']));
+        $cacheKey = self::CACHE_KEY_PREFIX . 'fee_wallet:' . $email;
+        $cachedCode = Cache::get($cacheKey);
+        if ($cachedCode === null || $cachedCode !== $validated['verification_code']) {
+            return response()->json([
+                'message' => 'Invalid or expired verification code. Request a new code.',
+                'error_code' => 'invalid_verification_code',
+            ], 422);
+        }
+
+        $escrowToken = (string) ($request->header('X-Escrow-Token') ?? '');
+        if ($escrowToken === '') {
+            return response()->json([
+                'message' => 'Escrow token header is required.',
+                'error_code' => 'escrow_token_missing',
+            ], 401);
+        }
+
+        [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($escrowToken);
+        $walletParam = strtolower(trim((string) $validated['wallet_param']));
+        $walletAddress = trim((string) ($validated['wallet_address'] ?? ''));
+
+        $req = Http::timeout((int) config('services.core.timeout', 10));
+        if ($coreKey !== '') {
+            $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+        }
+
+        try {
+            $coreResponse = $req->post(rtrim($coreUrl, '/') . '/api/admin/set-fee-wallet', [
+                'admin_email' => $email,
+                'admin_password' => $validated['admin_password'],
+                'wallet_param' => $walletParam,
+                'wallet_value' => $walletAddress,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Core is unavailable: ' . $e->getMessage(),
+                'error_code' => 'core_unavailable',
+            ], 502);
+        }
+
+        $payload = $coreResponse->json();
+        if (!$coreResponse->successful()) {
+            return response()->json([
+                'message' => $payload['message'] ?? 'Failed to set fee wallet parameter.',
+                'error_code' => $payload['error_code'] ?? 'fee_wallet_update_failed',
+            ], $coreResponse->status());
+        }
+
+        Cache::forget($cacheKey);
+
+        return response()->json([
+            'success' => true,
+            'wallet_param' => $walletParam,
+            'wallet_value' => $walletAddress,
         ]);
     }
 
@@ -303,6 +425,77 @@ class EscrowTokenController extends BaseApiController
         // Just return success
         
         return response()->json(['success' => true]);
+    }
+
+    private function consumePuzzle(string $puzzleToken, string $puzzleAnswer): ?JsonResponse
+    {
+        $cacheKey = self::PUZZLE_CACHE_PREFIX . $puzzleToken;
+        $storedPrefix = Cache::get($cacheKey);
+        if ($storedPrefix === null) {
+            return response()->json([
+                'message' => 'Invalid or expired puzzle. Request a new one.',
+                'error_code' => 'puzzle_invalid_or_expired',
+            ], 400);
+        }
+
+        $hash = hash('sha256', $puzzleToken . $puzzleAnswer);
+        if (substr($hash, 0, strlen((string) $storedPrefix)) !== $storedPrefix) {
+            return response()->json([
+                'message' => 'Invalid puzzle solution.',
+                'error_code' => 'puzzle_invalid',
+            ], 400);
+        }
+
+        Cache::forget($cacheKey);
+        return null;
+    }
+
+    /**
+     * Existing per-recipient daily limit for external emails (MAIL_TEST_EMAIL_DAILY_LIMIT).
+     */
+    private function incrementEmailTestCounter(string $email): bool
+    {
+        $limit = (int) config('mail.test_email_daily_limit', 30);
+        if ($limit <= 0) {
+            return true;
+        }
+
+        $normalized = strtolower(trim($email));
+        if ($normalized === '') {
+            return false;
+        }
+
+        $today = now()->toDateString();
+
+        return DB::transaction(function () use ($normalized, $today, $limit): bool {
+            $row = DB::table('email_test_counters')
+                ->where('email', $normalized)
+                ->where('day', $today)
+                ->lockForUpdate()
+                ->first();
+
+            if ($row !== null && (int) $row->sent_count >= $limit) {
+                return false;
+            }
+
+            if ($row === null) {
+                DB::table('email_test_counters')->insert([
+                    'email' => $normalized,
+                    'day' => $today,
+                    'sent_count' => 1,
+                    'last_sent_at' => now(),
+                ]);
+            } else {
+                DB::table('email_test_counters')
+                    ->where('id', $row->id)
+                    ->update([
+                        'sent_count' => (int) $row->sent_count + 1,
+                        'last_sent_at' => now(),
+                    ]);
+            }
+
+            return true;
+        });
     }
 }
 

@@ -101,6 +101,9 @@ php artisan key:generate
   - For Resend: `RESEND_KEY=your_key`
   - For Mailgun: Configure in `config/services.php`
 - **IMAP operations** use `webklex/php-imap` library (already in composer.json) for reading emails via OAuth
+- `MAIL_TEST_EMAIL_DAILY_LIMIT` (default `30`) limits external emails per recipient/day. It is reused by:
+  - seller/buyer external deal notifications,
+  - fee-wallet verification code flow (`request-fee-wallet-verification-code`).
 
 **Lot mailbox (IMAP chat for exchange lots):**
 - See [docs/LOT_MAILBOX_AND_IMAP_CHAT.md](docs/LOT_MAILBOX_AND_IMAP_CHAT.md) for full documentation
@@ -180,6 +183,32 @@ After starting the server, documentation is available at:
 - `POST /api/v1/exchange-lots` - Create lot
 - `PUT /api/v1/exchange-lots/{id}` - Update lot
 - `DELETE /api/v1/exchange-lots/{id}` - Delete lot
+
+#### Escrow Tokens (protected utility endpoints)
+- `POST /api/v1/escrow-tokens/request-fee-wallet-verification-code` - Send one-time code to email for fee wallet update
+- `POST /api/v1/escrow-tokens/set-fee-wallet-address` - Set one Core `*_fee_wallet_clean` / `*_fee_wallet_dirty` value
+
+### Fee Wallet Admin Flow (clean / dirty)
+
+This flow allows updating Core fee wallet destination parameters from the client without direct server file access.
+
+1. Client sends `POST /api/v1/escrow-tokens/request-fee-wallet-verification-code` with:
+   - connected mailbox email,
+   - PoW puzzle solution (`puzzle_token` + `puzzle_answer`),
+   - `X-Escrow-Token` header.
+2. API validates limits and sends mailbox code (reuses `MAIL_TEST_EMAIL_DAILY_LIMIT` per recipient/day).
+3. Client sends `POST /api/v1/escrow-tokens/set-fee-wallet-address` with:
+   - `email`,
+   - `verification_code`,
+   - `admin_password`,
+   - `wallet_param` (only `*_fee_wallet_clean` or `*_fee_wallet_dirty`),
+   - `wallet_address` (empty string means clear),
+   - `X-Escrow-Token`.
+4. API resolves Core by token environment and calls Core `POST /api/admin/set-fee-wallet` with `X-Core-Key`.
+
+Notes:
+- Monero (`xmr_*`) fee wallet params are intentionally rejected in this flow.
+- API does not localize messages; client localization applies as usual.
 
 #### Buy Triggers (protected)
 - `GET /api/v1/buy-triggers` - List of triggers
