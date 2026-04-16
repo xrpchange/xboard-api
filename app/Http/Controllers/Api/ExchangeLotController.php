@@ -2701,6 +2701,158 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * Buyer: send crypto to the seller address stored on the pending sale transaction (seller-set crypto payment details).
+     * For AML-token flow this replaces the manual buyer_crypto_tx message: server performs the transfer
+     * and then publishes buyer_crypto_tx with the real blockchain tx id.
+     */
+    public function buyerCryptoPayoutToSeller(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        if (! $this->requesterIsBuyerForLot($request, $lot)) {
+            return response()->json(['success' => false, 'message' => 'Only the lot buyer can send crypto payout.'], 403);
+        }
+
+        if ($this->lotHasActiveDispute($lot)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Crypto payout is not allowed while a dispute is open.',
+                'error_code' => 'payout_blocked_active_dispute',
+            ], 403);
+        }
+
+        $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($buyerEmail === '') {
+            return response()->json(['success' => false, 'message' => 'No buyer in deal.'], 400);
+        }
+
+        $buyerEscrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+        if (empty($buyerEscrowToken) || ! is_string($buyerEscrowToken)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Full buyer escrow_token required (X-Escrow-Token or body).',
+            ], 422);
+        }
+
+        return DB::transaction(function () use ($lot, $buyerEmail, $buyerEscrowToken): JsonResponse {
+            $transaction = Transaction::query()
+                ->where('exchange_lot_id', $lot->id)
+                ->where('buyer_lot_email', $buyerEmail)
+                ->where('tx_type', 'sale')
+                ->where('status', 'pending')
+                ->orderByDesc('id')
+                ->lockForUpdate()
+                ->first();
+
+            if ($transaction === null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No pending sale transaction for this deal.',
+                    'error_code' => 'no_pending_tx',
+                ], 400);
+            }
+
+            if (! empty($transaction->buyer_crypto_payout_tx_hash)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Crypto payout already submitted for this transaction.',
+                    'error_code' => 'payout_already_sent',
+                    'transaction_id' => $transaction->id,
+                    'crypto_tx_id' => $transaction->buyer_crypto_payout_tx_hash,
+                ], 409);
+            }
+
+            $dest = trim((string) ($transaction->crypto_address ?? ''));
+            if ($dest === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Seller has not set a crypto payment address for this deal.',
+                    'error_code' => 'seller_crypto_address_missing',
+                ], 400);
+            }
+
+            $amount = (float) $transaction->amount;
+            if ($amount <= 0) {
+                return response()->json(['success' => false, 'message' => 'Invalid transaction amount.'], 422);
+            }
+
+            try {
+                $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($buyerEscrowToken)
+                    ?? self::coreCryptoTypeForBuyerEscrow($lot);
+            } catch (\InvalidArgumentException $e) {
+                return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+            }
+
+            [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($buyerEscrowToken);
+            $timeout = (int) config('services.core.timeout', 120);
+            $payload = [
+                'exchange_lot_id' => (string) $lot->id,
+                'laravel_transaction_id' => $transaction->id,
+                'escrow_token' => $buyerEscrowToken,
+                'destination_address' => $dest,
+                'amount' => $amount,
+                'crypto_type' => $cryptoType,
+                'native_amount' => 0.0,
+                'aml_required' => (bool) $lot->aml,
+            ];
+
+            $req = Http::timeout($timeout)->asJson();
+            if ($coreKey !== '') {
+                $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+            }
+            $resp = $req->post(rtrim($coreUrl, '/') . '/api/deal-payout-to-seller-address', $payload);
+
+            if (! $resp->successful()) {
+                $body = $resp->json();
+                $message = is_array($body) ? (string) ($body['message'] ?? 'Core payout failed') : $resp->body();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'error_code' => is_array($body) ? ($body['error_code'] ?? 'core_payout_failed') : 'core_payout_failed',
+                    'aml' => is_array($body) ? ($body['aml'] ?? null) : null,
+                ], $resp->status() >= 500 ? 502 : 422);
+            }
+
+            $body = $resp->json();
+            $cryptoTxId = '';
+            if (is_array($body) && isset($body['data']['transaction_id'])) {
+                $cryptoTxId = trim((string) $body['data']['transaction_id']);
+            }
+            if ($cryptoTxId === '') {
+                $cryptoTxId = 'unknown';
+            }
+
+            $transaction->buyer_crypto_payout_tx_hash = $cryptoTxId;
+            $transaction->save();
+
+            $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot))
+                ?? $lot->seller_lot_email;
+            $tagJson = json_encode([
+                't' => 'buyer_crypto_tx',
+                'lot_id' => (int) $lot->id,
+                'tx_ref' => $cryptoTxId,
+                'laravel_transaction_id' => $transaction->id,
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $this->insertDealChatMessage(
+                $lot,
+                'buyer',
+                config('mail.from.address', 'noreply@xdexboard.com'),
+                $sellerEmailForChat,
+                'Buyer sent crypto to the seller address via escrow token.',
+                $tagJson
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Crypto sent to seller address. Seller verification step is now active.',
+                'transaction_id' => $transaction->id,
+                'crypto_tx_id' => $cryptoTxId,
+                'destination_address' => $dest,
+                'core_response' => is_array($body) ? $body : [],
+            ]);
+        });
+    }
+
+    /**
      * Seller: real escrow token balance from Core (for deal window). Same auth as chat (seller wallet match).
      */
     public function sellerDealEscrowBalance(Request $request, ExchangeLot $lot): JsonResponse
@@ -2841,6 +2993,7 @@ class ExchangeLotController extends Controller
                 'amount' => $amount,
                 'crypto_type' => $cryptoType,
                 'native_amount' => 0.0,
+                'aml_required' => (bool) $lot->aml,
             ];
 
             $req = Http::timeout($timeout)->asJson();
@@ -2857,6 +3010,7 @@ class ExchangeLotController extends Controller
                     'success' => false,
                     'message' => $message,
                     'error_code' => is_array($body) ? ($body['error_code'] ?? 'core_payout_failed') : 'core_payout_failed',
+                    'aml' => is_array($body) ? ($body['aml'] ?? null) : null,
                 ], $resp->status() >= 500 ? 502 : 422);
             }
 
@@ -3328,6 +3482,17 @@ class ExchangeLotController extends Controller
         $lotWalletStr = $lotWalletRaw !== null ? $this->normalizeWalletAddressForComparison($lotWalletRaw) : '';
 
         return $requesterWalletStr !== '' && $lotWalletStr !== '' && hash_equals($lotWalletStr, $requesterWalletStr);
+    }
+
+    private function requesterIsBuyerForLot(Request $request, ExchangeLot $lot): bool
+    {
+        $tokenData = $request->input('escrow_token_data', []);
+        $tokenHash = is_array($tokenData) && isset($tokenData['token_hash'])
+            ? strtolower(trim((string) $tokenData['token_hash']))
+            : '';
+        $buyerTokenHash = strtolower(trim((string) ($lot->buyer_escrow_token_hash ?? '')));
+
+        return $tokenHash !== '' && $buyerTokenHash !== '' && hash_equals($buyerTokenHash, $tokenHash);
     }
 
     /**
