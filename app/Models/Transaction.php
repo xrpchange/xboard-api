@@ -22,6 +22,7 @@ class Transaction extends Model
 
     protected $fillable = [
         'tx_hash',
+        'buyer_crypto_payout_tx_hash',
         'seller_crypto_payout_tx_hash',
         'tx_type',
         'from_address',
