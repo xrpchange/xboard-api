@@ -17,7 +17,7 @@ Check Laravel log line **`RefData: GET /banks sandbox_virtual_bank`**:
 
 - Merged into bank list responses for the country whose `countries.code` matches **`SANDBOX_VIRTUAL_BANK_COUNTRY_CODE`** (default `RUS`) when the request host matches the rules above.
 - Lots use `virtual_sandbox_bank_code` in the database (`bank_id` stays `null`). The API still exposes a stable **`bank_id`** for clients (see below).
-- After **send payment details** (bank flow) for the virtual sandbox bank, the API sends a synthetic **PDF receipt** to the counterparty notification email from the lot:
+- After **bank payment details are sent** for the virtual sandbox bank, the API sends a synthetic **PDF receipt** to the counterparty notification email from the lot. This applies both to the regular first leg (`send payment details`) and to the reverse second leg when the buyer sends bank destination details (`buyer_destination_details`):
   - if `transactions.payment_details_set_by = seller` -> recipient is `exchange_lots.buyer_notification_email`;
   - if `transactions.payment_details_set_by = buyer` -> recipient is `exchange_lots.seller_notification_email`.
 - Receipt recipient is determined by deal side (who set payment details), not by mailbox discovery and not by `PAYMENT_VERIFICATION_EMAIL`.

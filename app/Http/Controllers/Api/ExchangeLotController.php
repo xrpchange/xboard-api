@@ -172,18 +172,18 @@ class ExchangeLotController extends Controller
             if ($coreKey !== '') {
                 $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
             }
-            $resp = $req->post(rtrim($coreUrl, '/') . '/api/delete-reservation-by-buyer', [
+            $resp = $req->post(rtrim($coreUrl, '/') . '/api/complete-reservation-by-buyer', [
                 'exchange_lot_id' => (string) $lot->id,
                 'escrow_token' => $buyerToken,
                 'crypto_type' => $cryptoType,
             ]);
             if ($resp->successful()) {
-                Log::info('[exchange-lots] Core delete-reservation-by-buyer OK (amicable buyer completion)', [
+                Log::info('[exchange-lots] Core complete-reservation-by-buyer OK (amicable buyer completion)', [
                     'lot_id' => $lot->id,
                     'reason' => $reason,
                 ]);
             } else {
-                Log::warning('[exchange-lots] Core delete-reservation-by-buyer failed (amicable buyer completion)', [
+                Log::warning('[exchange-lots] Core complete-reservation-by-buyer failed (amicable buyer completion)', [
                     'lot_id' => $lot->id,
                     'reason' => $reason,
                     'status' => $resp->status(),
@@ -191,7 +191,7 @@ class ExchangeLotController extends Controller
                 ]);
             }
         } catch (\Throwable $e) {
-            Log::warning('[exchange-lots] Core delete-reservation-by-buyer exception (amicable buyer completion)', [
+            Log::warning('[exchange-lots] Core complete-reservation-by-buyer exception (amicable buyer completion)', [
                 'lot_id' => $lot->id,
                 'reason' => $reason,
                 'error' => $e->getMessage(),
@@ -228,18 +228,18 @@ class ExchangeLotController extends Controller
             if ($coreKey !== '') {
                 $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
             }
-            $resp = $req->post(rtrim($coreUrl, '/') . '/api/delete-reservation', [
+            $resp = $req->post(rtrim($coreUrl, '/') . '/api/complete-reservation', [
                 'exchange_lot_id' => (string) $lot->id,
                 'escrow_token' => $sellerEscrowToken,
                 'crypto_type' => $cryptoType,
             ]);
             if ($resp->successful()) {
-                Log::info('[exchange-lots] Core delete-reservation OK (amicable seller timeout completion)', [
+                Log::info('[exchange-lots] Core complete-reservation OK (amicable seller timeout completion)', [
                     'lot_id' => $lot->id,
                     'reason' => $reason,
                 ]);
             } else {
-                Log::warning('[exchange-lots] Core delete-reservation failed (amicable seller timeout completion)', [
+                Log::warning('[exchange-lots] Core complete-reservation failed (amicable seller timeout completion)', [
                     'lot_id' => $lot->id,
                     'reason' => $reason,
                     'status' => $resp->status(),
@@ -247,7 +247,7 @@ class ExchangeLotController extends Controller
                 ]);
             }
         } catch (\Throwable $e) {
-            Log::warning('[exchange-lots] Core delete-reservation exception (amicable seller timeout completion)', [
+            Log::warning('[exchange-lots] Core complete-reservation exception (amicable seller timeout completion)', [
                 'lot_id' => $lot->id,
                 'reason' => $reason,
                 'error' => $e->getMessage(),
@@ -2553,20 +2553,52 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * Buyer provides an external crypto destination address for later crypto delivery/verification.
-     * This is for scenarios like: buyer receives crypto and wants the payout to be sent to their address.
+     * Buyer provides destination details for the seller transfer on the second leg of a deal.
+     * Symmetric to {@see self::sendPaymentDetails()} but from the buyer side: depending on
+     * the currency the buyer expects to receive, details can be either a crypto address
+     * (payment_type=crypto) or free-form bank requisites (payment_type=bank, bank_data).
      *
-     * The call updates the latest pending sale transaction for this buyer + lot by setting `transactions.crypto_address`.
+     * The call updates the latest pending sale transaction for this buyer + lot by setting
+     * `transactions.crypto_address` (crypto) or `transactions.bank_details` (bank).
      */
     public function buyerSetCryptoDestination(Request $request, ExchangeLot $lot): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'address' => 'required|string|max:500',
+            'payment_type' => 'nullable|string|in:crypto,bank',
+            'address' => 'nullable|string|max:500',
+            'crypto_type' => 'nullable|string|max:30',
+            'bank_data' => 'nullable|string|max:5000',
+            'message' => 'nullable|string|max:10000',
         ]);
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
                 'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        // Backward compatibility: older clients sent only `address` (crypto flow).
+        $paymentType = $request->input('payment_type');
+        if ($paymentType === null || $paymentType === '') {
+            $paymentType = $request->filled('bank_data') ? 'bank' : 'crypto';
+        }
+
+        $address = trim((string) $request->input('address', ''));
+        $bankData = trim((string) $request->input('bank_data', ''));
+        $cryptoType = trim((string) $request->input('crypto_type', ''));
+
+        if ($paymentType === 'crypto' && $address === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Crypto destination address must not be empty.',
+                'error_code' => 'validation_error',
+            ], 422);
+        }
+        if ($paymentType === 'bank' && $bankData === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bank transfer details must not be empty.',
+                'error_code' => 'validation_error',
             ], 422);
         }
 
@@ -2610,15 +2642,6 @@ class ExchangeLotController extends Controller
             ], 403);
         }
 
-        $address = trim((string) $request->input('address', ''));
-        if ($address === '') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Crypto destination address must not be empty.',
-                'error_code' => 'validation_error',
-            ], 422);
-        }
-
         // Update the latest pending sale transaction for this buyer + lot.
         $transaction = Transaction::query()
             ->where('exchange_lot_id', $lot->id)
@@ -2646,7 +2669,13 @@ class ExchangeLotController extends Controller
             }
         }
 
-        $transaction->crypto_address = $address;
+        if ($paymentType === 'crypto') {
+            $transaction->crypto_address = $address;
+            $transaction->bank_details = null;
+        } else {
+            $transaction->bank_details = $bankData;
+            $transaction->crypto_address = null;
+        }
         // Buyer provided destination details for transfer in this deal stage.
         $transaction->payment_details_set_by = 'buyer';
         $transaction->save();
@@ -2657,13 +2686,26 @@ class ExchangeLotController extends Controller
             $sellerEmail = (string) $lot->seller_lot_email;
         }
 
-        $tagJson = json_encode([
+        $tag = [
             't' => 'buyer_destination_details',
-            'lot_id' => $lot->id,
-            'tx_id' => $transaction->id,
-            'address' => $address,
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $body = 'Buyer sent destination details for the seller transfer.';
+            'lot_id' => (int) $lot->id,
+            'tx_id' => (int) $transaction->id,
+        ];
+        if ($paymentType === 'crypto') {
+            if ($cryptoType !== '') {
+                $tag['crypto'] = $cryptoType;
+            }
+            $tag['address'] = $address;
+        } else {
+            $tag['bank_data'] = $bankData;
+        }
+        $tagJson = json_encode($tag, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        // Body = what the buyer wrote (shown in chat). Technical data is in X-XBoard-Deal-Tag.
+        $buyerMessage = trim((string) $request->input('message', ''));
+        $body = $buyerMessage !== ''
+            ? $buyerMessage
+            : ($paymentType === 'bank' ? $bankData : $address);
 
         if (!empty($sellerEmail)) {
             try {
@@ -2692,6 +2734,16 @@ class ExchangeLotController extends Controller
             $body,
             $tagJson
         );
+
+        if ($paymentType === 'bank' && SandboxVirtualBankService::lotUsesVirtualSandboxBank($lot)) {
+            $sandboxReceiptAmount = (float) ($transaction->amount ?? 0);
+            if ($sandboxReceiptAmount <= 0) {
+                $sandboxReceiptAmount = $lot->buyer_selected_amount > 0
+                    ? (float) $lot->buyer_selected_amount
+                    : (float) $lot->sell_amount;
+            }
+            $this->sendSandboxVirtualBankReceiptEmail($lot, $transaction, $sandboxReceiptAmount);
+        }
 
         return response()->json([
             'success' => true,
@@ -2832,6 +2884,24 @@ class ExchangeLotController extends Controller
                 'tx_ref' => $cryptoTxId,
                 'laravel_transaction_id' => $transaction->id,
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if (!empty($sellerEmailForChat)) {
+                try {
+                    $this->sendDealEmail(
+                        to: (string) $sellerEmailForChat,
+                        subject: $this->getDealMessageSubject($lot),
+                        fromAddress: config('mail.from.address', 'noreply@xdexboard.com'),
+                        fromName: config('mail.from.name', 'XBoard'),
+                        body: 'Buyer sent crypto to the seller address via escrow token.',
+                        tagJson: $tagJson
+                    );
+                } catch (\Throwable $e) {
+                    Log::warning('[exchange-lots] buyerCryptoPayoutToSeller: failed to send seller mail', [
+                        'lot_id' => $lot->id,
+                        'to' => $sellerEmailForChat,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
             $this->insertDealChatMessage(
                 $lot,
                 'buyer',
@@ -3032,13 +3102,13 @@ class ExchangeLotController extends Controller
                 if ($coreKey !== '') {
                     $reqDel = $reqDel->withHeaders(['X-Core-Key' => $coreKey]);
                 }
-                $reqDel->post(rtrim($coreUrl, '/') . '/api/delete-reservation', [
+                $reqDel->post(rtrim($coreUrl, '/') . '/api/complete-reservation', [
                     'exchange_lot_id' => (string) $lot->id,
                     'escrow_token' => $sellerEscrowToken,
                     'crypto_type' => $cryptoType,
                 ]);
             } catch (\Throwable $e) {
-                Log::warning('[exchange-lots] sellerCryptoPayoutToBuyer: delete-reservation failed', [
+                Log::warning('[exchange-lots] sellerCryptoPayoutToBuyer: complete-reservation failed', [
                     'lot_id' => $lot->id,
                     'error' => $e->getMessage(),
                 ]);
@@ -4663,8 +4733,11 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * For receipt confirmation tags, move receipt links from tmp to permanent storage
-     * and rewrite links in the deal tag payload before sending email/chat.
+     * For deal-tag messages that carry bank-receipt `receipt_links` (buyer
+     * `receipt_confirmation` for the first leg or seller `seller_transfer_tx`
+     * for the second leg in reverse-flow deals), move links from tmp to
+     * permanent storage and rewrite them in the deal tag payload before
+     * sending email/chat.
      *
      * @param array<string, mixed> $dealTagData
      * @param array<string, string> $replacements old_link => new_link (for body text rewrite)
@@ -4672,7 +4745,8 @@ class ExchangeLotController extends Controller
      */
     private function promoteReceiptLinksInDealTag(array $dealTagData, array &$replacements = []): array
     {
-        if (($dealTagData['t'] ?? null) !== 'receipt_confirmation') {
+        $tagType = $dealTagData['t'] ?? null;
+        if ($tagType !== 'receipt_confirmation' && $tagType !== 'seller_transfer_tx') {
             return $dealTagData;
         }
 
@@ -4709,14 +4783,17 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * Persist receipt confirmation links into the latest related transaction.
-     * Stores links from deal tag (receipt_confirmation.receipt_links) as JSON.
+     * Persist bank-receipt links into the latest related transaction.
+     * Accepts both:
+     * - buyer `receipt_confirmation.receipt_links` (first leg — buyer paid bank to seller);
+     * - seller `seller_transfer_tx.receipt_links` (reverse flow second leg — seller paid bank to buyer).
      *
      * @param array<string, mixed>|null $dealTagData
      */
     private function storeReceiptLinksInLatestTransaction(ExchangeLot $lot, ?array $dealTagData): void
     {
-        if (!is_array($dealTagData) || (($dealTagData['t'] ?? null) !== 'receipt_confirmation')) {
+        $tagType = is_array($dealTagData) ? ($dealTagData['t'] ?? null) : null;
+        if (!is_array($dealTagData) || ($tagType !== 'receipt_confirmation' && $tagType !== 'seller_transfer_tx')) {
             return;
         }
 
