@@ -39,10 +39,10 @@ Other server-set fields may be added (e.g. `amount`, `currency`) in the same JSO
 | Value               | Description |
 |---------------------|-------------|
 | `start_deal`        | Buyer opened the deal (e.g. "Start deal — buyer opened the deal window"). Email is sent **to the seller**. Tag includes `lot_id`; may include `selected_amount` (buyer-selected amount) and `buyer_locale` (e.g. `en`, `ru`) for analytics and UI. |
-| `payment_details`   | Seller sent payment instructions: either crypto address or bank + bank_data. **Email body** = seller's text (what they wrote; e.g. bank requisites). Technical data is in the tag; the client shows the body in chat. Buyer uses tag for Core `reservation-by-transaction` with `tx_id`, `crypto`, `address`. |
+| `payment_details`   | Seller sent payment instructions for the **first leg**: either crypto address or bank + bank_data, depending on what the seller must receive on this lot. **Email body** = seller's text (what they wrote; e.g. bank requisites). Technical data is in the tag; the client shows the body in chat. Buyer uses tag for Core `reservation-by-transaction` with `tx_id`, `crypto`, `address`. |
 | `receipt_confirmation` | Buyer sent payment confirmation or the first transaction number. This marks the end of the buyer payment step and starts seller-side verification. |
 | `seller_received_funds` | Seller confirmed that the first-leg funds were received. This starts the seller transfer stage. |
-| `buyer_destination_details` | Buyer sent destination details for the seller transfer. Shape mirrors `payment_details` but in the opposite direction: either crypto (`crypto` + `address`) or bank (`bank_data`). **Email body** = buyer's free-form `message` (shown in chat); technical fields live in the tag. This event must be present in chat so the UI can be restored only from tags. |
+| `buyer_destination_details` | Buyer sent destination details for the **second leg** (where the seller must transfer funds to the buyer). Shape mirrors `payment_details` but in the opposite direction: either crypto (`crypto` + `address`) or bank (`bank_data`), depending on what the buyer must receive on this lot. **Email body** = buyer's free-form `message` (shown in chat); technical fields live in the tag. This event must be present in chat so the UI can be restored only from tags. |
 | `seller_transfer_tx` | Seller sent the outgoing transfer transaction number/hash for the second leg. Buyer uses this event before the final completion confirmation. |
 | `deal_completed_buyer` | Buyer confirmed final completion of the deal. |
 | `buyer_exited`      | Buyer cancelled the deal (e.g. via buyer-cancel-deal). Email is sent **to the seller**. Tag includes `lot_id`. The seller app, when it sees a message with this tag in the deal mailbox, unblocks the "Exit deal" button so the seller can close the deal. |
@@ -137,6 +137,8 @@ Important:
 2. **Parse subject** as JSON. If parsing fails, treat as plain message (no tag).
 3. **If `t === "payment_details"`:**
    - Show in chat: for crypto — address (and crypto); for fiat — bank (swift or id) + bank_data; plus any free text from body.
+   - `crypto -> crypto` lots are valid, so both `payment_details` and `buyer_destination_details` may contain crypto addresses.
+   - `fiat -> fiat` lots are not allowed by product rules and must be rejected at lot create/update validation time.
    - When `tx_id` is present, buyer can call Core open endpoint `GET/POST reservation-by-transaction` with `transaction_id=tx_id`, `crypto_type=crypto`, `wallet_address=address` to get reserved amount.
 4. **Tag location:** The tag is sent in the **X-XBoard-Deal-Tag** header so the subject can stay human-readable. Client must read `X-XBoard-Deal-Tag` when displaying deal messages (e.g. from IMAP headers or from the mailbox/chat API that exposes headers). If the header is missing, the message is treated as a plain user message. The email body contains a human-readable summary for the user.
 

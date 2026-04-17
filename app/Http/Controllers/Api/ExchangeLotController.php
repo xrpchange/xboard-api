@@ -822,6 +822,12 @@ class ExchangeLotController extends Controller
         if (!$toFiat && !$toCrypto) {
             return response()->json(['success' => false, 'errors' => ['to_currency' => ['Unknown currency code.']]], 422);
         }
+        if ($fromFiat && $toFiat) {
+            return response()->json([
+                'success' => false,
+                'errors' => ['to_currency' => ['Fiat to fiat exchange lots are not allowed.']],
+            ], 422);
+        }
         $reqMultisig = (bool) ($validated['escrow_multisig_2_of_3_required'] ?? false);
         $multisigErr = $this->validateEscrowMultisig2Of3LotRules($reqMultisig, $buyAmounts, $fromCrypto, $toCrypto);
         if ($multisigErr !== null) {
@@ -1079,6 +1085,12 @@ class ExchangeLotController extends Controller
         }
         if (!$toFiat && !$toCrypto) {
             return response()->json(['success' => false, 'errors' => ['to_currency' => ['Unknown currency code.']]], 422);
+        }
+        if ($fromFiat && $toFiat) {
+            return response()->json([
+                'success' => false,
+                'errors' => ['to_currency' => ['Fiat to fiat exchange lots are not allowed.']],
+            ], 422);
         }
 
         // Effective flag: DB value unless the client sends an update (prevents multi-tier buy_amounts on multisig lots when the key is omitted).
