@@ -2834,7 +2834,7 @@ class ExchangeLotController extends Controller
             }
 
             [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($buyerEscrowToken);
-            $timeout = (int) config('services.core.timeout', 120);
+            $timeout = (int) config('services.core.payout_timeout', 120);
             $payload = [
                 'exchange_lot_id' => (string) $lot->id,
                 'laravel_transaction_id' => $transaction->id,
@@ -3054,7 +3054,7 @@ class ExchangeLotController extends Controller
             }
 
             [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
-            $timeout = (int) config('services.core.timeout', 120);
+            $timeout = (int) config('services.core.payout_timeout', 120);
             $payload = [
                 'exchange_lot_id' => (string) $lot->id,
                 'laravel_transaction_id' => $transaction->id,

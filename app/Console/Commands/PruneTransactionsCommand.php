@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Permanently delete transactions older than 15 days.
- * Deletes row-by-row so Transaction::deleting runs: completed sale rows add amount to exchange_lots.sold_crypto_amount.
+ * sold_crypto_amount is accumulated when a sale becomes completed; pruning only removes old rows.
  * Run manually: php artisan transactions:prune
  * Scheduled daily via bootstrap/app.php.
  */
