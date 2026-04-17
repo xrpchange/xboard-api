@@ -185,10 +185,12 @@ class ExchangeLot extends Model
      */
     public function getSoldAmountAttribute(): float
     {
-        return (float) $this->transactions()
+        $liveCompletedSales = (float) $this->transactions()
             ->where('tx_type', 'sale')
             ->where('status', 'completed')
             ->sum('amount');
+
+        return (float) ($this->sold_crypto_amount ?? 0) + $liveCompletedSales;
     }
 
     public function scopeActive($query)
