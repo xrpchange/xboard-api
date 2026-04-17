@@ -180,17 +180,12 @@ class ExchangeLot extends Model
     }
 
     /**
-     * Sum of completed sale amounts for this lot (from transactions table).
+     * Total completed sale volume already accumulated on the lot.
      * Use for "sold amount" / "remaining = sell_amount - sold_amount".
      */
     public function getSoldAmountAttribute(): float
     {
-        $liveCompletedSales = (float) $this->transactions()
-            ->where('tx_type', 'sale')
-            ->where('status', 'completed')
-            ->sum('amount');
-
-        return (float) ($this->sold_crypto_amount ?? 0) + $liveCompletedSales;
+        return (float) ($this->sold_crypto_amount ?? 0);
     }
 
     public function scopeActive($query)

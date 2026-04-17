@@ -379,6 +379,7 @@ Simple access to core (XRPChangeCore) via Laravel HTTP client:
 - `url`: Core URL
 - `key`: Authorization key (optional)
 - `timeout`: HTTP request timeout (seconds)
+- `payout_timeout`: Longer timeout for on-chain payout / AML routes
 
 ENV example:
 
@@ -386,6 +387,7 @@ ENV example:
 CORE_URL=https://api.core.xdexboard.com
 CORE_KEY=your_api_key
 CORE_TIMEOUT=10
+CORE_PAYOUT_TIMEOUT=120
 PAYMENT_VERIFICATION_EMAIL=check@xdexboard.com
 ```
 
