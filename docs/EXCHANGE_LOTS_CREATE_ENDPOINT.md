@@ -91,6 +91,7 @@
 Дополнительные проверки на стороне API:
 - Если после фильтрации в `buy_amounts` не осталось ни одного положительного числа — 422 с ошибкой по полю `buy_amounts` («At least one positive amount is required.»).
 - Если в `buy_amounts` несколько значений, а `rate` не передан или ≤ 0 — 422 с ошибкой по полю `rate` («Rate is required when multiple buy_amounts are specified.»).
+- Если и `from_currency`, и `to_currency` распознаны как fiat — 422 с ошибкой: `fiat -> fiat` лоты запрещены; хотя бы одна сторона пары должна быть crypto / stablecoin.
 
 ---
 
@@ -102,6 +103,7 @@
 4. **`buy_amounts`** — JSON-массив чисел (сколько хотим получить по частям); минимум одно число > 0.
 5. **`rate`** — при одном `buy_amount` не передавать (API вычислит); при нескольких — обязательно.
 6. **`crypto_currency_id`** — из Core; **`wallet_address`** — полная открытая часть (public part) эскроу-токена в виде JSON. При поиске лотов: параметр `wallet_address` (или `wallet_address[]`) — один или несколько public part; API извлекает `token_hash` из каждого и фильтрует по `wallet_hash IN (...)` (в колонке хранится `token_hash`).
+7. Пара `fiat -> fiat` недопустима: по продуктовым правилам минимум одна сторона лота должна быть crypto / stablecoin.
 
 ---
 
