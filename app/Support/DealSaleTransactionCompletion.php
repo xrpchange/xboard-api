@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\ExchangeLot;
 use App\Models\Transaction;
+use Illuminate\Support\Facades\DB;
 
 /**
  * When the buyer posts deal_completed_buyer in chat, mark in-flight sale rows as completed for lot accounting.
@@ -51,10 +52,20 @@ final class DealSaleTransactionCompletion
      */
     public static function markPendingSaleTransactionsCompleted(ExchangeLot $lot): int
     {
-        return Transaction::query()
-            ->where('exchange_lot_id', $lot->id)
-            ->where('tx_type', 'sale')
-            ->where('status', 'pending')
-            ->update(['status' => 'completed', 'updated_at' => now()]);
+        return DB::transaction(function () use ($lot): int {
+            $transactions = Transaction::query()
+                ->where('exchange_lot_id', $lot->id)
+                ->where('tx_type', 'sale')
+                ->where('status', 'pending')
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($transactions as $transaction) {
+                $transaction->status = 'completed';
+                $transaction->save();
+            }
+
+            return $transactions->count();
+        });
     }
 }
