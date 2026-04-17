@@ -172,22 +172,42 @@ class ExchangeLotController extends Controller
             if ($coreKey !== '') {
                 $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
             }
-            $resp = $req->post(rtrim($coreUrl, '/') . '/api/complete-reservation-by-buyer', [
+            $coreEndpoint = rtrim($coreUrl, '/') . '/api/complete-reservation-by-buyer';
+            Log::info('[exchange-lots] Core complete-reservation-by-buyer start (amicable buyer completion)', [
+                'lot_id' => $lot->id,
+                'reason' => $reason,
+                'core_endpoint' => $coreEndpoint,
+                'timeout_seconds' => $timeout,
+                'crypto_type' => $cryptoType,
+            ]);
+            $startedAt = microtime(true);
+            $resp = $req->post($coreEndpoint, [
                 'exchange_lot_id' => (string) $lot->id,
                 'escrow_token' => $buyerToken,
                 'crypto_type' => $cryptoType,
+                'aml_required' => (bool) $lot->aml,
             ]);
+            $responseBody = $resp->json();
+            $responseBodyPreview = is_array($responseBody)
+                ? json_encode($responseBody, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                : $resp->body();
+            if (is_string($responseBodyPreview) && strlen($responseBodyPreview) > 500) {
+                $responseBodyPreview = substr($responseBodyPreview, 0, 500) . '...';
+            }
             if ($resp->successful()) {
                 Log::info('[exchange-lots] Core complete-reservation-by-buyer OK (amicable buyer completion)', [
                     'lot_id' => $lot->id,
                     'reason' => $reason,
+                    'took_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                    'core_body_preview' => $responseBodyPreview,
                 ]);
             } else {
                 Log::warning('[exchange-lots] Core complete-reservation-by-buyer failed (amicable buyer completion)', [
                     'lot_id' => $lot->id,
                     'reason' => $reason,
+                    'took_ms' => (int) round((microtime(true) - $startedAt) * 1000),
                     'status' => $resp->status(),
-                    'body' => $resp->body(),
+                    'body' => $responseBodyPreview,
                 ]);
             }
         } catch (\Throwable $e) {
@@ -228,22 +248,42 @@ class ExchangeLotController extends Controller
             if ($coreKey !== '') {
                 $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
             }
-            $resp = $req->post(rtrim($coreUrl, '/') . '/api/complete-reservation', [
+            $coreEndpoint = rtrim($coreUrl, '/') . '/api/complete-reservation';
+            Log::info('[exchange-lots] Core complete-reservation start (amicable seller timeout completion)', [
+                'lot_id' => $lot->id,
+                'reason' => $reason,
+                'core_endpoint' => $coreEndpoint,
+                'timeout_seconds' => $timeout,
+                'crypto_type' => $cryptoType,
+            ]);
+            $startedAt = microtime(true);
+            $resp = $req->post($coreEndpoint, [
                 'exchange_lot_id' => (string) $lot->id,
                 'escrow_token' => $sellerEscrowToken,
                 'crypto_type' => $cryptoType,
+                'aml_required' => (bool) $lot->aml,
             ]);
+            $responseBody = $resp->json();
+            $responseBodyPreview = is_array($responseBody)
+                ? json_encode($responseBody, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                : $resp->body();
+            if (is_string($responseBodyPreview) && strlen($responseBodyPreview) > 500) {
+                $responseBodyPreview = substr($responseBodyPreview, 0, 500) . '...';
+            }
             if ($resp->successful()) {
                 Log::info('[exchange-lots] Core complete-reservation OK (amicable seller timeout completion)', [
                     'lot_id' => $lot->id,
                     'reason' => $reason,
+                    'took_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                    'core_body_preview' => $responseBodyPreview,
                 ]);
             } else {
                 Log::warning('[exchange-lots] Core complete-reservation failed (amicable seller timeout completion)', [
                     'lot_id' => $lot->id,
                     'reason' => $reason,
+                    'took_ms' => (int) round((microtime(true) - $startedAt) * 1000),
                     'status' => $resp->status(),
-                    'body' => $resp->body(),
+                    'body' => $responseBodyPreview,
                 ]);
             }
         } catch (\Throwable $e) {
@@ -2835,6 +2875,7 @@ class ExchangeLotController extends Controller
 
             [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($buyerEscrowToken);
             $timeout = (int) config('services.core.payout_timeout', 120);
+            $destinationPreview = strlen($dest) > 24 ? (substr($dest, 0, 24) . '...') : $dest;
             $payload = [
                 'exchange_lot_id' => (string) $lot->id,
                 'laravel_transaction_id' => $transaction->id,
@@ -2850,11 +2891,61 @@ class ExchangeLotController extends Controller
             if ($coreKey !== '') {
                 $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
             }
-            $resp = $req->post(rtrim($coreUrl, '/') . '/api/deal-payout-to-seller-address', $payload);
+            $coreEndpoint = rtrim($coreUrl, '/') . '/api/deal-payout-to-seller-address';
+            Log::info('[exchange-lots] buyerCryptoPayoutToSeller: core payout start', [
+                'lot_id' => $lot->id,
+                'transaction_id' => $transaction->id,
+                'core_endpoint' => $coreEndpoint,
+                'timeout_seconds' => $timeout,
+                'crypto_type' => $cryptoType,
+                'amount' => $amount,
+                'destination_preview' => $destinationPreview,
+                'aml_required' => (bool) $lot->aml,
+            ]);
+            $startedAt = microtime(true);
+            try {
+                $resp = $req->post($coreEndpoint, $payload);
+            } catch (\Throwable $e) {
+                Log::warning('[exchange-lots] buyerCryptoPayoutToSeller: core payout exception', [
+                    'lot_id' => $lot->id,
+                    'transaction_id' => $transaction->id,
+                    'core_endpoint' => $coreEndpoint,
+                    'timeout_seconds' => $timeout,
+                    'took_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                    'exception_class' => $e::class,
+                    'exception' => $e->getMessage(),
+                ]);
+                throw $e;
+            }
+            $responseBody = $resp->json();
+            $responseBodyPreview = is_array($responseBody)
+                ? json_encode($responseBody, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                : $resp->body();
+            if (is_string($responseBodyPreview) && strlen($responseBodyPreview) > 500) {
+                $responseBodyPreview = substr($responseBodyPreview, 0, 500) . '...';
+            }
+            Log::info('[exchange-lots] buyerCryptoPayoutToSeller: core payout response', [
+                'lot_id' => $lot->id,
+                'transaction_id' => $transaction->id,
+                'took_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                'core_http_status' => $resp->status(),
+                'core_successful' => $resp->successful(),
+                'core_transaction_id' => is_array($responseBody) ? ($responseBody['data']['transaction_id'] ?? null) : null,
+                'core_idempotent_replay' => is_array($responseBody) ? ($responseBody['data']['idempotent_replay'] ?? null) : null,
+                'core_body_preview' => $responseBodyPreview,
+            ]);
 
             if (! $resp->successful()) {
-                $body = $resp->json();
+                $body = $responseBody;
                 $message = is_array($body) ? (string) ($body['message'] ?? 'Core payout failed') : $resp->body();
+                Log::warning('[exchange-lots] buyerCryptoPayoutToSeller: core payout non-success', [
+                    'lot_id' => $lot->id,
+                    'transaction_id' => $transaction->id,
+                    'core_http_status' => $resp->status(),
+                    'error_code' => is_array($body) ? ($body['error_code'] ?? 'core_payout_failed') : 'core_payout_failed',
+                    'message' => $message,
+                    'core_body_preview' => $responseBodyPreview,
+                ]);
 
                 return response()->json([
                     'success' => false,
@@ -2864,7 +2955,7 @@ class ExchangeLotController extends Controller
                 ], $resp->status() >= 500 ? 502 : 422);
             }
 
-            $body = $resp->json();
+            $body = $responseBody;
             $cryptoTxId = '';
             if (is_array($body) && isset($body['data']['transaction_id'])) {
                 $cryptoTxId = trim((string) $body['data']['transaction_id']);
@@ -2875,6 +2966,12 @@ class ExchangeLotController extends Controller
 
             $transaction->buyer_crypto_payout_tx_hash = $cryptoTxId;
             $transaction->save();
+            Log::info('[exchange-lots] buyerCryptoPayoutToSeller: payout success', [
+                'lot_id' => $lot->id,
+                'transaction_id' => $transaction->id,
+                'crypto_tx_id' => $cryptoTxId,
+                'core_idempotent_replay' => is_array($body) ? ($body['data']['idempotent_replay'] ?? null) : null,
+            ]);
 
             $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot))
                 ?? $lot->seller_lot_email;
@@ -3055,6 +3152,7 @@ class ExchangeLotController extends Controller
 
             [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
             $timeout = (int) config('services.core.payout_timeout', 120);
+            $destinationPreview = strlen($dest) > 24 ? (substr($dest, 0, 24) . '...') : $dest;
             $payload = [
                 'exchange_lot_id' => (string) $lot->id,
                 'laravel_transaction_id' => $transaction->id,
@@ -3070,11 +3168,61 @@ class ExchangeLotController extends Controller
             if ($coreKey !== '') {
                 $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
             }
-            $resp = $req->post(rtrim($coreUrl, '/') . '/api/deal-payout-to-buyer-address', $payload);
+            $coreEndpoint = rtrim($coreUrl, '/') . '/api/deal-payout-to-buyer-address';
+            Log::info('[exchange-lots] sellerCryptoPayoutToBuyer: core payout start', [
+                'lot_id' => $lot->id,
+                'transaction_id' => $transaction->id,
+                'core_endpoint' => $coreEndpoint,
+                'timeout_seconds' => $timeout,
+                'crypto_type' => $cryptoType,
+                'amount' => $amount,
+                'destination_preview' => $destinationPreview,
+                'aml_required' => (bool) $lot->aml,
+            ]);
+            $startedAt = microtime(true);
+            try {
+                $resp = $req->post($coreEndpoint, $payload);
+            } catch (\Throwable $e) {
+                Log::warning('[exchange-lots] sellerCryptoPayoutToBuyer: core payout exception', [
+                    'lot_id' => $lot->id,
+                    'transaction_id' => $transaction->id,
+                    'core_endpoint' => $coreEndpoint,
+                    'timeout_seconds' => $timeout,
+                    'took_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                    'exception_class' => $e::class,
+                    'exception' => $e->getMessage(),
+                ]);
+                throw $e;
+            }
+            $responseBody = $resp->json();
+            $responseBodyPreview = is_array($responseBody)
+                ? json_encode($responseBody, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                : $resp->body();
+            if (is_string($responseBodyPreview) && strlen($responseBodyPreview) > 500) {
+                $responseBodyPreview = substr($responseBodyPreview, 0, 500) . '...';
+            }
+            Log::info('[exchange-lots] sellerCryptoPayoutToBuyer: core payout response', [
+                'lot_id' => $lot->id,
+                'transaction_id' => $transaction->id,
+                'took_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                'core_http_status' => $resp->status(),
+                'core_successful' => $resp->successful(),
+                'core_transaction_id' => is_array($responseBody) ? ($responseBody['data']['transaction_id'] ?? null) : null,
+                'core_idempotent_replay' => is_array($responseBody) ? ($responseBody['data']['idempotent_replay'] ?? null) : null,
+                'core_body_preview' => $responseBodyPreview,
+            ]);
 
             if (! $resp->successful()) {
-                $body = $resp->json();
+                $body = $responseBody;
                 $message = is_array($body) ? (string) ($body['message'] ?? 'Core payout failed') : $resp->body();
+                Log::warning('[exchange-lots] sellerCryptoPayoutToBuyer: core payout non-success', [
+                    'lot_id' => $lot->id,
+                    'transaction_id' => $transaction->id,
+                    'core_http_status' => $resp->status(),
+                    'error_code' => is_array($body) ? ($body['error_code'] ?? 'core_payout_failed') : 'core_payout_failed',
+                    'message' => $message,
+                    'core_body_preview' => $responseBodyPreview,
+                ]);
 
                 return response()->json([
                     'success' => false,
@@ -3084,7 +3232,7 @@ class ExchangeLotController extends Controller
                 ], $resp->status() >= 500 ? 502 : 422);
             }
 
-            $body = $resp->json();
+            $body = $responseBody;
             $cryptoTxId = '';
             if (is_array($body) && isset($body['data']['transaction_id'])) {
                 $cryptoTxId = trim((string) $body['data']['transaction_id']);
@@ -3096,6 +3244,12 @@ class ExchangeLotController extends Controller
             $transaction->seller_crypto_payout_tx_hash = $cryptoTxId;
             $transaction->status = 'completed';
             $transaction->save();
+            Log::info('[exchange-lots] sellerCryptoPayoutToBuyer: payout success', [
+                'lot_id' => $lot->id,
+                'transaction_id' => $transaction->id,
+                'crypto_tx_id' => $cryptoTxId,
+                'core_idempotent_replay' => is_array($body) ? ($body['data']['idempotent_replay'] ?? null) : null,
+            ]);
 
             try {
                 $reqDel = Http::timeout((int) config('services.core.timeout', 10));
