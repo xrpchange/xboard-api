@@ -16,6 +16,7 @@ use App\Services\EscrowTokenValidationService;
 use App\Services\Arbiter\ArbiterService;
 use App\Services\ReceiptAttachmentStorage;
 use App\Services\SandboxVirtualBankService;
+use App\Support\ArbiterPromptContextAssembler;
 use App\Support\DealChatTagSequenceValidator;
 use App\Support\DealSaleTransactionCompletion;
 use App\Support\DealSellerOpenLinks;
@@ -4134,7 +4135,9 @@ class ExchangeLotController extends Controller
         ]);
         $hasReplay = $this->hasEvidenceReplay($lot, $fingerprints);
 
-        $arbiterResult = $this->arbiterService->buildArbiterMessage([
+        $arbiterPromptContext = ArbiterPromptContextAssembler::forLot($lot, $requesterSide);
+
+        $arbiterResult = $this->arbiterService->buildArbiterMessage(array_merge([
             'lot_id' => $lot->id,
             'requester_side' => $requesterSide,
             'message' => $contextMessage,
@@ -4146,7 +4149,7 @@ class ExchangeLotController extends Controller
             'email_message_sha256' => strtolower(trim((string) ($validated['email_message_sha256'] ?? ''))),
             'dkim_signature_sha256' => strtolower(trim((string) ($validated['dkim_signature_sha256'] ?? ''))),
             'has_replay' => $hasReplay,
-        ]);
+        ], $arbiterPromptContext));
         $arbiterBody = (string) ($arbiterResult['message'] ?? 'Dispute is escalated to manual review.');
         $verdict = (string) ($arbiterResult['verdict'] ?? 'continue_review');
         $arbiterStatus = (string) ($arbiterResult['arbiter_status'] ?? '');

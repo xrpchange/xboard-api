@@ -1,0 +1,79 @@
+<?php
+
+namespace App\Support;
+
+use App\Models\DealChatMessage;
+use App\Models\ExchangeLot;
+
+/**
+ * Builds non-authoritative context for {@see \App\Services\Arbiter\ArbiterService}.
+ * Server validators and controllers remain the source of truth for enforceable rules.
+ */
+final class ArbiterPromptContextAssembler
+{
+    public const MAX_RULES_CHARS = 14000;
+
+    public const MAX_CHAT_LINES = 45;
+
+    public const MAX_BODY_CHARS = 480;
+
+    public const MAX_TAG_CHARS = 320;
+
+    /**
+     * @return array{
+     *   exchange_rules_digest: string,
+     *   deal_machine_state: string,
+     *   recent_chat_digest: string,
+     * }
+     */
+    public static function forLot(ExchangeLot $lot, string $requesterSide): array
+    {
+        $side = strtolower(trim($requesterSide)) === 'seller' ? 'seller' : 'buyer';
+
+        return [
+            'exchange_rules_digest' => self::loadRulesDigest(),
+            'deal_machine_state' => DealChatTagSequenceValidator::computeStateForLot($lot),
+            'recent_chat_digest' => self::buildChatDigest($lot, $side),
+        ];
+    }
+
+    public static function loadRulesDigest(): string
+    {
+        $path = resource_path('prompts/arbiter_exchange_rules.md');
+        $text = '';
+        if (is_readable($path)) {
+            $raw = (string) file_get_contents($path);
+            $text = trim($raw);
+        }
+        if ($text === '') {
+            $text = 'Rules digest file missing or empty. Be conservative: prefer manual_review; ask for evidence; do not invent payment or address facts.';
+        }
+
+        return mb_substr($text, 0, self::MAX_RULES_CHARS);
+    }
+
+    /**
+     * Same visibility as {@see \App\Http\Controllers\Api\ExchangeLotController::chatMessages} for the requester.
+     */
+    private static function buildChatDigest(ExchangeLot $lot, string $requesterSide): string
+    {
+        $q = DealChatMessage::query()->where('exchange_lot_id', $lot->id);
+        if ($requesterSide === 'seller') {
+            $q->whereNull('deleted_by_seller_at');
+        } else {
+            $q->whereNull('deleted_by_buyer_at');
+        }
+        $rows = $q->orderByDesc('id')->limit(self::MAX_CHAT_LINES)->get()->reverse();
+        $lines = [];
+        foreach ($rows as $m) {
+            $body = (string) ($m->body ?? '');
+            $body = preg_replace('/\s+/u', ' ', $body) ?? $body;
+            $body = mb_substr(trim($body), 0, self::MAX_BODY_CHARS);
+            $tag = mb_substr(trim((string) ($m->deal_tag ?? '')), 0, self::MAX_TAG_CHARS);
+            $side = (string) ($m->sender_side ?? '?');
+            $lines[] = 'id='.$m->id.' side='.$side.' tag='.($tag !== '' ? $tag : '(none)').' body='.($body !== '' ? $body : '(empty)');
+        }
+
+        return $lines === [] ? '(no chat messages in requester view)' : implode("\n", $lines);
+    }
+}
