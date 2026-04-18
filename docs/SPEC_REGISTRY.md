@@ -47,6 +47,7 @@ php artisan test --group spec-ARB-004
 | ARB-006 | Rules-first policy §6 | All providers fail → `provider_unavailable` | `tests/Feature/ArbiterServiceBindingsTest.php` (`test_spec_arb_006_all_providers_fail`) | Uses Laravel `Log` facade (Feature test, not pure Unit). |
 | ARB-007 | Testing checklist §7 + `deal_disputes` | `GET dispute-status` still sees `in_review` row after arbiter | — | **Manual / integration** (needs lot + dispute + HTTP). Add `Feature` test when harness exists. |
 | ARB-008 | Security model | `provider_hint` not used for routing | — | **Manual** (curl checklist §2) or future HTTP feature test. |
+| ARB-009 | `resources/prompts/arbiter_exchange_rules.md` + `ArbiterPromptContextAssembler` | Arbiter LLM user prompt includes rules digest, `deal_machine_state`, and requester-visible `recent_chat_digest` | `tests/Feature/ArbiterExchangeRulesFileTest.php` | Does not assert provider output; file presence + `loadRulesDigest()` smoke. `docs/ARBITER_EXCHANGE_RULES.md` is a pointer stub only. |
 
 ## Workflow for contributors
 

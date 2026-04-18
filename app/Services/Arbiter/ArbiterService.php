@@ -11,7 +11,7 @@ class ArbiterService
     private array $providersById = [];
 
     /**
-     * @param iterable<ArbiterProvider> $providers
+     * @param  iterable<ArbiterProvider>  $providers
      */
     public function __construct(
         iterable $providers,
@@ -28,7 +28,7 @@ class ArbiterService
     /**
      * Rules-first: deterministic checks, then AI for the "gray zone", then optional escalation.
      *
-     * @param array<string, mixed> $context
+     * @param  array<string, mixed>  $context
      * @return array<string, mixed>
      */
     public function buildArbiterMessage(array $context): array
@@ -60,6 +60,7 @@ class ArbiterService
             $provider = $this->providersById[$providerId] ?? null;
             if ($provider === null) {
                 Log::debug('[arbiter] provider_not_registered', ['provider' => $providerId]);
+
                 continue;
             }
 
@@ -81,7 +82,7 @@ class ArbiterService
 
                 if ($confidence < $this->manualReviewThreshold) {
                     return [
-                        'message' => $display . "\n\n" . 'Escalated to manual review due to low confidence in submitted context.',
+                        'message' => $display."\n\n".'Escalated to manual review due to low confidence in submitted context.',
                         'arbiter_status' => 'manual_review',
                         'confidence' => $confidence,
                         'provider_used' => $provider->providerId(),
@@ -126,7 +127,7 @@ class ArbiterService
     }
 
     /**
-     * @param array<string, mixed> $context
+     * @param  array<string, mixed>  $context
      * @return array<string, mixed>
      */
     private function evaluateDeterministicContext(array $context): array
@@ -142,7 +143,7 @@ class ArbiterService
 
         $hasReplay = (bool) ($context['has_replay'] ?? false);
         $confidence = 0.65;
-        if (!$hasEvidence) {
+        if (! $hasEvidence) {
             $confidence -= 0.2;
         }
         if (mb_strlen($message) < 40) {
@@ -178,20 +179,21 @@ class ArbiterService
 
     private function systemPrompt(): string
     {
-        return 'You are an AI arbiter assistant for exchange disputes. '
-            . 'Be neutral and concise. Use facts only. '
-            . 'If data is insufficient, explicitly ask for missing evidence and mention manual review may be required. '
-            . 'After your human-readable summary (4–8 lines), output exactly one more line with no leading spaces: '
-            . ArbiterResponseParser::LINE_PREFIX
-            . '{"verdict":"manual_review"|"favor_buyer"|"favor_seller"|"continue_review"}. '
-            . 'Use favor_buyer when evidence shows the buyer met obligations and crypto should go to the buyer address on file; '
-            . 'favor_seller when the seller should keep the escrow outcome; manual_review when unsure or more evidence is needed; '
-            . 'continue_review when more discussion is needed but not escalated to full manual.';
+        return 'You are an AI arbiter assistant for exchange disputes on this platform. '
+            .'Be neutral and concise. Use facts only from the user prompt (rules digest, deal_machine_state, recent_chat_digest, fingerprints, requester message). '
+            .'The exchange server enforces deal_tag order and payouts; your verdict must stay consistent with that digest and state — you cannot override server rules. '
+            .'If data is insufficient or contradictory, ask specific questions and prefer continue_review or manual_review over favor_buyer or favor_seller. '
+            .'After your human-readable summary (4–8 lines), output exactly one more line with no leading spaces: '
+            .ArbiterResponseParser::LINE_PREFIX
+            .'{"verdict":"manual_review"|"favor_buyer"|"favor_seller"|"continue_review"}. '
+            .'Use favor_buyer when evidence shows the buyer met obligations and crypto should go to the buyer address on file; '
+            .'favor_seller when the seller should keep the escrow outcome; manual_review when unsure or more evidence is needed; '
+            .'continue_review when more discussion is needed but not escalated to full manual.';
     }
 
     /**
-     * @param array<string, mixed> $context
-     * @param array<string, mixed> $rules
+     * @param  array<string, mixed>  $context
+     * @param  array<string, mixed>  $rules
      */
     private function userPrompt(array $context, array $rules): string
     {
@@ -199,23 +201,35 @@ class ArbiterService
         $normalizedTime = trim((string) ($context['normalized_payment_time'] ?? ''));
         $originalTime = trim((string) ($context['payment_time_raw'] ?? ''));
         $providerHint = trim((string) ($context['provider_hint'] ?? ''));
+        $rulesDigest = (string) ($context['exchange_rules_digest'] ?? '');
+        $dealState = trim((string) ($context['deal_machine_state'] ?? ''));
+        $chatDigest = (string) ($context['recent_chat_digest'] ?? '');
 
         return implode("\n", [
             'Dispute context:',
-            '- requester_side: ' . (string) ($context['requester_side'] ?? 'unknown'),
-            '- lot_id: ' . (string) ($context['lot_id'] ?? ''),
-            '- message: ' . (string) ($context['message'] ?? ''),
-            '- bank_timezone: ' . ($bankTimezone !== '' ? $bankTimezone : 'not_provided'),
-            '- payment_time_raw: ' . ($originalTime !== '' ? $originalTime : 'not_provided'),
-            '- normalized_payment_time_utc: ' . ($normalizedTime !== '' ? $normalizedTime : 'not_provided'),
-            '- pdf_sha256: ' . (string) ($context['pdf_sha256'] ?? ''),
-            '- email_message_sha256: ' . (string) ($context['email_message_sha256'] ?? ''),
-            '- dkim_signature_sha256: ' . (string) ($context['dkim_signature_sha256'] ?? ''),
-            '- deterministic_confidence: ' . (string) ($rules['confidence'] ?? 0),
-            '- client_provider_hint: ' . ($providerHint !== '' ? $providerHint : 'none') . ' (informational only; server selects provider)',
+            '- requester_side: '.(string) ($context['requester_side'] ?? 'unknown'),
+            '- lot_id: '.(string) ($context['lot_id'] ?? ''),
+            '- message: '.(string) ($context['message'] ?? ''),
+            '- bank_timezone: '.($bankTimezone !== '' ? $bankTimezone : 'not_provided'),
+            '- payment_time_raw: '.($originalTime !== '' ? $originalTime : 'not_provided'),
+            '- normalized_payment_time_utc: '.($normalizedTime !== '' ? $normalizedTime : 'not_provided'),
+            '- pdf_sha256: '.(string) ($context['pdf_sha256'] ?? ''),
+            '- email_message_sha256: '.(string) ($context['email_message_sha256'] ?? ''),
+            '- dkim_signature_sha256: '.(string) ($context['dkim_signature_sha256'] ?? ''),
+            '- deterministic_confidence: '.(string) ($rules['confidence'] ?? 0),
+            '- client_provider_hint: '.($providerHint !== '' ? $providerHint : 'none').' (informational only; server selects provider)',
+            '',
+            'deal_machine_state (server-computed from deal_tag history; same reducer as API validators):',
+            $dealState !== '' ? $dealState : 'unknown',
+            '',
+            'exchange_rules_digest (canonical guidance; if conflict with server behavior, defer to server — say so in prose):',
+            $rulesDigest !== '' ? $rulesDigest : '(missing)',
+            '',
+            'recent_chat_digest (requester-visible thread; truncated):',
+            $chatDigest !== '' ? $chatDigest : '(none)',
             '',
             'Respond in plain text for the dispute chat (4–8 lines), then the required final line starting with '
-                . ArbiterResponseParser::LINE_PREFIX . ' and compact JSON only.',
+                .ArbiterResponseParser::LINE_PREFIX.' and compact JSON only.',
         ]);
     }
 

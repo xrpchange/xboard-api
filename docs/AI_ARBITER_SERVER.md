@@ -31,8 +31,22 @@ php artisan test --group spec
 | `App\Services\Arbiter\AnthropicArbiterProvider` | Optional: Anthropic Messages API (often needs VPN from RU). |
 | `App\Services\Arbiter\OpenAiArbiterProvider` | Optional fallback: OpenAI Chat Completions API. |
 | `App\Services\Arbiter\ArbiterService` | Rules-first orchestration + failover order. |
+| `App\Support\ArbiterPromptContextAssembler` | Loads `resources/prompts/arbiter_exchange_rules.md`, `DealChatTagSequenceValidator::computeStateForLot`, and a requester-visible chat digest for the LLM user prompt. |
+| `resources/prompts/arbiter_exchange_rules.md` | Canonical English digest for the model (not end-user UI copy). |
 | `App\Providers\AppServiceProvider` | Wires providers and thresholds from config. |
-| `ExchangeLotController::requestArbiterMessage` | Authz, validation, anti-replay check, dispute row update, chat insert. |
+| `ExchangeLotController::requestArbiterMessage` | Authz, validation, anti-replay check, merges arbiter prompt context, dispute row update, chat insert. |
+
+---
+
+## LLM context (exchange rules + chat)
+
+Before calling the provider, the controller attaches (non-authoritative) context:
+
+- **`exchange_rules_digest`** — trimmed contents of **`resources/prompts/arbiter_exchange_rules.md`** (fallback English line if file missing).  
+- **`deal_machine_state`** — `DealChatTagSequenceValidator::computeStateForLot($lot)` (same reducer as `deal_tag` validation).  
+- **`recent_chat_digest`** — last N messages visible to the **requester** (same `deleted_by_*` filters as `GET …/chat-messages`), one line per message with truncated `body` / `deal_tag`.
+
+Enforcement of progression and payouts remains **server-side only**; the digest steers the model toward questions and conservative verdicts.
 
 ---
 
