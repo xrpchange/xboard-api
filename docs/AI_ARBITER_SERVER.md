@@ -81,6 +81,9 @@ ARBITER_FALLBACK_PROVIDERS=openai,deepseek
 | `ARBITER_FALLBACK_PROVIDERS` | `deepseek` | Comma-separated fallback ids. |
 | `ARBITER_NO_AI_BELOW` | `0.35` | Skip LLM when deterministic score is **≤** this value. |
 | `ARBITER_MANUAL_REVIEW_THRESHOLD` | `0.55` | After LLM, mark `arbiter_status=manual_review` when score is below this. |
+| `ARBITER_RESOLVE_ON_FAVOR_BUYER` | `true` | When LLM `verdict` is `favor_buyer` and `arbiter_status` is `in_review`, close `deal_disputes` so seller can use normal crypto payout (unless auto Core payout is on and fails). |
+| `ARBITER_RESOLVE_ON_FAVOR_SELLER` | `false` | Same for `favor_seller`. |
+| `ARBITER_AUTO_CORE_PAYOUT_ON_FAVOR_BUYER` | `false` | When `true`, after `favor_buyer` Laravel calls Core `POST /api/deal-payout-to-buyer-from-reservation` (seller token loaded from `reservations` / `test_reservations`; same `X-Core-Key` as other API-only Core calls). |
 | `ARBITER_GIGACHAT_AUTHORIZATION_KEY` | *(empty)* | Sber **authorization key** (see studio quickstart): paste Base64 value only, or full `Basic …` / `Bearer …` header value. |
 | `ARBITER_GIGACHAT_SCOPE` | `GIGACHAT_API_PERS` | OAuth scope (`GIGACHAT_API_B2B` / `GIGACHAT_API_CORP` for legal entities per Sber docs). |
 | `ARBITER_GIGACHAT_OAUTH_URL` | `https://ngw.devices.sberbank.ru:9443/api/v2/oauth` | Token endpoint. |
@@ -105,10 +108,14 @@ Copy from `.env.example` and set keys only on the server.
 
 ---
 
+## Machine verdict + optional Core payout
+
+Successful LLM replies must end with a line `XBOARD_ARBITER_JSON:{"verdict":"..."}` (see `ArbiterResponseParser`). Verdicts: `manual_review`, `favor_buyer`, `favor_seller`, `continue_review`. Chat body shown to users omits that line.
+
 ## `deal_disputes` vs `arbiter_status`
 
-- The dispute row **`deal_disputes.status`** stays **`in_review`** after an arbiter message so existing clients and `GET .../dispute-status` (which filters `opened` / `in_review`) keep working.  
-- Semantic outcome is in the JSON response and in `deal_chat_messages.deal_tag`: **`arbiter_status`** = `in_review` | `manual_review`.
+- After an arbiter message, **`deal_disputes.status`** is usually **`in_review`** until the dispute is closed (e.g. deal completed, exit, or arbiter **`favor_buyer` / `favor_seller`** resolution per env above).  
+- Semantic outcome is in the JSON response and in `deal_chat_messages.deal_tag`: **`arbiter_status`** = `in_review` | `manual_review`, plus **`arbiter_verdict`** when parsed.
 
 ---
 

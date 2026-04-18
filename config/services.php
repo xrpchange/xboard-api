@@ -90,6 +90,11 @@ return [
         'no_ai_below' => (float) env('ARBITER_NO_AI_BELOW', 0.35),
         // After a successful LLM response, escalate when context score is still below this threshold.
         'manual_review_threshold' => (float) env('ARBITER_MANUAL_REVIEW_THRESHOLD', 0.55),
+        // When LLM verdict is favor_buyer|favor_seller and arbiter_status is in_review, close deal_disputes so deal actions (e.g. seller crypto payout) are no longer blocked. Signing stays client-side (seller escrow token).
+        'resolve_on_favor_buyer' => filter_var(env('ARBITER_RESOLVE_ON_FAVOR_BUYER', true), FILTER_VALIDATE_BOOL),
+        'resolve_on_favor_seller' => filter_var(env('ARBITER_RESOLVE_ON_FAVOR_SELLER', false), FILTER_VALIDATE_BOOL),
+        // When true and arbiter verdict is favor_buyer: Laravel calls Core POST /deal-payout-to-buyer-from-reservation (token from reservations / test_reservations).
+        'auto_core_payout_on_favor_buyer' => filter_var(env('ARBITER_AUTO_CORE_PAYOUT_ON_FAVOR_BUYER', false), FILTER_VALIDATE_BOOL),
         'anthropic' => [
             'api_key' => env('ARBITER_ANTHROPIC_API_KEY', ''),
             'model' => env('ARBITER_ANTHROPIC_MODEL', 'claude-3-7-sonnet-latest'),

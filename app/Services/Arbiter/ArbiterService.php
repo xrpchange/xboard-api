@@ -40,7 +40,8 @@ class ArbiterService
             return $this->manualOnlyOutcome(
                 reasonCode: 'anti_replay_triggered',
                 confidence: $confidence,
-                policy: 'rules_first'
+                policy: 'rules_first',
+                verdict: 'manual_review'
             );
         }
 
@@ -48,7 +49,8 @@ class ArbiterService
             return $this->manualOnlyOutcome(
                 reasonCode: 'insufficient_context',
                 confidence: $confidence,
-                policy: 'rules_first'
+                policy: 'rules_first',
+                verdict: 'manual_review'
             );
         }
 
@@ -66,31 +68,39 @@ class ArbiterService
                     'system_prompt' => $this->systemPrompt(),
                     'user_prompt' => $this->userPrompt($context, $rules),
                 ]);
-                $text = trim((string) ($generated['raw_text'] ?? ''));
-                if ($text === '') {
+                $raw = trim((string) ($generated['raw_text'] ?? ''));
+                if ($raw === '') {
+                    throw new \RuntimeException('Provider returned empty output.');
+                }
+                $split = ArbiterResponseParser::splitDisplayAndVerdict($raw);
+                $display = trim((string) ($split['display'] ?? ''));
+                $parsedVerdict = (string) ($split['verdict'] ?? 'continue_review');
+                if ($display === '') {
                     throw new \RuntimeException('Provider returned empty output.');
                 }
 
                 if ($confidence < $this->manualReviewThreshold) {
                     return [
-                        'message' => $text . "\n\n" . 'Escalated to manual review due to low confidence in submitted context.',
+                        'message' => $display . "\n\n" . 'Escalated to manual review due to low confidence in submitted context.',
                         'arbiter_status' => 'manual_review',
                         'confidence' => $confidence,
                         'provider_used' => $provider->providerId(),
                         'model_version' => (string) ($generated['model'] ?? ''),
                         'reason_code' => 'low_confidence',
                         'policy' => 'rules_first_ai_gray_zone',
+                        'verdict' => 'manual_review',
                     ];
                 }
 
                 return [
-                    'message' => $text,
+                    'message' => $display,
                     'arbiter_status' => 'in_review',
                     'confidence' => $confidence,
                     'provider_used' => $provider->providerId(),
                     'model_version' => (string) ($generated['model'] ?? ''),
                     'reason_code' => 'ai_generated',
                     'policy' => 'rules_first_ai_gray_zone',
+                    'verdict' => $parsedVerdict,
                 ];
             } catch (\Throwable $e) {
                 $lastError = $e;
@@ -110,7 +120,8 @@ class ArbiterService
         return $this->manualOnlyOutcome(
             reasonCode: 'provider_unavailable',
             confidence: $confidence,
-            policy: 'rules_first_provider_failover'
+            policy: 'rules_first_provider_failover',
+            verdict: 'manual_review'
         );
     }
 
@@ -169,7 +180,13 @@ class ArbiterService
     {
         return 'You are an AI arbiter assistant for exchange disputes. '
             . 'Be neutral and concise. Use facts only. '
-            . 'If data is insufficient, explicitly ask for missing evidence and mention manual review may be required.';
+            . 'If data is insufficient, explicitly ask for missing evidence and mention manual review may be required. '
+            . 'After your human-readable summary (4–8 lines), output exactly one more line with no leading spaces: '
+            . ArbiterResponseParser::LINE_PREFIX
+            . '{"verdict":"manual_review"|"favor_buyer"|"favor_seller"|"continue_review"}. '
+            . 'Use favor_buyer when evidence shows the buyer met obligations and crypto should go to the buyer address on file; '
+            . 'favor_seller when the seller should keep the escrow outcome; manual_review when unsure or more evidence is needed; '
+            . 'continue_review when more discussion is needed but not escalated to full manual.';
     }
 
     /**
@@ -197,14 +214,15 @@ class ArbiterService
             '- deterministic_confidence: ' . (string) ($rules['confidence'] ?? 0),
             '- client_provider_hint: ' . ($providerHint !== '' ? $providerHint : 'none') . ' (informational only; server selects provider)',
             '',
-            'Respond in plain text for the dispute chat. 4-8 lines max.',
+            'Respond in plain text for the dispute chat (4–8 lines), then the required final line starting with '
+                . ArbiterResponseParser::LINE_PREFIX . ' and compact JSON only.',
         ]);
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function manualOnlyOutcome(string $reasonCode, float $confidence, string $policy): array
+    private function manualOnlyOutcome(string $reasonCode, float $confidence, string $policy, string $verdict = 'manual_review'): array
     {
         return [
             'message' => $this->manualReviewText($reasonCode),
@@ -214,6 +232,7 @@ class ArbiterService
             'model_version' => null,
             'reason_code' => $reasonCode,
             'policy' => $policy,
+            'verdict' => $verdict,
         ];
     }
 

@@ -22,7 +22,9 @@ class StubArbiterProvider implements ArbiterProvider
     public function generate(array $payload): array
     {
         return [
-            'raw_text' => '[stub] Arbiter reply for automated tests. No external LLM was called.',
+            'raw_text' => "[stub] Arbiter reply for automated tests. No external LLM was called.\n"
+                . ArbiterResponseParser::LINE_PREFIX
+                . '{"verdict":"continue_review"}',
             'provider' => $this->providerId(),
             'model' => 'stub-v1',
         ];
