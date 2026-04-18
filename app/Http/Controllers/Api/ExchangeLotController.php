@@ -16,6 +16,7 @@ use App\Services\EscrowTokenValidationService;
 use App\Services\Arbiter\ArbiterService;
 use App\Services\ReceiptAttachmentStorage;
 use App\Services\SandboxVirtualBankService;
+use App\Support\DealChatTagSequenceValidator;
 use App\Support\DealSaleTransactionCompletion;
 use App\Support\DealSellerOpenLinks;
 use App\Support\SandboxTestReceiptPdf;
@@ -1640,6 +1641,10 @@ class ExchangeLotController extends Controller
                     ]);
                 }
             }
+            // Never let client-supplied deal_tag override control-plane tags (would allow skipping steps).
+            if (in_array($messageType, ['start_deal', 'buyer_exited'], true)) {
+                $customDealTagData = null;
+            }
             if ($messageType === 'buyer_exited') {
                 $tagJson = json_encode(['t' => 'buyer_exited', 'lot_id' => $lot->id]);
             } elseif ($messageType === 'start_deal') {
@@ -1662,6 +1667,15 @@ class ExchangeLotController extends Controller
                 $customDealTagData = $this->promoteReceiptLinksInDealTag($customDealTagData, $receiptLinkReplacements);
                 if (count($receiptLinkReplacements) > 0) {
                     $body = strtr($body, $receiptLinkReplacements);
+                }
+                $lot->refresh();
+                $seqErr = DealChatTagSequenceValidator::validateBuyerCustomDealTag($lot, $customDealTagData);
+                if ($seqErr !== null) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $seqErr['message'],
+                        'error_code' => $seqErr['error_code'],
+                    ], 422);
                 }
                 $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
@@ -2221,8 +2235,21 @@ class ExchangeLotController extends Controller
                 if (count($receiptLinkReplacements) > 0) {
                     $body = strtr($body, $receiptLinkReplacements);
                 }
+                $lot->refresh();
+                $seqErr = DealChatTagSequenceValidator::validateSellerCustomDealTag($lot, $customDealTagData);
+                if ($seqErr !== null) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $seqErr['message'],
+                        'error_code' => $seqErr['error_code'],
+                    ], 422);
+                }
                 $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
+        }
+        if ($messageType === 'seller_exited') {
+            $customDealTagData = null;
+            $tagJson = json_encode(['t' => 'seller_exited', 'lot_id' => $lot->id]);
         }
 
         if (is_array($customDealTagData) && ($customDealTagData['t'] ?? '') === 'deal_completed_seller_timeout') {
@@ -3425,6 +3452,20 @@ class ExchangeLotController extends Controller
                 'message' => 'No buyer in deal for this lot.',
                 'error_code' => 'no_buyer_in_deal',
             ], 400);
+        }
+
+        $lot->refresh();
+        $dealFlowState = DealChatTagSequenceValidator::computeStateForLot($lot);
+        if (in_array($dealFlowState, [
+            DealChatTagSequenceValidator::STATE_COMPLETED,
+            DealChatTagSequenceValidator::STATE_BUYER_EXITED,
+            DealChatTagSequenceValidator::STATE_SELLER_EXITED,
+        ], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot send payment details: this deal is already finished or exited.',
+                'error_code' => 'deal_payment_details_not_allowed_terminal_state',
+            ], 422);
         }
 
         $amount = $lot->buyer_selected_amount > 0
