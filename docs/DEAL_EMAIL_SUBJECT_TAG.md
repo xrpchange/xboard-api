@@ -51,6 +51,54 @@ Other types may be added without changing the format.
 
 ---
 
+## Flow matrix by pair
+
+This is the canonical role matrix for the three supported pair types.
+
+### `crypto -> fiat`
+
+Buyer pays crypto first and receives fiat second.
+
+1. Seller sends `payment_details` with a **crypto address** for the first leg.
+2. Buyer posts payment proof for the first leg:
+   - `buyer_crypto_tx` for manual on-chain reporting; or
+   - server-triggered payout flow for AML crypto-first lots.
+3. Seller confirms `seller_received_funds`.
+4. Buyer sends `buyer_destination_details` with **bank requisites** for the second leg.
+5. Seller sends `seller_transfer_tx` as the second-leg proof (bank receipt / receipt links for bank flow).
+6. Buyer confirms `deal_completed_buyer`.
+
+### `fiat -> crypto`
+
+Buyer pays fiat first and receives crypto second.
+
+1. Seller sends `payment_details` with **bank requisites** for the first leg.
+2. Buyer sends `receipt_confirmation` after bank receipt verification (DKIM / PDF).
+3. Seller confirms `seller_received_funds`.
+4. Buyer sends `buyer_destination_details` with a **crypto address** for the second leg.
+5. Seller sends `seller_transfer_tx` with the outgoing crypto tx id / hash.
+6. Buyer confirms `deal_completed_buyer`.
+
+### `crypto -> crypto`
+
+Buyer pays crypto first and receives crypto second.
+
+1. Seller sends `payment_details` with a **crypto address** for the first leg.
+2. Buyer posts `buyer_crypto_tx` (or AML server payout equivalent).
+3. Seller confirms `seller_received_funds`.
+4. Buyer sends `buyer_destination_details` with a **crypto address** for the second leg.
+5. Seller sends `seller_transfer_tx` with the outgoing crypto tx id / hash.
+6. Buyer confirms `deal_completed_buyer`.
+
+### Important constraints
+
+- `fiat -> fiat` lots are forbidden.
+- `payment_details` is always about the **first leg** (what the seller must receive first).
+- `buyer_destination_details` is always about the **second leg** (where the seller sends funds to the buyer).
+- Buyer-side bank receipt verification belongs only to the stage where the buyer is paying the **first-leg bank transfer**. It must not be re-presented as a later-stage action after buyer payment proof is already submitted.
+
+---
+
 ## Seller external mailbox (`seller_notification_email`)
 
 When `start_deal` is sent and `seller_notification_email` differs from the seller’s lot mailbox, the API sends a **second** copy to that address. The body is the same as the buyer’s localized message **plus one technical line** (English) with an **app deep link** so the seller can tap to open the deal in the Android app:
