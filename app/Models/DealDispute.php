@@ -21,6 +21,7 @@ class DealDispute extends Model
         'resolution',
         'arbiter_id',
         'arbiter_model_version',
+        'arbiter_verdict',
         'opened_at',
         'resolved_at',
         'closed_at',

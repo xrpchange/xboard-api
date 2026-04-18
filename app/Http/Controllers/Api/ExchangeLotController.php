@@ -3390,6 +3390,176 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * @return array{0: string, 1: string}
+     */
+    private function resolveCoreUrlAndKeyForArbiterPayout(ExchangeLot $lot): array
+    {
+        $raw = trim((string) ($lot->wallet_address ?? ''));
+        if ($raw !== '' && str_starts_with($raw, '{')) {
+            try {
+                return $this->escrowTokenValidation->getCoreUrlAndKeyForToken($raw);
+            } catch (\Throwable) {
+                // fall through to default Core
+            }
+        }
+
+        return [
+            rtrim((string) config('services.core.url', ''), '/'),
+            (string) config('services.core.key', ''),
+        ];
+    }
+
+    /**
+     * Payout buyer from seller escrow using Core reservations row (API key). Used when arbiter verdict is favor_buyer.
+     *
+     * @return array{success: bool, error: ?string, crypto_tx_id: ?string}
+     */
+    private function tryArbiterReservationPayoutToBuyer(ExchangeLot $lot): array
+    {
+        $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($buyerEmail === '') {
+            return ['success' => false, 'error' => 'no_buyer', 'crypto_tx_id' => null];
+        }
+
+        try {
+            /** @var array{success: bool, error: ?string, crypto_tx_id: ?string} $out */
+            $out = DB::transaction(function () use ($lot, $buyerEmail): array {
+                $transaction = Transaction::query()
+                    ->where('exchange_lot_id', $lot->id)
+                    ->where('buyer_lot_email', $buyerEmail)
+                    ->where('tx_type', 'sale')
+                    ->where('status', 'pending')
+                    ->orderByDesc('id')
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($transaction === null) {
+                    return ['success' => false, 'error' => 'no_pending_tx', 'crypto_tx_id' => null];
+                }
+
+                if (! empty($transaction->seller_crypto_payout_tx_hash)) {
+                    return [
+                        'success' => true,
+                        'error' => null,
+                        'crypto_tx_id' => (string) $transaction->seller_crypto_payout_tx_hash,
+                    ];
+                }
+
+                $dest = trim((string) ($transaction->crypto_address ?? ''));
+                if ($dest === '') {
+                    return ['success' => false, 'error' => 'buyer_crypto_address_missing', 'crypto_tx_id' => null];
+                }
+
+                $amount = (float) $transaction->amount;
+                if ($amount <= 0) {
+                    return ['success' => false, 'error' => 'invalid_amount', 'crypto_tx_id' => null];
+                }
+
+                try {
+                    $cryptoType = self::coreCryptoTypeForSellerEscrow($lot);
+                } catch (\InvalidArgumentException $e) {
+                    return ['success' => false, 'error' => $e->getMessage(), 'crypto_tx_id' => null];
+                }
+
+                [$coreUrl, $coreKey] = $this->resolveCoreUrlAndKeyForArbiterPayout($lot);
+                $timeout = (int) config('services.core.payout_timeout', 120);
+                $payload = [
+                    'exchange_lot_id' => (string) $lot->id,
+                    'laravel_transaction_id' => $transaction->id,
+                    'destination_address' => $dest,
+                    'amount' => $amount,
+                    'crypto_type' => $cryptoType,
+                    'native_amount' => 0.0,
+                    'aml_required' => (bool) $lot->aml,
+                ];
+
+                $req = Http::timeout($timeout)->asJson();
+                if ($coreKey !== '') {
+                    $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+                }
+                $endpoint = rtrim($coreUrl, '/') . '/api/deal-payout-to-buyer-from-reservation';
+                Log::info('[exchange-lots] arbiterReservationPayout: core start', [
+                    'lot_id' => $lot->id,
+                    'transaction_id' => $transaction->id,
+                    'endpoint' => $endpoint,
+                ]);
+                $resp = $req->post($endpoint, $payload);
+                $responseBody = $resp->json();
+                if (! $resp->successful()) {
+                    $body = is_array($responseBody) ? $responseBody : [];
+                    $msg = (string) ($body['message'] ?? $resp->body());
+
+                    return [
+                        'success' => false,
+                        'error' => 'core_http_' . $resp->status() . ':' . $msg,
+                        'crypto_tx_id' => null,
+                    ];
+                }
+
+                $body = is_array($responseBody) ? $responseBody : [];
+                $cryptoTxId = '';
+                if (isset($body['data']['transaction_id'])) {
+                    $cryptoTxId = trim((string) $body['data']['transaction_id']);
+                }
+                if ($cryptoTxId === '') {
+                    $cryptoTxId = 'unknown';
+                }
+
+                $transaction->seller_crypto_payout_tx_hash = $cryptoTxId;
+                $transaction->status = 'completed';
+                $transaction->save();
+
+                $tagJson = json_encode([
+                    't' => 'deal_completed_seller',
+                    'lot_id' => (int) $lot->id,
+                    'crypto_payout_tx' => $cryptoTxId,
+                    'laravel_transaction_id' => $transaction->id,
+                    'arbiter_reservation_payout' => true,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                try {
+                    $this->sendDealEmail(
+                        to: $buyerEmail,
+                        subject: 'Deal completed',
+                        fromAddress: config('mail.from.address', 'noreply@xdexboard.com'),
+                        fromName: config('mail.from.name', 'XBoard'),
+                        body: 'Seller escrow paid out to buyer address on file (reservation execution). Deal completed.',
+                        tagJson: $tagJson
+                    );
+                } catch (\Throwable $e) {
+                    Log::warning('[exchange-lots] arbiterReservationPayout: mailbox event send failed', [
+                        'lot_id' => $lot->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
+                $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot)) ?? $lot->seller_lot_email;
+                $this->insertDealChatMessage(
+                    $lot,
+                    'seller',
+                    $sellerEmailForChat ?? config('mail.from.address', 'noreply@xdexboard.com'),
+                    $buyerEmail,
+                    'Seller escrow paid out to buyer address on file (reservation execution). Deal completed.',
+                    $tagJson
+                );
+                $tagArr = json_decode($tagJson, true);
+                $this->syncDisputeStateFromDealTag($lot, 'seller', is_array($tagArr) ? $tagArr : null);
+
+                return ['success' => true, 'error' => null, 'crypto_tx_id' => $cryptoTxId];
+            });
+
+            return $out;
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] arbiterReservationPayout: failed', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'error' => $e->getMessage(), 'crypto_tx_id' => null];
+        }
+    }
+
+    /**
      * Create a deal transaction and send payment details email to the buyer (seller only).
      * Subject is human-readable; structured tag is in X-XBoard-Deal-Tag header (JSON).
      * See docs/DEAL_EMAIL_SUBJECT_TAG.md.
@@ -3913,6 +4083,7 @@ class ExchangeLotController extends Controller
                 'closed_at' => $this->toUtcIso8601($activeDispute->closed_at),
                 'arbiter_id' => $activeDispute->arbiter_id,
                 'arbiter_model_version' => $activeDispute->arbiter_model_version,
+                'arbiter_verdict' => $activeDispute->arbiter_verdict,
                 'last_activity_at' => $this->toUtcIso8601($activeDispute->last_activity_at),
             ] : null,
         ]);
@@ -3977,6 +4148,8 @@ class ExchangeLotController extends Controller
             'has_replay' => $hasReplay,
         ]);
         $arbiterBody = (string) ($arbiterResult['message'] ?? 'Dispute is escalated to manual review.');
+        $verdict = (string) ($arbiterResult['verdict'] ?? 'continue_review');
+        $arbiterStatus = (string) ($arbiterResult['arbiter_status'] ?? '');
 
         Log::info('[arbiter] policy_applied', [
             'lot_id' => $lot->id,
@@ -3985,6 +4158,7 @@ class ExchangeLotController extends Controller
             'arbiter_status' => $arbiterResult['arbiter_status'] ?? null,
             'confidence' => $arbiterResult['confidence'] ?? null,
             'reason_code' => $arbiterResult['reason_code'] ?? null,
+            'verdict' => $verdict,
             'has_replay' => $hasReplay,
         ]);
 
@@ -3995,17 +4169,68 @@ class ExchangeLotController extends Controller
             arbiterModelVersion: (string) ($arbiterResult['model_version'] ?? ''),
             status: 'in_review'
         );
+
+        $resolveBuyerConfig = (bool) config('services.arbiter.resolve_on_favor_buyer', true);
+        $resolveSellerConfig = (bool) config('services.arbiter.resolve_on_favor_seller', false);
+        $autoCorePayout = (bool) config('services.arbiter.auto_core_payout_on_favor_buyer', false);
+
+        $payoutResult = ['success' => false, 'error' => null, 'crypto_tx_id' => null];
+        if ($verdict === 'favor_buyer' && $arbiterStatus === 'in_review' && $autoCorePayout) {
+            $payoutResult = $this->tryArbiterReservationPayoutToBuyer($lot);
+        }
+
+        $disputeClosed = false;
+        if ($verdict === 'favor_buyer' && $arbiterStatus === 'in_review') {
+            $payoutOk = $autoCorePayout && ! empty($payoutResult['success']);
+            if ($payoutOk) {
+                $disputeClosed = true;
+            } elseif ($autoCorePayout && empty($payoutResult['success'])) {
+                $dispute->arbiter_verdict = $verdict;
+                $dispute->save();
+            } elseif (! $autoCorePayout && $resolveBuyerConfig) {
+                $this->closeOpenDisputesForLot(
+                    $lot,
+                    'arbiter_ai',
+                    'Arbiter: favor buyer. Dispute closed; seller may send crypto payout to buyer address on file.',
+                    'favor_buyer'
+                );
+                $disputeClosed = true;
+            } else {
+                $dispute->arbiter_verdict = $verdict;
+                $dispute->save();
+            }
+        } elseif ($verdict === 'favor_seller' && $arbiterStatus === 'in_review' && $resolveSellerConfig) {
+            $this->closeOpenDisputesForLot(
+                $lot,
+                'arbiter_ai',
+                'Arbiter: favor seller. Dispute closed.',
+                'favor_seller'
+            );
+            $disputeClosed = true;
+        } else {
+            $dispute->arbiter_verdict = $verdict;
+            $dispute->save();
+        }
+
         $arbiterTag = json_encode([
             't' => 'arbiter_message',
             'lot_id' => (string) $lot->id,
             'arbiter_id' => 'arbiter_ai_v1',
             'arbiter_status' => $arbiterResult['arbiter_status'] ?? null,
+            'arbiter_verdict' => $verdict,
+            'reservation_payout' => [
+                'attempted' => $autoCorePayout && $verdict === 'favor_buyer' && $arbiterStatus === 'in_review',
+                'success' => ! empty($payoutResult['success']),
+                'error' => $payoutResult['error'] ?? null,
+                'crypto_tx_id' => $payoutResult['crypto_tx_id'] ?? null,
+            ],
             'policy' => $arbiterResult['policy'] ?? 'rules_first',
             'provider_used' => $arbiterResult['provider_used'] ?? null,
             'provider_hint' => $providerHint !== '' ? $providerHint : null,
             'provider_hint_applied' => false,
             'reason_code' => $arbiterResult['reason_code'] ?? null,
             'confidence' => $arbiterResult['confidence'] ?? null,
+            'dispute_closed' => $disputeClosed,
             'source_side' => $requesterSide,
             'dispute_id' => $dispute->id,
             'anti_replay' => [
@@ -4037,12 +4262,20 @@ class ExchangeLotController extends Controller
                 'sender_side' => 'arbiter_ai',
                 'body' => $arbiterBody,
                 'dispute_id' => $dispute->id,
-                'dispute_status' => 'in_review',
+                'dispute_status' => $disputeClosed ? 'closed' : 'in_review',
+                'dispute_closed' => $disputeClosed,
+                'arbiter_verdict' => $verdict,
                 'arbiter_status' => $arbiterResult['arbiter_status'] ?? null,
                 'confidence' => $arbiterResult['confidence'] ?? null,
                 'reason_code' => $arbiterResult['reason_code'] ?? null,
                 'provider_used' => $arbiterResult['provider_used'] ?? null,
                 'provider_hint_applied' => false,
+                'reservation_payout' => [
+                    'attempted' => $autoCorePayout && $verdict === 'favor_buyer' && $arbiterStatus === 'in_review',
+                    'success' => ! empty($payoutResult['success']),
+                    'error' => $payoutResult['error'] ?? null,
+                    'crypto_tx_id' => $payoutResult['crypto_tx_id'] ?? null,
+                ],
             ],
         ]);
     }
@@ -4618,16 +4851,20 @@ class ExchangeLotController extends Controller
     private function closeOpenDisputesForLot(
         ExchangeLot $lot,
         string $resolvedBy,
-        string $resolution
+        string $resolution,
+        ?string $arbiterVerdict = null
     ): void {
         DealDispute::query()
             ->where('exchange_lot_id', $lot->id)
             ->whereIn('status', ['opened', 'in_review'])
             ->get()
-            ->each(function (DealDispute $dispute) use ($resolvedBy, $resolution): void {
+            ->each(function (DealDispute $dispute) use ($resolvedBy, $resolution, $arbiterVerdict): void {
                 $dispute->status = 'closed';
                 $dispute->resolved_by = $resolvedBy;
                 $dispute->resolution = $resolution;
+                if ($arbiterVerdict !== null && $arbiterVerdict !== '') {
+                    $dispute->arbiter_verdict = $arbiterVerdict;
+                }
                 $dispute->resolved_at = now();
                 $dispute->closed_at = now();
                 $dispute->last_activity_at = now();
