@@ -2292,6 +2292,40 @@ class ExchangeLotController extends Controller
                 'lot_id' => $lot->id,
                 'to' => $buyerEmail,
             ]);
+        } elseif ($messageType === 'seller_exited' && is_string($tagJson) && trim($tagJson) !== '') {
+            // If the buyer mailbox is already cleared (buyer left first), we still need a durable chat tag
+            // so downstream flows (purge, UI restore) can observe a terminal state.
+            $decodedExitTag = json_decode($tagJson, true);
+            $exitTagData = is_array($decodedExitTag) ? $decodedExitTag : null;
+            $toEmailForChat = trim((string) ($buyerEmail ?? ''));
+            if ($toEmailForChat === '') {
+                $toEmailForChat = config('mail.from.address', 'noreply@xdexboard.com');
+            }
+            try {
+                $this->insertDealChatMessage(
+                    $lot,
+                    'seller',
+                    $sellerEmail,
+                    $toEmailForChat,
+                    $body,
+                    $tagJson
+                );
+                $this->syncDisputeStateFromDealTag(
+                    lot: $lot,
+                    senderSide: 'seller',
+                    dealTagData: $exitTagData,
+                    messageType: $messageType
+                );
+                Log::info('[exchange-lots] sendMessageToBuyer: seller_exited chat message inserted without buyer mailbox', [
+                    'lot_id' => $lot->id,
+                    'to_email_for_chat' => $toEmailForChat,
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('[exchange-lots] sendMessageToBuyer: seller_exited chat insert failed', [
+                    'lot_id' => $lot->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         return response()->json([
@@ -4056,7 +4090,7 @@ class ExchangeLotController extends Controller
         if (! $this->exchangeLotHasCompletedDealTagInChat($lot)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Deal is not completed (no completion tag in chat history).',
+                'message' => 'Deal is not in a removable state (no terminal tag in chat history).',
                 'error_code' => 'deal_not_completed',
             ], 409);
         }
@@ -4176,7 +4210,13 @@ class ExchangeLotController extends Controller
     private function exchangeLotHasCompletedDealTagInChat(ExchangeLot $lot): bool
     {
         $lotId = (string) $lot->id;
-        $completionTags = ['deal_completed_buyer', 'deal_completed_seller', 'deal_completed_seller_timeout'];
+        $terminalTags = [
+            'deal_completed_buyer',
+            'deal_completed_seller',
+            'deal_completed_seller_timeout',
+            'buyer_exited',
+            'seller_exited',
+        ];
         $tags = DealChatMessage::query()
             ->where('exchange_lot_id', $lot->id)
             ->whereNotNull('deal_tag')
@@ -4189,7 +4229,7 @@ class ExchangeLotController extends Controller
             if (! is_array($d)) {
                 continue;
             }
-            if (! in_array((string) ($d['t'] ?? ''), $completionTags, true)) {
+            if (! in_array((string) ($d['t'] ?? ''), $terminalTags, true)) {
                 continue;
             }
             if ((string) ($d['lot_id'] ?? '') !== $lotId) {
@@ -4199,7 +4239,23 @@ class ExchangeLotController extends Controller
             return true;
         }
 
-        return false;
+        // Fallback: some terminal flows (notably seller_exited when buyer mailbox is already cleared)
+        // historically did not persist a chat row. Allow purge only when the lot no longer looks "active".
+        $lot->refresh();
+        $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($buyerEmail !== '') {
+            return false;
+        }
+        $pendingSale = Transaction::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->where('tx_type', 'sale')
+            ->where('status', 'pending')
+            ->exists();
+        if ($pendingSale) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
