@@ -3272,6 +3272,7 @@ class ExchangeLotController extends Controller
                     'exchange_lot_id' => (string) $lot->id,
                     'escrow_token' => $sellerEscrowToken,
                     'crypto_type' => $cryptoType,
+                    'aml_required' => (bool) $lot->aml,
                 ]);
             } catch (\Throwable $e) {
                 Log::warning('[exchange-lots] sellerCryptoPayoutToBuyer: complete-reservation failed', [
@@ -3286,6 +3287,23 @@ class ExchangeLotController extends Controller
                 'crypto_payout_tx' => $cryptoTxId,
                 'laravel_transaction_id' => $transaction->id,
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            try {
+                $this->sendDealEmail(
+                    to: $buyerEmail,
+                    subject: 'Deal completed',
+                    fromAddress: config('mail.from.address', 'noreply@xdexboard.com'),
+                    fromName: config('mail.from.name', 'XBoard'),
+                    body: 'Seller sent crypto to the buyer address on file. Deal completed.',
+                    tagJson: $tagJson
+                );
+            } catch (\Throwable $e) {
+                Log::warning('[exchange-lots] sellerCryptoPayoutToBuyer: mailbox event send failed', [
+                    'lot_id' => $lot->id,
+                    'to' => $buyerEmail,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot)) ?? $lot->seller_lot_email;
             $this->insertDealChatMessage(
@@ -4015,7 +4033,7 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * Remove PII-heavy server-side artifacts for a successfully completed deal (buyer posted deal_completed_buyer in chat).
+     * Remove PII-heavy server-side artifacts for a successfully completed deal.
      * Seller or buyer (escrow token) may call. Deletes deal chat rows, receipt files (and clears receipt JSON on transactions),
      * clears lot mailboxes; keeps transaction rows for lot balance / partial-sale accounting.
      * Clears buyer_lot_email and buyer_selected_amount; buyer_escrow_token_hash is retained so chat-messages can still authorize the same token and return [].
@@ -4035,10 +4053,10 @@ class ExchangeLotController extends Controller
             return response()->json(['success' => false, 'message' => 'Not authorized to purge this deal.'], 403);
         }
 
-        if (! $this->exchangeLotHasDealCompletedByBuyerInChat($lot)) {
+        if (! $this->exchangeLotHasCompletedDealTagInChat($lot)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Deal is not completed (no buyer completion message in chat history).',
+                'message' => 'Deal is not completed (no completion tag in chat history).',
                 'error_code' => 'deal_not_completed',
             ], 409);
         }
@@ -4155,9 +4173,10 @@ class ExchangeLotController extends Controller
         ]);
     }
 
-    private function exchangeLotHasDealCompletedByBuyerInChat(ExchangeLot $lot): bool
+    private function exchangeLotHasCompletedDealTagInChat(ExchangeLot $lot): bool
     {
         $lotId = (string) $lot->id;
+        $completionTags = ['deal_completed_buyer', 'deal_completed_seller', 'deal_completed_seller_timeout'];
         $tags = DealChatMessage::query()
             ->where('exchange_lot_id', $lot->id)
             ->whereNotNull('deal_tag')
@@ -4170,7 +4189,7 @@ class ExchangeLotController extends Controller
             if (! is_array($d)) {
                 continue;
             }
-            if (($d['t'] ?? '') !== 'deal_completed_buyer') {
+            if (! in_array((string) ($d['t'] ?? ''), $completionTags, true)) {
                 continue;
             }
             if ((string) ($d['lot_id'] ?? '') !== $lotId) {
