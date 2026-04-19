@@ -4,8 +4,9 @@ namespace Tests\Unit;
 
 use App\Services\Arbiter\ArbiterService;
 use App\Services\Arbiter\StubArbiterProvider;
+use Illuminate\Support\Facades\Mail;
 use PHPUnit\Framework\Attributes\Group;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 /**
  * Maps to docs/SPEC_REGISTRY.md (ARB-001 … ARB-006).
@@ -13,12 +14,18 @@ use PHPUnit\Framework\TestCase;
 #[Group('spec')]
 class ArbiterServiceStubTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Mail::fake();
+    }
+
     /** @see SPEC_REGISTRY ARB-001 */
     #[Group('spec-ARB-001')]
     public function test_spec_arb_001_sufficient_context_ai_path(): void
     {
         $svc = new ArbiterService(
-            providers: [new StubArbiterProvider()],
+            providers: [new StubArbiterProvider],
             primaryProvider: 'stub',
             fallbackProviders: [],
             noAiBelow: 0.35,
@@ -42,7 +49,7 @@ class ArbiterServiceStubTest extends TestCase
     public function test_spec_arb_002_anti_replay(): void
     {
         $svc = new ArbiterService(
-            [new StubArbiterProvider()],
+            [new StubArbiterProvider],
             'stub',
             [],
             0.35,
@@ -65,7 +72,7 @@ class ArbiterServiceStubTest extends TestCase
     public function test_spec_arb_004_insufficient_context(): void
     {
         $svc = new ArbiterService(
-            [new StubArbiterProvider()],
+            [new StubArbiterProvider],
             'stub',
             [],
             0.35,
@@ -88,7 +95,7 @@ class ArbiterServiceStubTest extends TestCase
     public function test_spec_arb_005_low_confidence_escalation(): void
     {
         $svc = new ArbiterService(
-            [new StubArbiterProvider()],
+            [new StubArbiterProvider],
             'stub',
             [],
             0.35,
@@ -106,5 +113,4 @@ class ArbiterServiceStubTest extends TestCase
         $this->assertSame('low_confidence', $out['reason_code']);
         $this->assertStringContainsString('Escalated to manual review', (string) $out['message']);
     }
-
 }
