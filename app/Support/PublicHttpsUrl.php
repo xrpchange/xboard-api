@@ -3,8 +3,7 @@
 namespace App\Support;
 
 /**
- * Browser-facing URLs in email should use https (mixed content / security warnings on http).
- * Local http is preserved for localhost / 127.0.0.1 development.
+ * Browser-facing URLs in email and operator web flows must use https (mixed content / form warnings on http).
  */
 final class PublicHttpsUrl
 {
@@ -15,9 +14,6 @@ final class PublicHttpsUrl
             return $b;
         }
         if (preg_match('#\Ahttps://#i', $b)) {
-            return $b;
-        }
-        if (preg_match('#\Ahttp://(localhost|127\.0\.0\.1)(:\d+)?(\z|/)#i', $b)) {
             return $b;
         }
         if (preg_match('#\Ahttp://#i', $b)) {

@@ -1,0 +1,23 @@
+---
+description: Public URLs and mail links — HTTPS only; no http→https redirect hacks
+globs: app/**/*.php,routes/**/*.php,config/**/*.php,resources/views/**/*.php
+---
+
+# HTTPS only for public URLs (xboard-api)
+
+Treat **browser-facing and mail** URLs as **HTTPS only**. Do not design flows around `http://` for production.
+
+## Do
+
+- Set **`APP_URL`** with an `https://` base in every deployed environment (staging, production). Tests may use a dedicated fake host (e.g. `https://api.xboard.test` in `phpunit.xml`).
+- When building links for **email or operator web pages**, ensure the scheme is `https://` (e.g. `App\Support\PublicHttpsUrl::upgradeMailBaseToHttps()` on a host base before `URL::temporarySignedRoute` or string concatenation).
+- Behind a reverse proxy / TLS terminator, fix scheme via **`TrustProxies`** / forwarded headers so Laravel sees HTTPS correctly — not via blind redirects.
+
+## Do not
+
+- **Do not** add global or route middleware that redirects “every HTTP request to HTTPS” inside the app. Behind TLS termination the app often receives **HTTP internally**; that pattern causes **redirect loops** (“too many redirects”) and breaks signed mail links.
+- **Do not** assume operators will “open the http link first”; links in mail must already be `https://`.
+
+## Signed operator links
+
+Signed URLs include the scheme. Generate them with an **`https://` root** once; do not rely on a second hop (redirect) to “upgrade” the request.
