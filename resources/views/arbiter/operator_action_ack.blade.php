@@ -11,8 +11,7 @@
 </head>
 <body>
     <h1>Recorded</h1>
-    <p>Operator mail action was received for exchange lot <code>{{ $lotId }}</code> with action <code>{{ $action }}</code>.</p>
-    <p>This page opened from a <strong>signed link</strong> scoped to that lot and action; it does not apply to other deals.</p>
-    <p>Continue processing in your internal tools if required; this endpoint only logs the click.</p>
+    <p>We received your choice for exchange lot <strong>{{ e($lotId) }}</strong>: <strong>{{ e($action) }}</strong>.</p>
+    <p>This page only confirms the signed link worked. It does <strong>not</strong> move money or change the deal by itself — continue in your usual admin or partner workflow for this lot.</p>
 </body>
 </html>

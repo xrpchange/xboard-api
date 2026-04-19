@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Support\ArbiterOperatorEscalationDigest;
+use App\Support\PublicHttpsUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -51,20 +52,26 @@ class ArbiterOperatorEscalationMail extends Mailable
         $expires = now()->addDays($ttlDays);
         $lot = $this->lotId;
 
-        $urls = [
-            'reply' => URL::temporarySignedRoute('arbiter.operator.action', $expires, [
-                'lot' => $lot,
-                'action' => 'reply',
-            ]),
-            'compensate_buyer' => URL::temporarySignedRoute('arbiter.operator.action', $expires, [
-                'lot' => $lot,
-                'action' => 'compensate_buyer',
-            ]),
-            'deny_buyer' => URL::temporarySignedRoute('arbiter.operator.action', $expires, [
-                'lot' => $lot,
-                'action' => 'deny_buyer',
-            ]),
-        ];
+        $base = PublicHttpsUrl::upgradeMailBaseToHttps(self::resolveOperatorMailBaseUrl());
+        URL::forceRootUrl($base);
+        try {
+            $urls = [
+                'reply' => URL::temporarySignedRoute('arbiter.operator.action', $expires, [
+                    'lot' => $lot,
+                    'action' => 'reply',
+                ]),
+                'compensate_buyer' => URL::temporarySignedRoute('arbiter.operator.action', $expires, [
+                    'lot' => $lot,
+                    'action' => 'compensate_buyer',
+                ]),
+                'deny_buyer' => URL::temporarySignedRoute('arbiter.operator.action', $expires, [
+                    'lot' => $lot,
+                    'action' => 'deny_buyer',
+                ]),
+            ];
+        } finally {
+            URL::forceRootUrl(null);
+        }
 
         $html = view('mail.arbiter_operator_escalation', [
             'mailSection' => 'html',
@@ -82,5 +89,24 @@ class ArbiterOperatorEscalationMail extends Mailable
                 'arbiterOperatorEscalationPlainBody' => $plainTrimmed,
             ],
         );
+    }
+
+    /**
+     * Same origin as the request that triggered the arbiter mail when possible; otherwise standard app.url.
+     */
+    private static function resolveOperatorMailBaseUrl(): string
+    {
+        if (! app()->runningInConsole()) {
+            try {
+                $host = request()->getSchemeAndHttpHost();
+                if (is_string($host) && $host !== '') {
+                    return rtrim($host, '/');
+                }
+            } catch (\Throwable) {
+                // request() unavailable
+            }
+        }
+
+        return rtrim((string) config('app.url', 'http://localhost'), '/');
     }
 }

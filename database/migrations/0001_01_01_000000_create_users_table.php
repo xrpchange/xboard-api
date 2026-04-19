@@ -27,7 +27,7 @@ return new class extends Migration
             $table->timestamp('created_at')->nullable();
         });
 
-        // sessions table removed: API is stateless (escrow tokens); web routes only serve Swagger docs and do not use sessions
+        // sessions: see database/migrations/2026_04_19_120000_create_sessions_table.php
     }
 
     /**

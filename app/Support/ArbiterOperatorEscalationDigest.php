@@ -177,6 +177,8 @@ final class ArbiterOperatorEscalationDigest
             'buyer' => 'Buyer',
             'seller' => 'Seller',
             'arbiter' => 'Arbiter',
+            'arbiter_ai' => 'AI Arbiter',
+            'exchange_operator' => 'Exchange operator',
             'system' => 'System',
             default => $side !== '' ? ucfirst($side) : 'Unknown',
         };
@@ -204,6 +206,7 @@ final class ArbiterOperatorEscalationDigest
             'buyer_destination_details' => 'Buyer payout details',
             'deal_completed_seller' => 'Deal completed',
             'arbiter_message' => 'Arbiter reply',
+            'operator_mail_reply' => 'Operator reply',
             default => $t !== '' ? 'Structured update' : '',
         };
     }

@@ -19,6 +19,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->singleton(\App\Services\LotMailboxService::class, function ($app) {
             $config = config('services.lot_mailbox', []);
+
             return new \App\Services\LotMailboxService(
                 domain: $config['domain'] ?? 'xdexboard.com',
                 maildirBase: $config['maildir_base'] ?? null
@@ -33,7 +34,7 @@ class AppServiceProvider extends ServiceProvider
             $gigachatConfig = is_array($arbiterConfig['gigachat'] ?? null) ? $arbiterConfig['gigachat'] : [];
 
             $providers = [
-                new StubArbiterProvider(),
+                new StubArbiterProvider,
                 new GigaChatArbiterProvider(
                     oauthCredential: (string) ($gigachatConfig['oauth_credential'] ?? ''),
                     scope: (string) ($gigachatConfig['scope'] ?? 'GIGACHAT_API_PERS'),
@@ -78,20 +79,20 @@ class AppServiceProvider extends ServiceProvider
     {
         // Create necessary cache directories on first startup
         $this->ensureCacheDirectoriesExist();
-        
+
         // Validate required configuration
         $this->validateRequiredConfig();
     }
-    
+
     /**
      * Validate required configuration parameters
      */
     private function validateRequiredConfig(): void
     {
         $verificationEmail = config('mail.verification_email');
-        if (!$verificationEmail) {
+        if (! $verificationEmail) {
             throw new \RuntimeException(
-                'PAYMENT_VERIFICATION_EMAIL is not set in .env file. ' .
+                'PAYMENT_VERIFICATION_EMAIL is not set in .env file. '.
                 'This parameter is required. Please add PAYMENT_VERIFICATION_EMAIL=check@xdexboard.com to your .env file.'
             );
         }
@@ -107,7 +108,7 @@ class AppServiceProvider extends ServiceProvider
         ];
 
         foreach ($directories as $directory) {
-            if (!file_exists($directory)) {
+            if (! file_exists($directory)) {
                 mkdir($directory, 0755, true);
             }
         }

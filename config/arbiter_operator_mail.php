@@ -1,8 +1,8 @@
 <?php
 
 /**
- * Operator escalation email (image-only receipt path). Inbox + signed-link TTL from .env.
- * Copy and button labels: single Blade template resources/views/mail/arbiter_operator_escalation.blade.php (English).
+ * Operator escalation email. Inbox + signed-link TTL from .env.
+ * Signed URLs use the current HTTP request origin when the mail is sent from the API (same as other mail links), otherwise Laravel APP_URL.
  */
 return [
     'escalation_email' => (string) env('ARBITER_OPERATOR_ESCALATION_EMAIL', ''),

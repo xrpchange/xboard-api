@@ -21,6 +21,7 @@ use App\Support\ArbiterReceiptPdfResolver;
 use App\Support\DealChatTagSequenceValidator;
 use App\Support\DealSaleTransactionCompletion;
 use App\Support\DealSellerOpenLinks;
+use App\Support\PublicHttpsUrl;
 use App\Support\SandboxTestReceiptPdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -5171,7 +5172,7 @@ class ExchangeLotController extends Controller
         if ($params === null) {
             return null;
         }
-        $base = rtrim(request()->getSchemeAndHttpHost(), '/');
+        $base = PublicHttpsUrl::upgradeMailBaseToHttps(rtrim(request()->getSchemeAndHttpHost(), '/'));
         if ($base === '') {
             return null;
         }

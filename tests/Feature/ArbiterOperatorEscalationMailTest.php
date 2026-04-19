@@ -89,4 +89,12 @@ class ArbiterOperatorEscalationMailTest extends TestCase
     {
         $this->get('/arbiter/operator/99/reply')->assertForbidden();
     }
+
+    public function test_operator_reply_post_rejects_unsigned_request(): void
+    {
+        $this->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class);
+        $this->post('/arbiter/operator/99/reply', [
+            'body' => 'Hello from operator',
+        ])->assertForbidden();
+    }
 }
