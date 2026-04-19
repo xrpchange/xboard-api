@@ -19,6 +19,7 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <env name="APP_URL" value="http://localhost"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_STORE" value="array"/>
@@ -38,5 +39,6 @@
         <env name="PAYMENT_VERIFICATION_EMAIL" value="check@example.test"/>
         <env name="ARBITER_PRIMARY_PROVIDER" value="stub"/>
         <env name="ARBITER_FALLBACK_PROVIDERS" value=""/>
+        <env name="ARBITER_OPERATOR_ACTION_LINK_TTL_DAYS" value="7"/>
     </php>
 </phpunit>

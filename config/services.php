@@ -48,7 +48,7 @@ return [
         'timeout' => env('CORE_TIMEOUT', 10),
         'payout_timeout' => env('CORE_PAYOUT_TIMEOUT', 120),
     ],
-    
+
     'core_production' => [
         'url' => env('CORE_PRODUCTION_URL'),  // REQUIRED: Must be set in .env (production Core URL)
         'key' => env('CORE_PRODUCTION_KEY', ''),
@@ -90,6 +90,10 @@ return [
         'no_ai_below' => (float) env('ARBITER_NO_AI_BELOW', 0.35),
         // After a successful LLM response, escalate when context score is still below this threshold.
         'manual_review_threshold' => (float) env('ARBITER_MANUAL_REVIEW_THRESHOLD', 0.55),
+        /** Max PDF bytes read from disk and sent to LLM providers that support a separate file (Anthropic document / OpenAI Responses input_file). */
+        'receipt_pdf_max_bytes' => (int) env('ARBITER_RECEIPT_PDF_MAX_BYTES', 5242880),
+        /** Max UTF-8 characters of server-extracted PDF text included in the text prompt for all providers (GigaChat/DeepSeek/…). */
+        'receipt_pdf_text_excerpt_max_chars' => (int) env('ARBITER_RECEIPT_PDF_TEXT_EXCERPT_MAX_CHARS', 8000),
         // When LLM verdict is favor_buyer|favor_seller and arbiter_status is in_review, close deal_disputes so deal actions (e.g. seller crypto payout) are no longer blocked. Signing stays client-side (seller escrow token).
         'resolve_on_favor_buyer' => filter_var(env('ARBITER_RESOLVE_ON_FAVOR_BUYER', true), FILTER_VALIDATE_BOOL),
         'resolve_on_favor_seller' => filter_var(env('ARBITER_RESOLVE_ON_FAVOR_SELLER', false), FILTER_VALIDATE_BOOL),

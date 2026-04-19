@@ -19,7 +19,7 @@ class AnthropicArbiterProvider implements ArbiterProvider
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
     public function generate(array $payload): array
@@ -27,6 +27,24 @@ class AnthropicArbiterProvider implements ArbiterProvider
         if ($this->apiKey === '') {
             throw new \RuntimeException('Anthropic API key is not configured.');
         }
+
+        $pdfB64 = $payload['receipt_pdf_base64'] ?? null;
+        $userContent = is_string($pdfB64) && $pdfB64 !== ''
+            ? [
+                [
+                    'type' => 'text',
+                    'text' => (string) ($payload['user_prompt'] ?? ''),
+                ],
+                [
+                    'type' => 'document',
+                    'source' => [
+                        'type' => 'base64',
+                        'media_type' => 'application/pdf',
+                        'data' => $pdfB64,
+                    ],
+                ],
+            ]
+            : (string) ($payload['user_prompt'] ?? '');
 
         $response = Http::timeout($this->timeoutSeconds)
             ->withHeaders([
@@ -36,19 +54,19 @@ class AnthropicArbiterProvider implements ArbiterProvider
             ])
             ->post('https://api.anthropic.com/v1/messages', [
                 'model' => $this->model,
-                'max_tokens' => 350,
+                'max_tokens' => is_string($pdfB64) && $pdfB64 !== '' ? 500 : 350,
                 'temperature' => 0,
                 'system' => (string) ($payload['system_prompt'] ?? ''),
                 'messages' => [
                     [
                         'role' => 'user',
-                        'content' => (string) ($payload['user_prompt'] ?? ''),
+                        'content' => $userContent,
                     ],
                 ],
             ]);
 
-        if (!$response->successful()) {
-            throw new \RuntimeException('Anthropic request failed with status ' . $response->status());
+        if (! $response->successful()) {
+            throw new \RuntimeException('Anthropic request failed with status '.$response->status());
         }
 
         $json = $response->json();

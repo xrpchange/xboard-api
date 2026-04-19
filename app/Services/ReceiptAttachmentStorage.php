@@ -16,6 +16,26 @@ class ReceiptAttachmentStorage
     public const ATTACHMENTS_SUBDIR = 'email_attachments';
 
     /**
+     * Resolve a stored relative path (e.g. email_attachments/2026-01-15/token.pdf) to an absolute filesystem path if the file exists.
+     */
+    public static function absolutePathIfExists(string $relativePath): ?string
+    {
+        $relativePath = str_replace('\\', '/', $relativePath);
+        $root = config('payment_verification.attachments_root');
+        if (is_string($root) && $root !== '') {
+            $fullPath = rtrim($root, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
+
+            return is_file($fullPath) ? $fullPath : null;
+        }
+
+        if (! Storage::disk('local')->exists($relativePath)) {
+            return null;
+        }
+
+        return Storage::disk('local')->path($relativePath);
+    }
+
+    /**
      * Parse a receipt link URL and return the relative storage path (email_attachments/...).
      * Returns null if the link does not match expected format.
      *
@@ -33,11 +53,11 @@ class ReceiptAttachmentStorage
         }
         $date = $m[1];
         $token = $m[2];
-        $hasTmp = str_contains($path, $date . '/tmp/');
+        $hasTmp = str_contains($path, $date.'/tmp/');
 
         return $hasTmp
-            ? self::ATTACHMENTS_SUBDIR . '/' . $date . '/tmp/' . $token . '.pdf'
-            : self::ATTACHMENTS_SUBDIR . '/' . $date . '/' . $token . '.pdf';
+            ? self::ATTACHMENTS_SUBDIR.'/'.$date.'/tmp/'.$token.'.pdf'
+            : self::ATTACHMENTS_SUBDIR.'/'.$date.'/'.$token.'.pdf';
     }
 
     /**
@@ -54,7 +74,7 @@ class ReceiptAttachmentStorage
         if (! preg_match('#email-attachments/(\d{4}-\d{2}-\d{2})/(?:tmp/)?([a-f0-9]{32})\.pdf$#i', $path, $m)) {
             return null;
         }
-        $isTmp = str_contains($path, $m[1] . '/tmp/');
+        $isTmp = str_contains($path, $m[1].'/tmp/');
 
         return [
             'date' => $m[1],
@@ -74,13 +94,13 @@ class ReceiptAttachmentStorage
         if ($parsed === null || ! $parsed['is_tmp']) {
             return $link;
         }
-        $tmpPath = self::ATTACHMENTS_SUBDIR . '/' . $parsed['date'] . '/tmp/' . $parsed['token'] . '.pdf';
-        $permanentPath = self::ATTACHMENTS_SUBDIR . '/' . $parsed['date'] . '/' . $parsed['token'] . '.pdf';
+        $tmpPath = self::ATTACHMENTS_SUBDIR.'/'.$parsed['date'].'/tmp/'.$parsed['token'].'.pdf';
+        $permanentPath = self::ATTACHMENTS_SUBDIR.'/'.$parsed['date'].'/'.$parsed['token'].'.pdf';
 
         $root = config('payment_verification.attachments_root');
         if (is_string($root) && $root !== '') {
-            $tmpFull = rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $tmpPath);
-            $permFull = rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $permanentPath);
+            $tmpFull = rtrim($root, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $tmpPath);
+            $permFull = rtrim($root, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $permanentPath);
             if (is_file($tmpFull)) {
                 try {
                     $dir = dirname($permFull);
@@ -91,6 +111,7 @@ class ReceiptAttachmentStorage
                     Log::info('ReceiptAttachmentStorage: moved tmp to permanent via root', ['from' => $tmpPath, 'to' => $permanentPath]);
                 } catch (\Throwable $e) {
                     Log::warning('ReceiptAttachmentStorage: failed to move tmp to permanent via root', ['from' => $tmpPath, 'error' => $e->getMessage()]);
+
                     return $link;
                 }
             }
@@ -105,6 +126,7 @@ class ReceiptAttachmentStorage
                 Log::info('ReceiptAttachmentStorage: moved tmp to permanent via Storage', ['from' => $tmpPath, 'to' => $permanentPath]);
             } catch (\Throwable $e) {
                 Log::warning('ReceiptAttachmentStorage: failed to move tmp to permanent via Storage', ['from' => $tmpPath, 'error' => $e->getMessage()]);
+
                 return $link;
             }
         }
@@ -114,8 +136,9 @@ class ReceiptAttachmentStorage
         $scheme = parse_url($link, PHP_URL_SCHEME);
         $host = parse_url($link, PHP_URL_HOST);
         $port = parse_url($link, PHP_URL_PORT);
-        $base = ($scheme ?: 'https') . '://' . $host . ($port ? ':' . $port : '');
-        return $base . $newPath;
+        $base = ($scheme ?: 'https').'://'.$host.($port ? ':'.$port : '');
+
+        return $base.$newPath;
     }
 
     /**
@@ -126,7 +149,7 @@ class ReceiptAttachmentStorage
     {
         $root = config('payment_verification.attachments_root');
         if (is_string($root) && $root !== '') {
-            $fullPath = rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
+            $fullPath = rtrim($root, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
             if (is_file($fullPath)) {
                 try {
                     unlink($fullPath);
@@ -135,6 +158,7 @@ class ReceiptAttachmentStorage
                     Log::warning('ReceiptAttachmentStorage: failed to delete file via root', ['path' => $fullPath, 'error' => $e->getMessage()]);
                 }
             }
+
             return;
         }
         if (Storage::disk('local')->exists($relativePath)) {
@@ -220,23 +244,25 @@ class ReceiptAttachmentStorage
         if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
             return false;
         }
-        $relativeDir = self::ATTACHMENTS_SUBDIR . '/' . $date . '/tmp';
+        $relativeDir = self::ATTACHMENTS_SUBDIR.'/'.$date.'/tmp';
         $root = config('payment_verification.attachments_root');
         if (is_string($root) && $root !== '') {
-            $fullDir = rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativeDir);
+            $fullDir = rtrim($root, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relativeDir);
             if (! is_dir($fullDir)) {
                 return true;
             }
             try {
                 $files = array_diff(scandir($fullDir), ['.', '..']);
                 foreach ($files as $file) {
-                    unlink($fullDir . DIRECTORY_SEPARATOR . $file);
+                    unlink($fullDir.DIRECTORY_SEPARATOR.$file);
                 }
                 rmdir($fullDir);
                 Log::info('ReceiptAttachmentStorage: deleted tmp dir via root', ['path' => $fullDir]);
+
                 return true;
             } catch (\Throwable $e) {
                 Log::warning('ReceiptAttachmentStorage: failed to delete tmp dir via root', ['path' => $fullDir, 'error' => $e->getMessage()]);
+
                 return false;
             }
         }
@@ -246,9 +272,11 @@ class ReceiptAttachmentStorage
         try {
             Storage::disk('local')->deleteDirectory($relativeDir);
             Log::info('ReceiptAttachmentStorage: deleted tmp dir via Storage', ['path' => $relativeDir]);
+
             return true;
         } catch (\Throwable $e) {
             Log::warning('ReceiptAttachmentStorage: failed to delete tmp dir via Storage', ['path' => $relativeDir, 'error' => $e->getMessage()]);
+
             return false;
         }
     }
@@ -267,7 +295,7 @@ class ReceiptAttachmentStorage
 
         $root = config('payment_verification.attachments_root');
         if (is_string($root) && $root !== '') {
-            $baseDir = rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . self::ATTACHMENTS_SUBDIR;
+            $baseDir = rtrim($root, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.self::ATTACHMENTS_SUBDIR;
             if (! is_dir($baseDir)) {
                 return ['deleted' => [], 'errors' => []];
             }
@@ -279,19 +307,20 @@ class ReceiptAttachmentStorage
                 if ($name >= $cutoff) {
                     continue;
                 }
-                $fullPath = $baseDir . DIRECTORY_SEPARATOR . $name;
+                $fullPath = $baseDir.DIRECTORY_SEPARATOR.$name;
                 if (! is_dir($fullPath)) {
                     continue;
                 }
                 try {
                     self::deleteDirectoryRecursive($fullPath);
-                    $deleted[] = self::ATTACHMENTS_SUBDIR . '/' . $name;
+                    $deleted[] = self::ATTACHMENTS_SUBDIR.'/'.$name;
                     Log::info('ReceiptAttachmentStorage: deleted date folder via root', ['path' => $fullPath]);
                 } catch (\Throwable $e) {
-                    $errors[] = $fullPath . ': ' . $e->getMessage();
+                    $errors[] = $fullPath.': '.$e->getMessage();
                     Log::warning('ReceiptAttachmentStorage: failed to delete date folder via root', ['path' => $fullPath, 'error' => $e->getMessage()]);
                 }
             }
+
             return ['deleted' => $deleted, 'errors' => $errors];
         }
 
@@ -309,10 +338,11 @@ class ReceiptAttachmentStorage
                 $deleted[] = $dirPath;
                 Log::info('ReceiptAttachmentStorage: deleted date folder via Storage', ['path' => $dirPath]);
             } catch (\Throwable $e) {
-                $errors[] = $dirPath . ': ' . $e->getMessage();
+                $errors[] = $dirPath.': '.$e->getMessage();
                 Log::warning('ReceiptAttachmentStorage: failed to delete date folder via Storage', ['path' => $dirPath, 'error' => $e->getMessage()]);
             }
         }
+
         return ['deleted' => $deleted, 'errors' => $errors];
     }
 
@@ -320,7 +350,7 @@ class ReceiptAttachmentStorage
     {
         $files = array_diff(scandir($dir), ['.', '..']);
         foreach ($files as $file) {
-            $path = $dir . DIRECTORY_SEPARATOR . $file;
+            $path = $dir.DIRECTORY_SEPARATOR.$file;
             if (is_dir($path)) {
                 self::deleteDirectoryRecursive($path);
             } else {

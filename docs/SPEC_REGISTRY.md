@@ -39,15 +39,17 @@ php artisan test --group spec-ARB-004
 
 | ID | Document section | Behavior (short) | Test(s) | Notes |
 |----|------------------|------------------|---------|--------|
-| ARB-001 | Rules-first policy §4 (gray zone) | Sufficient deterministic context → LLM path → `arbiter_status=in_review`, `reason_code=ai_generated` | `tests/Unit/ArbiterServiceStubTest.php` (`test_spec_arb_001_sufficient_context_ai_path`) | Uses `StubArbiterProvider` (no HTTP). |
+| ARB-001 | Rules-first policy §5 (gray zone) | Sufficient deterministic context → LLM path → `arbiter_status=in_review`, `reason_code=ai_generated` | `tests/Unit/ArbiterServiceStubTest.php` (`test_spec_arb_001_sufficient_context_ai_path`) | Uses `StubArbiterProvider` (no HTTP). |
 | ARB-002 | Rules-first policy §2 | `has_replay` true → `manual_review`, `anti_replay_triggered`, no provider | `tests/Unit/ArbiterServiceStubTest.php` (`test_spec_arb_002_anti_replay`) | Controller sets `has_replay` from DB; service contract tested here. |
 | ARB-003 | Architecture + container wiring | Laravel resolves `ArbiterService` with `stub` provider under PHPUnit env | `tests/Feature/ArbiterServiceBindingsTest.php` | |
 | ARB-004 | Rules-first policy §3 | Confidence ≤ `no_ai_below` → `insufficient_context`, no provider | `tests/Unit/ArbiterServiceStubTest.php` (`test_spec_arb_004_insufficient_context`) | |
-| ARB-005 | Rules-first policy §5 | After LLM, if confidence &lt; manual threshold → `low_confidence`, English escalation suffix | `tests/Unit/ArbiterServiceStubTest.php` (`test_spec_arb_005_low_confidence_escalation`) | |
-| ARB-006 | Rules-first policy §6 | All providers fail → `provider_unavailable` | `tests/Feature/ArbiterServiceBindingsTest.php` (`test_spec_arb_006_all_providers_fail`) | Uses Laravel `Log` facade (Feature test, not pure Unit). |
+| ARB-005 | Rules-first policy §6 | After LLM, if confidence &lt; manual threshold → `low_confidence`, English escalation suffix | `tests/Unit/ArbiterServiceStubTest.php` (`test_spec_arb_005_low_confidence_escalation`) | |
+| ARB-006 | Rules-first policy §7 | All providers fail → `provider_unavailable` | `tests/Feature/ArbiterServiceBindingsTest.php` (`test_spec_arb_006_all_providers_fail`) | Uses Laravel `Log` facade (Feature test, not pure Unit). |
+| ARB-012 | Rules-first policy §4 + Receipt PDF § | Image-only receipt path sends `ArbiterOperatorEscalationMail` when `ARBITER_OPERATOR_ESCALATION_EMAIL` is set; copy in `resources/views/mail/arbiter_operator_escalation.blade.php`; TTL `ARBITER_OPERATOR_ACTION_LINK_TTL_DAYS` | `tests/Feature/ArbiterOperatorEscalationMailTest.php`, `tests/Unit/ArbiterDealContextPlainTextTest.php` | `ArbiterDealContextPlainText` aligns LLM/operator bodies. |
 | ARB-007 | Testing checklist §7 + `deal_disputes` | `GET dispute-status` still sees `in_review` row after arbiter | — | **Manual / integration** (needs lot + dispute + HTTP). Add `Feature` test when harness exists. |
 | ARB-008 | Security model | `provider_hint` not used for routing | — | **Manual** (curl checklist §2) or future HTTP feature test. |
 | ARB-009 | `resources/prompts/arbiter_exchange_rules.md` + `ArbiterPromptContextAssembler` | Arbiter LLM user prompt includes rules digest, `deal_machine_state`, and requester-visible `recent_chat_digest` | `tests/Feature/ArbiterExchangeRulesFileTest.php` | Does not assert provider output; file presence + `loadRulesDigest()` smoke. `docs/ARBITER_EXCHANGE_RULES.md` is a pointer stub only. |
+| ARB-010 | Receipt PDF § | `ReceiptAttachmentStorage::absolutePathIfExists` resolves a stored `email_attachments/.../*.pdf` path under the configured disk / `PAYMENT_VERIFICATION_ATTACHMENTS_ROOT` | `tests/Unit/ReceiptAttachmentStoragePathTest.php`, `tests/Unit/ReceiptPdfTextExtractorTest.php` | `ArbiterReceiptPdfResolver` uses `ExchangeLot::latestReceiptTransaction()`. Text excerpt for all providers via `ReceiptPdfTextExtractor` + `smalot/pdfparser`. See `docs/AI_ARBITER_SERVER.md`. |
 
 ## Workflow for contributors
 

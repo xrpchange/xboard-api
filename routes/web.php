@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Arbiter\ArbiterOperatorActionController;
 use App\Http\Controllers\OpenDealController;
 use Illuminate\Support\Facades\Route;
 
@@ -20,6 +21,13 @@ Route::get('/', function () {
 
 /** Public: opens app from seller email (HTTPS link is mail-client friendly). */
 Route::get('/open-deal', [OpenDealController::class, 'show'])->name('deal.open');
+
+/** Signed links from operator escalation mail (lot + action bound in signature). */
+Route::get('/arbiter/operator/{lot}/{action}', [ArbiterOperatorActionController::class, 'show'])
+    ->whereNumber('lot')
+    ->where('action', 'reply|compensate_buyer|deny_buyer')
+    ->middleware('signed')
+    ->name('arbiter.operator.action');
 
 // Swagger документация
 Route::get('/api/documentation', function () {
