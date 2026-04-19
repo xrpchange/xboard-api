@@ -56,8 +56,8 @@ Dispute state is synchronized from existing deal actions:
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/v1/exchange-lots/{lot}/dispute-status` | Returns latest active dispute (`opened`/`in_review`) for the lot or `null`. |
-| POST | `/v1/exchange-lots/{lot}/arbiter-message` | Adds arbiter message to chat and updates dispute state to `in_review`. |
+| GET | `/v1/exchange-lots/{lot}/dispute-status` | Returns latest active dispute (`opened`/`in_review`) for the lot or `null`, plus **`arbiter_ai`** usage for UI (invocation cap). |
+| POST | `/v1/exchange-lots/{lot}/arbiter-message` | Reserves one **AI invocation slot** on the lot (when cap &gt; 0), then adds arbiter message to chat and updates dispute state to `in_review`. Returns **422** + `error_code: ai_arbiter_iteration_limit_reached` when the cap is exhausted. |
 
 Auth:
 
@@ -72,11 +72,30 @@ Full setup, env vars, failover, security, and curl checklist: **[docs/AI_ARBITER
 - **Semantic outcome** is returned as `arbiter_status` (`in_review` | `manual_review`) in the POST JSON and in `deal_chat_messages.deal_tag` for `t=arbiter_message`.
 - Optional body fields: `message`, `provider` / `provider_hint` (hint only; **not** used to choose the LLM provider), `bank_timezone`, `payment_time_raw`, `pdf_sha256`, `email_message_sha256`, `dkim_signature_sha256`.
 
+### `GET …/dispute-status` response extras
+
+The JSON always includes **`dispute`**: an object for the latest active row (`opened` / `in_review`), or **`null`** if none. It always includes **`arbiter_ai`** (usage counter for the lot — independent of whether a dispute row exists):
+
+| JSON path | Type | Description |
+|-----------|------|-------------|
+| `arbiter_ai.invocations` | int | Value of `exchange_lots.arbiter_ai_invocations` after refresh. |
+| `arbiter_ai.max_invocations` | int \| null | Cap from `config('deal.max_ai_arbiter_invocations_per_lot')`, or `null` if cap disabled (`0`). |
+| `arbiter_ai.limit_reached` | bool | `true` when cap is enabled and `invocations >= max_invocations`. |
+
+Full rationale for the counter and the **422** contract: **`docs/AI_ARBITER_SERVER.md`** (*Per-lot AI invocation budget*).
+
+### Exchange lot column (not in `deal_disputes`)
+
+| Column | Table | Role |
+|--------|--------|------|
+| `arbiter_ai_invocations` | `exchange_lots` | Incremented atomically at the start of each `POST …/arbiter-message` when the cap is enabled. |
+
 ---
 
 ## Migration
 
 - `database/migrations/2026_03_18_000001_create_deal_disputes_table.php`
+- `database/migrations/2026_04_19_000001_add_arbiter_ai_invocations_to_exchange_lots.php` — AI arbiter **invocation** budget per lot (see `docs/AI_ARBITER_SERVER.md`).
 
 Run:
 

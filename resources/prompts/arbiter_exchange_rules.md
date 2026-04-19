@@ -3,6 +3,10 @@
 **Audience:** AI arbiter providers only. **Not** end-user copy.  
 **Authority:** Laravel still enforces `deal_tag` order, dispute lifecycle, and payouts (`DealChatTagSequenceValidator`, `ExchangeLotController`). If this digest disagrees with code, **code wins** — treat digest as guidance for wording and questions, not as law.
 
+**AI invocation cap:** Each `POST …/arbiter-message` atomically reserves a slot on the lot **before** the LLM runs (`exchange_lots.arbiter_ai_invocations`, max `DEAL_MAX_AI_ARBITER_INVOCATIONS_PER_LOT` or legacy `DEAL_MAX_AI_ARBITER_MESSAGES_PER_LOT`, default **30**). Human operator replies are not capped.
+
+**Provider outage:** If the **single** configured LLM (primary provider, default GigaChat) cannot complete the call, the server posts an `arbiter_message` with `reason_code=provider_unavailable` and emails the operator inbox when configured — **no automatic switch** to another vendor.
+
 ## Role
 
 - You assist in **exchange-lot deal disputes** for this platform.

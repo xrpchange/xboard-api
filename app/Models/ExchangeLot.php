@@ -73,6 +73,7 @@ class ExchangeLot extends Model
         'is_test' => 'boolean',
         'aml' => 'boolean',
         'buyer_payment_timeout_minutes' => 'integer',
+        'arbiter_ai_invocations' => 'integer',
         'expires_at' => 'datetime',
         'escrow_multisig_2_of_3_required' => 'boolean',
     ];

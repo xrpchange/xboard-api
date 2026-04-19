@@ -42,7 +42,7 @@ The API inserts into `deal_chat_messages` in these cases:
 - **sendMessageToSeller** — buyer → seller (e.g. start deal, buyer exited).
 - **sendMessageToBuyer** — seller → buyer (e.g. payment details, seller exited).
 - **sendPaymentDetails** — seller sends payment instructions to buyer.
-- **requestArbiterMessage** — adds AI arbiter chat message without email delivery.
+- **requestArbiterMessage** — adds AI arbiter chat message without email delivery. Each authenticated `POST …/arbiter-message` **reserves** one slot on `exchange_lots.arbiter_ai_invocations` **before** calling the LLM when the per-lot cap is enabled (`config/deal.php`); see **`docs/AI_ARBITER_SERVER.md`** (*Per-lot AI invocation budget*). Operator mail replies are a separate code path and do not use this counter.
 
 Email-based inserts use the same `body`, `deal_tag`, and sender/recipient as the sent email. Chat-only inserts may keep `from_email` / `to_email` as `null`.
 
@@ -62,7 +62,7 @@ Email-based inserts use the same `body`, `deal_tag`, and sender/recipient as the
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET    | `/v1/exchange-lots/{lot}/chat-messages` | List deal chat messages for the lot (excluding rows cleared by this side: seller sees where `deleted_by_seller_at` IS NULL, buyer where `deleted_by_buyer_at` IS NULL). Requires escrow token (seller or buyer). |
-| POST   | `/v1/exchange-lots/{lot}/arbiter-message` | Add AI arbiter message into chat (chat-only, no email). Optional: `message`, evidence hashes (`pdf_sha256`, `email_message_sha256`, `dkim_signature_sha256`), `bank_timezone` + `payment_time_raw` for UTC normalization, `provider`/`provider_hint` (ignored for provider selection). See [AI_ARBITER_SERVER.md](AI_ARBITER_SERVER.md). Requires escrow token (seller or buyer). |
+| POST   | `/v1/exchange-lots/{lot}/arbiter-message` | Add AI arbiter message into chat (chat-only, no email). Invokes **invocation budget** logic first (may return **422** `ai_arbiter_iteration_limit_reached`). Optional: `message`, evidence hashes (`pdf_sha256`, `email_message_sha256`, `dkim_signature_sha256`), `bank_timezone` + `payment_time_raw` for UTC normalization, `provider`/`provider_hint` (ignored for provider selection). See [AI_ARBITER_SERVER.md](AI_ARBITER_SERVER.md). Requires escrow token (seller or buyer). |
 | POST   | `/v1/exchange-lots/{lot}/mark-chat-cleared` | Mark all chat messages as cleared **for this requester only** (set `deleted_by_seller_at` or `deleted_by_buyer_at`). Call when user clears mailbox. Same auth as above. |
 
 Both require the `ValidateEscrowToken` middleware and a valid escrow token for the requesting side (seller or buyer for that lot).

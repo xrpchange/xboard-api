@@ -46,8 +46,9 @@ final class ArbiterOperatorEscalationNotifier
      *
      * @param  array<string, mixed>  $context
      * @param  array<string, mixed>  $rules
+     * @return bool True when escalation mail was sent; false if inbox not configured or send failed.
      */
-    public static function notifyPolicyManualReview(string $reasonCode, array $context, array $rules): void
+    public static function notifyPolicyManualReview(string $reasonCode, array $context, array $rules): bool
     {
         $to = trim((string) config('arbiter_operator_mail.escalation_email', ''));
         if ($to === '') {
@@ -56,7 +57,7 @@ final class ArbiterOperatorEscalationNotifier
                 'reason_code' => $reasonCode,
             ]);
 
-            return;
+            return false;
         }
 
         $ctx = $context;
@@ -65,12 +66,24 @@ final class ArbiterOperatorEscalationNotifier
 
         $digest = ArbiterOperatorEscalationDigest::build($ctx, $rules, 'policy_manual', $reasonCode);
         $lotId = (string) ($ctx['lot_id'] ?? '?');
-        Mail::send(new ArbiterOperatorEscalationMail($to, $lotId, $digest, 'policy_manual', $reasonCode));
+        try {
+            Mail::send(new ArbiterOperatorEscalationMail($to, $lotId, $digest, 'policy_manual', $reasonCode));
+        } catch (\Throwable $e) {
+            Log::error('[arbiter] operator_escalation_email_send_failed', [
+                'lot_id' => $ctx['lot_id'] ?? null,
+                'reason_code' => $reasonCode,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
 
         Log::info('[arbiter] operator_escalation_email_sent', [
             'lot_id' => $ctx['lot_id'] ?? null,
             'kind' => 'policy_manual',
             'reason_code' => $reasonCode,
         ]);
+
+        return true;
     }
 }

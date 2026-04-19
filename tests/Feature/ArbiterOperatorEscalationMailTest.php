@@ -51,7 +51,7 @@ class ArbiterOperatorEscalationMailTest extends TestCase
         Mail::fake();
         config(['arbiter_operator_mail.escalation_email' => 'operator@example.test']);
 
-        ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('insufficient_context', [
+        $sent = ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('insufficient_context', [
             'lot_id' => 3,
             'requester_side' => 'seller',
             'message' => 'short',
@@ -59,6 +59,7 @@ class ArbiterOperatorEscalationMailTest extends TestCase
             'deal_machine_state' => 'started',
             'recent_chat_digest' => '(none)',
         ], ['confidence' => 0.2, 'has_replay' => false]);
+        $this->assertTrue($sent);
 
         Mail::assertSent(ArbiterOperatorEscalationMail::class, function (ArbiterOperatorEscalationMail $mail): bool {
             $sub = $mail->envelope()->subject;

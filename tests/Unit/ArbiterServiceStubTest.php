@@ -27,7 +27,6 @@ class ArbiterServiceStubTest extends TestCase
         $svc = new ArbiterService(
             providers: [new StubArbiterProvider],
             primaryProvider: 'stub',
-            fallbackProviders: [],
             noAiBelow: 0.35,
             manualReviewThreshold: 0.55,
         );
@@ -51,7 +50,6 @@ class ArbiterServiceStubTest extends TestCase
         $svc = new ArbiterService(
             [new StubArbiterProvider],
             'stub',
-            [],
             0.35,
             0.55,
         );
@@ -74,7 +72,6 @@ class ArbiterServiceStubTest extends TestCase
         $svc = new ArbiterService(
             [new StubArbiterProvider],
             'stub',
-            [],
             0.35,
             0.55,
         );
@@ -97,7 +94,6 @@ class ArbiterServiceStubTest extends TestCase
         $svc = new ArbiterService(
             [new StubArbiterProvider],
             'stub',
-            [],
             0.35,
             0.55,
         );

@@ -248,7 +248,7 @@ final class ArbiterOperatorEscalationDigest
         return match (trim($code)) {
             'insufficient_context' => 'There was not enough structured proof or detail for the system to run an automatic review safely. Please review the request and evidence below.',
             'anti_replay_triggered' => 'The system detected a risk that the same payment proof may have been used before. Please verify the evidence carefully.',
-            'provider_unavailable' => 'The automated review service could not be reached or failed for every configured provider. Please continue the dispute manually.',
+            'provider_unavailable' => 'Every configured AI provider failed or timed out for this request. Treat this as a hand-off to human staff: use the signed links in this email to reply or take compensating actions. The deal chat will show users that manual handling applies.',
             'low_confidence' => 'An automatic review ran, but the confidence score stayed below the threshold where the platform trusts the result without a person. Please review the output and evidence.',
             default => 'This dispute was escalated for human review. Please use the details below.',
         };
