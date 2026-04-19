@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use App\Support\ArbiterOperatorEscalationDigest;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -10,25 +11,32 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\URL;
 
 /**
- * Internal operator notification — one Blade template: mail.arbiter_operator_escalation.
+ * Internal operator notification — HTML-first human summary in mail.arbiter_operator_escalation.
  */
 class ArbiterOperatorEscalationMail extends Mailable
 {
     use Queueable, SerializesModels;
 
+    /**
+     * @param  array<string, mixed>  $digest  from {@see ArbiterOperatorEscalationDigest::build}
+     */
     public function __construct(
         public string $operatorEmail,
         public string $lotId,
-        /** Plain block from {@see \App\Support\ArbiterDealContextPlainText}; wrapped by the mail template. */
-        public string $dealContextPlain,
+        public array $digest,
+        /** `image_only_receipt` | `policy_manual` */
+        public string $mailEscalationKind = 'image_only_receipt',
+        /** For `policy_manual`: e.g. insufficient_context */
+        public string $policyReasonCode = '',
     ) {}
 
     public function envelope(): Envelope
     {
-        $subject = trim(view('mail.arbiter_operator_escalation', [
-            'mailSection' => 'subject',
-            'lotId' => $this->lotId,
-        ])->render());
+        $subject = ArbiterOperatorEscalationDigest::emailSubject(
+            $this->lotId,
+            $this->mailEscalationKind,
+            $this->policyReasonCode,
+        );
 
         return new Envelope(
             subject: $subject,
@@ -58,23 +66,21 @@ class ArbiterOperatorEscalationMail extends Mailable
             ]),
         ];
 
-        $shared = [
+        $html = view('mail.arbiter_operator_escalation', [
+            'mailSection' => 'html',
             'lotId' => $lot,
             'urls' => $urls,
-            'dealContextPlain' => $this->dealContextPlain,
-        ];
+            'digest' => $this->digest,
+        ])->render();
 
-        $html = view('mail.arbiter_operator_escalation', array_merge($shared, [
-            'mailSection' => 'html',
-        ]))->render();
-
-        $plain = view('mail.arbiter_operator_escalation', array_merge($shared, [
-            'mailSection' => 'plain',
-        ]))->render();
+        $plainTrimmed = ArbiterOperatorEscalationDigest::toPlainText($this->digest, $lot, $urls);
 
         return new Content(
             htmlString: $html,
-            text: trim($plain),
+            text: 'mail.arbiter_operator_escalation_text',
+            with: [
+                'arbiterOperatorEscalationPlainBody' => $plainTrimmed,
+            ],
         );
     }
 }

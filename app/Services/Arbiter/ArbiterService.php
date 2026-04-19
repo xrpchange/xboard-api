@@ -39,6 +39,8 @@ class ArbiterService
         $confidence = (float) ($rules['confidence'] ?? 0.0);
 
         if (($rules['has_replay'] ?? false) === true) {
+            ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('anti_replay_triggered', $context, $rules);
+
             return $this->manualOnlyOutcome(
                 reasonCode: 'anti_replay_triggered',
                 confidence: $confidence,
@@ -48,6 +50,8 @@ class ArbiterService
         }
 
         if ($confidence <= $this->noAiBelow) {
+            ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('insufficient_context', $context, $rules);
+
             return $this->manualOnlyOutcome(
                 reasonCode: 'insufficient_context',
                 confidence: $confidence,
@@ -102,6 +106,11 @@ class ArbiterService
                 }
 
                 if ($confidence < $this->manualReviewThreshold) {
+                    $ctxLow = $context;
+                    $ctxLow['receipt_pdf_llm'] = $receiptAttachment['prompt_status'];
+                    $ctxLow['receipt_pdf_text_excerpt'] = $receiptAttachment['text_excerpt'];
+                    ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('low_confidence', $ctxLow, $rules);
+
                     return [
                         'message' => $display."\n\n".'Escalated to manual review due to low confidence in submitted context.',
                         'arbiter_status' => 'manual_review',
@@ -138,6 +147,11 @@ class ArbiterService
             'fallback' => $this->fallbackProviders,
             'last_error' => $lastError?->getMessage(),
         ]);
+
+        $ctxFail = $context;
+        $ctxFail['receipt_pdf_llm'] = $receiptAttachment['prompt_status'];
+        $ctxFail['receipt_pdf_text_excerpt'] = $receiptAttachment['text_excerpt'];
+        ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('provider_unavailable', $ctxFail, $rules);
 
         return $this->manualOnlyOutcome(
             reasonCode: 'provider_unavailable',
