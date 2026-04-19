@@ -121,6 +121,7 @@ class ExchangeLot extends Model
             return $fiat->code ?? '';
         }
         $crypto = $this->fromCryptoCurrency;
+
         return $crypto ? (string) $crypto->code : '';
     }
 
@@ -134,6 +135,7 @@ class ExchangeLot extends Model
             return $fiat->code ?? '';
         }
         $crypto = $this->toCryptoCurrency;
+
         return $crypto ? (string) $crypto->code : '';
     }
 
@@ -167,6 +169,20 @@ class ExchangeLot extends Model
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class);
+    }
+
+    /**
+     * Same row selection as {@see \App\Http\Controllers\Api\ExchangeLotController::storeReceiptLinksInLatestTransaction}:
+     * latest `transactions.id` for this lot, optionally scoped by `buyer_lot_email` when set.
+     */
+    public function latestReceiptTransaction(): ?Transaction
+    {
+        $query = Transaction::query()->where('exchange_lot_id', $this->id);
+        if (! empty($this->buyer_lot_email)) {
+            $query->where('buyer_lot_email', $this->buyer_lot_email);
+        }
+
+        return $query->orderByDesc('id')->first();
     }
 
     public function dealChatMessages(): HasMany
@@ -204,6 +220,7 @@ class ExchangeLot extends Model
         } else {
             $query->whereNull('test_group');
         }
+
         return $query;
     }
 
@@ -218,6 +235,7 @@ class ExchangeLot extends Model
         } else {
             $query->whereNull('main_group');
         }
+
         return $query;
     }
 

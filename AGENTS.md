@@ -28,6 +28,7 @@ Key points:
 - Integrations:
   - XBoard Core — business operations for tokens/escrow
   - Monero Balance Service — proxy for XMR balance checks (no "fake" data)
+  - `smalot/pdfparser` (LGPL-3.0) — server-side extraction of plain text from bank receipt PDFs for the AI arbiter prompt (`docs/AI_ARBITER_SERVER.md`).
 - Logs — no secrets.
 - Any API changes must be accompanied by updates to README and relevant documents in `docs/`.
 - **Spec-driven tests:** behaviors described in docs should map to automated checks via **`docs/SPEC_REGISTRY.md`** (requirement ID → test). Add a registry row and a `@group spec` / `@group spec-<ID>` test when you document new rules; run `php artisan test --group spec`.

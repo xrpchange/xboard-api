@@ -29,7 +29,10 @@ php artisan test --group spec
 | `App\Services\Arbiter\GigaChatArbiterProvider` | Default primary: Sber GigaChat — OAuth token (cached ~30 min) + OpenAI-compatible `POST /chat/completions` under `api/v1`. |
 | `App\Services\Arbiter\DeepSeekArbiterProvider` | Common RU fallback: OpenAI-compatible Chat Completions. |
 | `App\Services\Arbiter\AnthropicArbiterProvider` | Optional: Anthropic Messages API (often needs VPN from RU). |
-| `App\Services\Arbiter\OpenAiArbiterProvider` | Optional fallback: OpenAI Chat Completions API. |
+| `App\Services\Arbiter\OpenAiArbiterProvider` | Optional fallback: OpenAI Chat Completions; when a receipt PDF is attached, **OpenAI Responses** (`POST /v1/responses`) with `input_file` + `input_text` (vision-capable models such as `gpt-4o-mini`). |
+| `App\Support\ArbiterReceiptPdfResolver` | Resolves a stored receipt PDF path for the lot whose `sha256` matches the client `pdf_sha256` (via `transactions.receipt_links_json` + `ReceiptAttachmentStorage`). |
+| `App\Support\ArbiterDealContextPlainText` | Shared plain-text block (dispute fields, digests, receipt excerpt) for LLM `user_prompt` and operator escalation email. |
+| `App\Services\Arbiter\ArbiterOperatorEscalationNotifier` | Sends `ArbiterOperatorEscalationMail` when receipt PDF is image-only (no extractable text). |
 | `App\Services\Arbiter\ArbiterService` | Rules-first orchestration + failover order. |
 | `App\Support\ArbiterPromptContextAssembler` | Loads `resources/prompts/arbiter_exchange_rules.md`, `DealChatTagSequenceValidator::computeStateForLot`, and a requester-visible chat digest for the LLM user prompt. |
 | `resources/prompts/arbiter_exchange_rules.md` | Canonical English digest for the model (not end-user UI copy). |
@@ -48,6 +51,28 @@ Before calling the provider, the controller attaches (non-authoritative) context
 
 Enforcement of progression and payouts remains **server-side only**; the digest steers the model toward questions and conservative verdicts.
 
+### Receipt PDF (text for all; binary only when text exists)
+
+When the client sends **`pdf_sha256`** (64 hex), the server uses the **current deal transaction** for receipts — the same row as when saving bank receipts: **`ExchangeLot::latestReceiptTransaction()`** (latest `transactions.id` for the lot, filtered by `buyer_lot_email` when it is set on the lot). It scans **`receipt_links_json`** on that row only (`ReceiptAttachmentStorage::linkToRelativePath` → on-disk path). If a file exists and **`hash_file('sha256', …)`** matches:
+
+1. The server extracts plain text with **`smalot/pdfparser`** (truncated to **`ARBITER_RECEIPT_PDF_TEXT_EXCERPT_MAX_CHARS`**, default 8000 UTF-8 characters).
+2. **If extraction is non-empty:** that text is included as **`receipt_pdf_text_excerpt`** in the text user prompt for **every** provider. **Anthropic** and **OpenAI** additionally receive the PDF as a **separate binary** (Anthropic `document` base64; OpenAI **`POST /v1/responses`** `input_file` + `input_text`, vision-capable models). **GigaChat / DeepSeek** see the receipt via the text excerpt only.
+3. **If extraction is empty** (scanned image / bitmap-only PDF — not useful as text): the **LLM is not called**. The server sends an **internal operator email** (HTML + plain text) to **`ARBITER_OPERATOR_ESCALATION_EMAIL`** (if set). Inbox and signed-link TTL come from **`config/arbiter_operator_mail.php`** (`.env`). **All copy** (subject, preamble, English button labels **Reply** / **Compensate buyer** / **Deny buyer**) lives in a **single Blade template**: **`resources/views/mail/arbiter_operator_escalation.blade.php`** (`mailSection`: `subject` \| `html` \| `plain`). The body uses the same structured deal context as the LLM would receive (`App\Support\ArbiterDealContextPlainText`). The mail includes **three signed GET links** (`/arbiter/operator/{lot}/{action}`) scoped to that lot and expiry (`ARBITER_OPERATOR_ACTION_LINK_TTL_DAYS`, default **7**). `reason_code`: `receipt_pdf_image_only_operator_notified`. If the inbox env var is empty, only a warning is logged.
+
+Max binary read size: **`ARBITER_RECEIPT_PDF_MAX_BYTES`** (default 5 MiB in `config/services.php`).
+
+---
+
+## LLM response format (machine verdict line)
+
+The model must return **plain text** suitable for dispute chat, then **one final line** with no leading spaces:
+
+- **Prefix:** exactly `XBOARD_ARBITER_JSON:` (see `App\Services\Arbiter\ArbiterResponseParser::LINE_PREFIX`).  
+- **Payload:** immediately after the prefix, a **single JSON object** on the same line, e.g. `{"verdict":"manual_review"}`.  
+- **`verdict`** must be one of: `manual_review`, `favor_buyer`, `favor_seller`, `continue_review` (`ArbiterResponseParser::ALLOWED_VERDICTS`). Unknown values are treated as `continue_review`.
+
+The server splits **display text** (everything before that last non-empty line) from **verdict** (parsed JSON). If the prefix line is missing, the whole reply is treated as display text and verdict defaults to `continue_review`.
+
 ---
 
 ## Rules-first policy
@@ -55,9 +80,10 @@ Enforcement of progression and payouts remains **server-side only**; the digest 
 1. **Deterministic context score** from message length, presence of evidence hashes, DKIM hash, and replay flag.  
 2. **Anti-replay:** if any of `pdf_sha256` / `email_message_sha256` / `dkim_signature_sha256` matches a previous arbiter message’s `deal_tag.anti_replay.*` for the same lot → **manual review**, no LLM call (`reason_code`: `anti_replay_triggered`).  
 3. **No-AI band:** if context score **≤ `ARBITER_NO_AI_BELOW`** → **manual review**, no LLM (`reason_code`: `insufficient_context`).  
-4. **Gray zone:** otherwise the server calls the **primary** provider, then **fallback** providers on transport/API failure.  
-5. **Post-LLM escalation:** if context score **&lt; `ARBITER_MANUAL_REVIEW_THRESHOLD`** but LLM ran, the response body includes the model text plus an English escalation suffix; `arbiter_status` is `manual_review` (`reason_code`: `low_confidence`).  
-6. **All providers fail:** fixed English manual message (`reason_code`: `provider_unavailable`).
+4. **Image-only receipt PDF:** if `pdf_sha256` matches a file on disk but **text extraction yields empty** → **no LLM**; operator email with full text context and signed action links when `ARBITER_OPERATOR_ESCALATION_EMAIL` is set (`reason_code`: `receipt_pdf_image_only_operator_notified`).  
+5. **Gray zone:** otherwise the server calls the **primary** provider, then **fallback** providers on transport/API failure.  
+6. **Post-LLM escalation:** if context score **&lt; `ARBITER_MANUAL_REVIEW_THRESHOLD`** but LLM ran, the response body includes the model text plus an English escalation suffix; `arbiter_status` is `manual_review` (`reason_code`: `low_confidence`).  
+7. **All providers fail:** fixed English manual message (`reason_code`: `provider_unavailable`).
 
 ---
 
@@ -95,6 +121,10 @@ ARBITER_FALLBACK_PROVIDERS=openai,deepseek
 | `ARBITER_FALLBACK_PROVIDERS` | `deepseek` | Comma-separated fallback ids. |
 | `ARBITER_NO_AI_BELOW` | `0.35` | Skip LLM when deterministic score is **≤** this value. |
 | `ARBITER_MANUAL_REVIEW_THRESHOLD` | `0.55` | After LLM, mark `arbiter_status=manual_review` when score is below this. |
+| `ARBITER_RECEIPT_PDF_MAX_BYTES` | `5242880` | Max receipt PDF size read from disk for hashing, text extraction, and binary attachment. |
+| `ARBITER_RECEIPT_PDF_TEXT_EXCERPT_MAX_CHARS` | `8000` | Max UTF-8 characters of extracted PDF text injected into the text prompt for **every** provider. |
+| `ARBITER_OPERATOR_ESCALATION_EMAIL` | *(empty)* | When a receipt PDF matches on disk but has **no extractable text**, send internal context to this address (no LLM). Wired through `config/arbiter_operator_mail.php`. Example in `.env.example`: `tehnograny@yandex.ru`. |
+| `ARBITER_OPERATOR_ACTION_LINK_TTL_DAYS` | `7` | Expiry (days) for signed operator action URLs in that email. Set explicitly in `.env` / `.env.example` alongside the operator inbox. |
 | `ARBITER_RESOLVE_ON_FAVOR_BUYER` | `true` | When LLM `verdict` is `favor_buyer` and `arbiter_status` is `in_review`, close `deal_disputes` so seller can use normal crypto payout (unless auto Core payout is on and fails). |
 | `ARBITER_RESOLVE_ON_FAVOR_SELLER` | `false` | Same for `favor_seller`. |
 | `ARBITER_AUTO_CORE_PAYOUT_ON_FAVOR_BUYER` | `false` | When `true`, after `favor_buyer` Laravel calls Core `POST /api/deal-payout-to-buyer-from-reservation` (seller token loaded from `reservations` / `test_reservations`; same `X-Core-Key` as other API-only Core calls). |
