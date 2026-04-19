@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Arbiter;
 use App\Http\Controllers\Controller;
 use App\Models\DealChatMessage;
 use App\Models\ExchangeLot;
+use App\Support\PublicHttpsUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -30,7 +31,7 @@ final class ArbiterOperatorActionController extends Controller
                 return view('arbiter.operator_reply_form', [
                     'lotId' => $lot,
                     'action' => $action,
-                    'formAction' => $request->fullUrl(),
+                    'formAction' => $this->secureRequestUrl($request),
                 ]);
             }
 
@@ -55,14 +56,14 @@ final class ArbiterOperatorActionController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return redirect($request->fullUrl())
+            return redirect($this->secureRequestUrl($request))
                 ->withErrors($validator)
                 ->withInput();
         }
 
         $body = trim((string) $validator->validated()['body']);
         if ($body === '') {
-            return redirect($request->fullUrl())
+            return redirect($this->secureRequestUrl($request))
                 ->withErrors(['body' => 'Message cannot be empty.'])
                 ->withInput();
         }
@@ -96,6 +97,14 @@ final class ArbiterOperatorActionController extends Controller
         return view('arbiter.operator_reply_sent', [
             'lotId' => (string) $lotModel->id,
         ]);
+    }
+
+    /** Full URL with https scheme for non-local hosts (matches signed links in operator email). */
+    private function secureRequestUrl(Request $request): string
+    {
+        $base = PublicHttpsUrl::upgradeMailBaseToHttps(rtrim($request->getSchemeAndHttpHost(), '/'));
+
+        return $base.$request->getRequestUri();
     }
 
     /** Same cap as {@see \App\Http\Controllers\Api\ExchangeLotController::insertDealChatMessage}. */

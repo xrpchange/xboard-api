@@ -15,18 +15,18 @@ class PublicHttpsUrlTest extends TestCase
         );
     }
 
-    public function test_leaves_localhost_http(): void
+    public function test_upgrades_any_http_host_including_localhost_style_names(): void
     {
         $this->assertSame(
-            'http://localhost:8000',
+            'https://localhost:8000',
             PublicHttpsUrl::upgradeMailBaseToHttps('http://localhost:8000')
         );
         $this->assertSame(
-            'http://127.0.0.1',
+            'https://127.0.0.1',
             PublicHttpsUrl::upgradeMailBaseToHttps('http://127.0.0.1')
         );
         $this->assertSame(
-            'http://127.0.0.1:9000',
+            'https://127.0.0.1:9000',
             PublicHttpsUrl::upgradeMailBaseToHttps('http://127.0.0.1:9000')
         );
     }

@@ -10,6 +10,7 @@ Start by reading:
 - `./docs/` folder — detailed information about endpoints, database schemas, and integrations
 
 Key points:
+- **Public URLs are HTTPS-only:** no `http://` in mail or browser links; do not add in-app http→https redirect middleware (breaks behind TLS terminators). See `.cursor/rules/https-only-public-urls.mdc`.
 - **No localized texts on the server.** All user-facing strings are localized in the client (xboard-client). The API must not contain locale-dependent text (no translation arrays/maps in PHP). See `.cursor/rules/no-localized-texts-on-server.mdc`.
 - Backend: PHP 8+, Laravel. Configuration via `.env` and `config/*.php`, no hardcoded `127.0.0.1`.
 - **Database time:** Treat all persisted timestamps as **UTC**. `APP_TIMEZONE` must stay UTC; MySQL/MariaDB use `SET time_zone='+00:00'` on connect (`config/database.php`). Do not write local-wall-clock values into `datetime`/`timestamp` columns without converting to UTC first.
