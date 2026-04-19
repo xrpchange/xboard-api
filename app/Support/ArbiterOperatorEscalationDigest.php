@@ -30,7 +30,6 @@ final class ArbiterOperatorEscalationDigest
         $message = trim((string) ($context['message'] ?? ''));
         $dealState = trim((string) ($context['deal_machine_state'] ?? ''));
         $chatDigest = trim((string) ($context['recent_chat_digest'] ?? ''));
-        $rulesDigest = trim((string) ($context['exchange_rules_digest'] ?? ''));
         $receiptText = trim((string) ($context['receipt_pdf_text_excerpt'] ?? ''));
         $pdfSha = trim((string) ($context['pdf_sha256'] ?? ''));
         $emailSha = trim((string) ($context['email_message_sha256'] ?? ''));
@@ -80,6 +79,12 @@ final class ArbiterOperatorEscalationDigest
             $facts[] = ['label' => 'Payment time (normalized, UTC)', 'value' => $payUtc];
         }
 
+        if ($chatDigest === '(no chat messages in requester view)') {
+            $facts[] = ['label' => 'Chat thread (requester view)', 'value' => 'No messages'];
+        }
+
+        $chatTurns = self::parseChatTurns($chatDigest);
+
         $sections = [];
         if ($message !== '') {
             $sections[] = ['title' => 'What the requester wrote', 'content' => $message];
@@ -92,11 +97,12 @@ final class ArbiterOperatorEscalationDigest
                 'content' => 'No text could be extracted from the uploaded receipt file.',
             ];
         }
-        if ($chatDigest !== '' && $chatDigest !== '(none)') {
-            $sections[] = ['title' => 'Recent conversation (summary)', 'content' => $chatDigest];
-        }
-        if ($rulesDigest !== '' && $rulesDigest !== '(missing)') {
-            $sections[] = ['title' => 'Exchange rules (summary for this case)', 'content' => $rulesDigest];
+
+        if ($chatTurns === [] && $chatDigest !== '' && $chatDigest !== '(none)' && $chatDigest !== '(no chat messages in requester view)') {
+            $sections[] = [
+                'title' => 'Recent conversation',
+                'content' => "The thread could not be laid out in a structured form. Raw excerpt:\n\n".$chatDigest,
+            ];
         }
 
         return [
@@ -106,7 +112,100 @@ final class ArbiterOperatorEscalationDigest
             'policy_reason_code' => $mailEscalationKind === 'policy_manual' ? trim($policyReasonCode) : '',
             'facts' => $facts,
             'sections' => $sections,
+            'chat_turns' => $chatTurns,
         ];
+    }
+
+    /**
+     * @return list<array{speaker: string, kind: string, body: string}>
+     */
+    private static function parseChatTurns(string $chatDigest): array
+    {
+        if ($chatDigest === '' || $chatDigest === '(none)' || $chatDigest === '(no chat messages in requester view)') {
+            return [];
+        }
+
+        $out = [];
+        foreach (explode("\n", $chatDigest) as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            $parsed = self::parseOneChatDigestLine($line);
+            if ($parsed !== null) {
+                $out[] = $parsed;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array{speaker: string, kind: string, body: string}|null
+     */
+    private static function parseOneChatDigestLine(string $line): ?array
+    {
+        if (! preg_match('/^id=\d+\s+side=(\S+)\s+tag=/u', $line, $hm)) {
+            return null;
+        }
+
+        $sideRaw = $hm[1];
+        $pos = strrpos($line, ' body=');
+        if ($pos === false) {
+            return null;
+        }
+
+        $tagKey = strpos($line, 'tag=');
+        if ($tagKey === false) {
+            return null;
+        }
+
+        $tagPart = trim(substr($line, $tagKey + 4, $pos - ($tagKey + 4)));
+        $bodyPart = substr($line, $pos + strlen(' body='));
+        $body = $bodyPart === '(empty)' ? '' : $bodyPart;
+
+        return [
+            'speaker' => self::speakerLabel($sideRaw),
+            'kind' => self::kindFromTagPayload($tagPart),
+            'body' => $body,
+        ];
+    }
+
+    private static function speakerLabel(string $side): string
+    {
+        return match (strtolower($side)) {
+            'buyer' => 'Buyer',
+            'seller' => 'Seller',
+            'arbiter' => 'Arbiter',
+            'system' => 'System',
+            default => $side !== '' ? ucfirst($side) : 'Unknown',
+        };
+    }
+
+    private static function kindFromTagPayload(string $tagPart): string
+    {
+        if ($tagPart === '' || $tagPart === '(none)') {
+            return '';
+        }
+
+        $t = '';
+        if (str_starts_with($tagPart, '{')) {
+            $decoded = json_decode($tagPart, true);
+            if (is_array($decoded) && isset($decoded['t'])) {
+                $t = trim((string) $decoded['t']);
+            }
+        }
+
+        return match ($t) {
+            'payment_details' => 'Payment details',
+            'receipt_confirmation' => 'Receipt',
+            'seller_transfer_tx' => 'Seller transfer',
+            'buyer_crypto_tx' => 'Buyer crypto transfer',
+            'buyer_destination_details' => 'Buyer payout details',
+            'deal_completed_seller' => 'Deal completed',
+            'arbiter_message' => 'Arbiter reply',
+            default => $t !== '' ? 'Structured update' : '',
+        };
     }
 
     public static function emailSubject(string $lotId, string $mailEscalationKind, string $policyReasonCode): string
@@ -178,6 +277,20 @@ final class ArbiterOperatorEscalationDigest
             $label = (string) ($row['label'] ?? '');
             $value = (string) ($row['value'] ?? '');
             $lines[] = $label.': '.$value;
+        }
+        if (($digest['chat_turns'] ?? []) !== []) {
+            $lines[] = '';
+            $lines[] = 'Recent conversation';
+            $lines[] = str_repeat('-', 40);
+            $i = 1;
+            foreach ($digest['chat_turns'] as $turn) {
+                $kind = ($turn['kind'] ?? '') !== '' ? ' ('.$turn['kind'].')' : '';
+                $lines[] = ($i++).'. '.($turn['speaker'] ?? 'Unknown').$kind;
+                $body = trim((string) ($turn['body'] ?? ''));
+                if ($body !== '') {
+                    $lines[] = '   '.$body;
+                }
+            }
         }
         foreach ($digest['sections'] ?? [] as $sec) {
             $lines[] = '';

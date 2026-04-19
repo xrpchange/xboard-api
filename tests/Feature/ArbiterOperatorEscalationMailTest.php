@@ -34,7 +34,9 @@ class ArbiterOperatorEscalationMailTest extends TestCase
                 && $mail->lotId === '7'
                 && $mail->operatorEmail === 'operator@example.test'
                 && str_contains($html, 'wait_buyer_pay')
-                && str_contains($html, 'rules digest line')
+                && str_contains($html, 'Recent conversation')
+                && str_contains($html, 'Buyer')
+                && str_contains($html, 'hello')
                 && str_contains($html, 'Key facts')
                 && str_contains($html, 'Reply in thread')
                 && str_contains($html, 'Compensate buyer')
