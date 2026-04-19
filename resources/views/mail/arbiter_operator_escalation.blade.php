@@ -23,6 +23,12 @@
         table.facts td { padding: 10px 0; border-bottom: 1px solid #f1f5f9; word-break: break-word; }
         .section { margin-top: 8px; }
         .section-body { background: #f8fafc; border-radius: 8px; padding: 16px; font-size: 15px; color: #334155; white-space: pre-wrap; word-break: break-word; }
+        ol.chat-turns { margin: 0; padding-left: 1.25rem; font-size: 15px; color: #334155; }
+        ol.chat-turns li { margin: 0 0 1rem; padding-left: 0.25rem; }
+        ol.chat-turns li:last-child { margin-bottom: 0; }
+        .turn-meta { margin-bottom: 6px; }
+        .turn-kind { margin-left: 8px; font-size: 13px; font-weight: 600; color: #64748b; text-transform: none; letter-spacing: 0; }
+        .turn-body { margin: 0; padding: 10px 12px; background: #f8fafc; border-radius: 8px; white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
         .actions { margin-top: 28px; padding-top: 24px; border-top: 1px solid #e5e7eb; }
         .actions p { margin: 0 0 12px; font-size: 14px; color: #475569; }
         .btn { display: inline-block; margin: 6px 8px 6px 0; padding: 12px 18px; background: #1e293b; color: #fff !important; text-decoration: none; border-radius: 8px; font-size: 15px; font-weight: 600; }
@@ -52,6 +58,25 @@
                     </tr>
                 @endforeach
             </table>
+
+            @if (!empty($digest['chat_turns']))
+                <h2>Recent conversation</h2>
+                <ol class="chat-turns">
+                    @foreach ($digest['chat_turns'] as $turn)
+                        <li>
+                            <div class="turn-meta">
+                                <strong>{{ e($turn['speaker'] ?? '') }}</strong>
+                                @if (!empty($turn['kind']))
+                                    <span class="turn-kind">{{ e($turn['kind']) }}</span>
+                                @endif
+                            </div>
+                            @if (($turn['body'] ?? '') !== '')
+                                <div class="turn-body">{{ e($turn['body']) }}</div>
+                            @endif
+                        </li>
+                    @endforeach
+                </ol>
+            @endif
 
             @foreach ($digest['sections'] ?? [] as $sec)
                 <div class="section">
