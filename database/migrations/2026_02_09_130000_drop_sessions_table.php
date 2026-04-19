@@ -6,8 +6,8 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * Drop sessions table.
-     * API is stateless (escrow token auth); web routes only serve Swagger and do not use sessions.
+     * Drop legacy sessions table (API is stateless for escrow tokens).
+     * Recreated later by 2026_04_19_120000_create_sessions_table for Laravel session driver support on web routes.
      */
     public function up(): void
     {
