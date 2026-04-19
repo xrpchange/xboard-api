@@ -65,7 +65,6 @@ class AppServiceProvider extends ServiceProvider
             return new ArbiterService(
                 providers: $providers,
                 primaryProvider: (string) ($arbiterConfig['primary_provider'] ?? 'gigachat'),
-                fallbackProviders: is_array($arbiterConfig['fallback_providers'] ?? null) ? $arbiterConfig['fallback_providers'] : [],
                 noAiBelow: (float) ($arbiterConfig['no_ai_below'] ?? 0.35),
                 manualReviewThreshold: (float) ($arbiterConfig['manual_review_threshold'] ?? 0.55),
             );

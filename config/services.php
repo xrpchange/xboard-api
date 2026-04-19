@@ -80,12 +80,10 @@ return [
     ],
 
     'arbiter' => [
-        // Default gigachat for RU-friendly banking context; falls back to deepseek if primary fails (set keys in .env).
+        // Single active LLM provider only (no automatic failover to other models). Production: GigaChat.
         'primary_provider' => env('ARBITER_PRIMARY_PROVIDER', 'gigachat'),
-        'fallback_providers' => array_values(array_filter(array_map(
-            static fn (string $v): string => trim($v),
-            explode(',', (string) env('ARBITER_FALLBACK_PROVIDERS', 'deepseek'))
-        ))),
+        /** @deprecated Ignored — kept empty. Do not use `ARBITER_FALLBACK_PROVIDERS`; arbiter never switches providers. */
+        'fallback_providers' => [],
         // Below this deterministic context score, skip LLM calls (rules-only manual outcome).
         'no_ai_below' => (float) env('ARBITER_NO_AI_BELOW', 0.35),
         // After a successful LLM response, escalate when context score is still below this threshold.

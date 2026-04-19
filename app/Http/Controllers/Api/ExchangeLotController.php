@@ -4135,6 +4135,10 @@ class ExchangeLotController extends Controller
             return response()->json(['success' => false, 'message' => 'Not authorized to read dispute status.'], 403);
         }
 
+        $lot->refresh();
+        $maxAiArbiter = (int) config('deal.max_ai_arbiter_invocations_per_lot', 30);
+        $invocations = (int) ($lot->arbiter_ai_invocations ?? 0);
+
         $activeDispute = DealDispute::query()
             ->where('exchange_lot_id', $lot->id)
             ->whereIn('status', ['opened', 'in_review'])
@@ -4156,6 +4160,11 @@ class ExchangeLotController extends Controller
                 'arbiter_verdict' => $activeDispute->arbiter_verdict,
                 'last_activity_at' => $this->toUtcIso8601($activeDispute->last_activity_at),
             ] : null,
+            'arbiter_ai' => [
+                'invocations' => $invocations,
+                'max_invocations' => $maxAiArbiter > 0 ? $maxAiArbiter : null,
+                'limit_reached' => $maxAiArbiter > 0 && $invocations >= $maxAiArbiter,
+            ],
         ]);
     }
 
@@ -4176,6 +4185,23 @@ class ExchangeLotController extends Controller
         $isBuyer = $tokenHash !== '' && $lot->buyer_escrow_token_hash !== null && strcasecmp(trim((string) $lot->buyer_escrow_token_hash), $tokenHash) === 0;
         if (! $isSeller && ! $isBuyer) {
             return response()->json(['success' => false, 'message' => 'Not authorized to request arbiter message.'], 403);
+        }
+
+        $maxAiArbiter = (int) config('deal.max_ai_arbiter_invocations_per_lot', 30);
+        if ($maxAiArbiter > 0) {
+            // Reserve before LLM: prevents replay loops that burn provider budget without inserting chat rows.
+            $affected = DB::update(
+                'UPDATE exchange_lots SET arbiter_ai_invocations = arbiter_ai_invocations + 1 WHERE id = ? AND arbiter_ai_invocations < ?',
+                [(int) $lot->id, $maxAiArbiter]
+            );
+            if ($affected === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'AI arbiter invocation limit reached for this deal.',
+                    'error_code' => 'ai_arbiter_iteration_limit_reached',
+                    'max_ai_arbiter_invocations' => $maxAiArbiter,
+                ], 422);
+            }
         }
 
         $validated = $request->validate([
@@ -4308,6 +4334,9 @@ class ExchangeLotController extends Controller
             'provider_hint_applied' => false,
             'reason_code' => $arbiterResult['reason_code'] ?? null,
             'confidence' => $arbiterResult['confidence'] ?? null,
+            'operator_escalation_email_sent' => array_key_exists('operator_escalation_email_sent', $arbiterResult)
+                ? (bool) $arbiterResult['operator_escalation_email_sent']
+                : null,
             'dispute_closed' => $disputeClosed,
             'source_side' => $requesterSide,
             'dispute_id' => $dispute->id,

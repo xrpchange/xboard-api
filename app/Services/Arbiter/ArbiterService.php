@@ -18,7 +18,6 @@ class ArbiterService
     public function __construct(
         iterable $providers,
         private readonly string $primaryProvider,
-        private readonly array $fallbackProviders,
         private readonly float $noAiBelow,
         private readonly float $manualReviewThreshold
     ) {
@@ -28,7 +27,7 @@ class ArbiterService
     }
 
     /**
-     * Rules-first: deterministic checks, then AI for the "gray zone", then optional escalation.
+     * Rules-first: deterministic checks, then AI for the "gray zone" via the **sole** configured primary provider, then operator escalation when needed.
      *
      * @param  array<string, mixed>  $context
      * @return array<string, mixed>
@@ -142,22 +141,22 @@ class ArbiterService
             }
         }
 
-        Log::error('[arbiter] all_providers_failed', [
+        Log::error('[arbiter] primary_provider_failed', [
             'primary' => $this->primaryProvider,
-            'fallback' => $this->fallbackProviders,
             'last_error' => $lastError?->getMessage(),
         ]);
 
         $ctxFail = $context;
         $ctxFail['receipt_pdf_llm'] = $receiptAttachment['prompt_status'];
         $ctxFail['receipt_pdf_text_excerpt'] = $receiptAttachment['text_excerpt'];
-        ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('provider_unavailable', $ctxFail, $rules);
+        $operatorEscalationSent = ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('provider_unavailable', $ctxFail, $rules);
 
         return $this->manualOnlyOutcome(
             reasonCode: 'provider_unavailable',
             confidence: $confidence,
-            policy: 'rules_first_provider_failover',
-            verdict: 'manual_review'
+            policy: 'rules_first_single_provider',
+            verdict: 'manual_review',
+            operatorEscalationEmailSent: $operatorEscalationSent
         );
     }
 
@@ -204,12 +203,9 @@ class ArbiterService
      */
     private function resolveProviderOrder(): array
     {
-        $order = array_merge([$this->primaryProvider], $this->fallbackProviders);
+        $primary = trim($this->primaryProvider);
 
-        return array_values(array_unique(array_filter(array_map(
-            static fn ($v) => trim((string) $v),
-            $order
-        ))));
+        return $primary !== '' ? [$primary] : [];
     }
 
     private function systemPrompt(bool $receiptPdfBinaryAttached, bool $receiptPdfTextExcerptPresent): string
@@ -354,10 +350,15 @@ class ArbiterService
     /**
      * @return array<string, mixed>
      */
-    private function manualOnlyOutcome(string $reasonCode, float $confidence, string $policy, string $verdict = 'manual_review'): array
-    {
-        return [
-            'message' => $this->manualReviewText($reasonCode),
+    private function manualOnlyOutcome(
+        string $reasonCode,
+        float $confidence,
+        string $policy,
+        string $verdict = 'manual_review',
+        ?bool $operatorEscalationEmailSent = null
+    ): array {
+        $out = [
+            'message' => $this->manualReviewText($reasonCode, $operatorEscalationEmailSent),
             'arbiter_status' => 'manual_review',
             'confidence' => $confidence,
             'provider_used' => null,
@@ -366,13 +367,20 @@ class ArbiterService
             'policy' => $policy,
             'verdict' => $verdict,
         ];
+        if ($operatorEscalationEmailSent !== null) {
+            $out['operator_escalation_email_sent'] = $operatorEscalationEmailSent;
+        }
+
+        return $out;
     }
 
-    private function manualReviewText(string $reasonCode): string
+    private function manualReviewText(string $reasonCode, ?bool $operatorEscalationEmailSent = null): string
     {
         return match ($reasonCode) {
             'anti_replay_triggered' => 'Potential replayed evidence was detected. The dispute is escalated to manual review.',
-            'provider_unavailable' => 'AI provider is temporarily unavailable. The dispute is escalated to manual review.',
+            'provider_unavailable' => $operatorEscalationEmailSent === true
+                ? 'AI providers could not be reached. An exchange operator has been notified by email with this dispute context (signed action links). They can continue the case outside the AI path.'
+                : 'AI providers could not be reached. The dispute is escalated to manual review.',
             'insufficient_context' => 'Submitted context is insufficient for AI-assisted review. The dispute is escalated to manual review.',
             'receipt_pdf_image_only_operator_notified' => 'The bank receipt PDF has no extractable text (likely a scanned image). The dispute is escalated to manual review; an operator has been notified by email with full deal context.',
             default => 'The dispute is escalated to manual review.',

@@ -14,10 +14,58 @@ php artisan test --group spec
 
 ## Security model
 
-- **Provider selection and failover** are controlled only by server configuration (`config/services.php` + `.env`).  
+- **Per-lot AI invocation budget** — see the dedicated section below (atomic reservation **before** any LLM work; separate from counting chat rows).
+- **Single LLM provider:** only `ARBITER_PRIMARY_PROVIDER` (default **`gigachat`**) is invoked per request — **no automatic failover** to other vendors. Deprecated env `ARBITER_FALLBACK_PROVIDERS` is ignored.  
 - Request fields `provider` / `provider_hint` are **ignored for routing**; they may be logged and passed into the prompt as *non-authoritative* context (`provider_hint_applied` is always `false` in API responses).  
 - **No API keys** are returned to clients.  
 - Arbiter chat lines are **fixed English** technical/system copy where the server generates text (per project rules: no localized strings on the server).
+
+---
+
+## Per-lot AI invocation budget (`arbiter_ai_invocations`)
+
+**Why:** Counting only `deal_chat_messages` rows with `sender_side = arbiter_ai` does **not** cap spend. `ExchangeLotController::requestArbiterMessage` calls `ArbiterService::buildArbiterMessage()` (which may invoke paid LLM APIs) **before** inserting a chat row. A client could otherwise repeat requests that fail after the LLM returns but before insert, or exploit races, and burn budget without increasing the visible message count.
+
+**What:** Column **`exchange_lots.arbiter_ai_invocations`** (unsigned int, default `0`). Migration: `database/migrations/2026_04_19_000001_add_arbiter_ai_invocations_to_exchange_lots.php` (on MySQL, backfills from existing `arbiter_ai` message counts per lot).
+
+**When:** Immediately after buyer/seller escrow auth succeeds, **before** `$request->validate(...)` and **before** `ArbiterService::buildArbiterMessage()`, the controller runs a single atomic SQL increment:
+
+```sql
+UPDATE exchange_lots
+SET arbiter_ai_invocations = arbiter_ai_invocations + 1
+WHERE id = ? AND arbiter_ai_invocations < ?
+```
+
+- If **no row** is updated (`affected === 0`), the handler returns **HTTP 422** and **does not** call `ArbiterService` (no LLM).
+- **`0` cap:** `config('deal.max_ai_arbiter_invocations_per_lot')` — if set to **`0`**, the increment block is skipped (unlimited invocations; not recommended in production).
+
+**Limit response (JSON, fixed English):**
+
+| Field | Meaning |
+|--------|---------|
+| `success` | `false` |
+| `message` | e.g. `AI arbiter invocation limit reached for this deal.` |
+| `error_code` | `ai_arbiter_iteration_limit_reached` |
+| `max_ai_arbiter_invocations` | Effective cap (same as config when cap &gt; 0) |
+
+**Semantics:** One successful `UPDATE … + 1` consumes a slot **even if** a later step throws (e.g. insert failure). That trade-off favours **budget protection** over “refund the slot” on rare server errors.
+
+**Out of scope for this counter:** Human **operator** replies (`DealChatMessage` with `sender_side = exchange_operator`, tag `operator_mail_reply`) are written from `ArbiterOperatorActionController` and **never** hit `requestArbiterMessage` — **no** per-lot API cap on operator volume.
+
+**`GET /api/v1/exchange-lots/{lot}/dispute-status`:** Besides `dispute`, the JSON includes:
+
+```json
+"arbiter_ai": {
+  "invocations": 12,
+  "max_invocations": 30,
+  "limit_reached": false
+}
+```
+
+- `max_invocations` is `null` when the cap is disabled (`0`).
+- `limit_reached` is `invocations >= max_invocations` when `max_invocations` is non-null.
+
+Clients may use this to disable **Ask AI arbiter** before the user taps (optional UX).
 
 ---
 
@@ -26,18 +74,19 @@ php artisan test --group spec
 | Piece | Role |
 |--------|------|
 | `App\Services\Arbiter\Contracts\ArbiterProvider` | Provider interface (`providerId()`, `generate()`). |
-| `App\Services\Arbiter\GigaChatArbiterProvider` | Default primary: Sber GigaChat — OAuth token (cached ~30 min) + OpenAI-compatible `POST /chat/completions` under `api/v1`. |
-| `App\Services\Arbiter\DeepSeekArbiterProvider` | Common RU fallback: OpenAI-compatible Chat Completions. |
-| `App\Services\Arbiter\AnthropicArbiterProvider` | Optional: Anthropic Messages API (often needs VPN from RU). |
-| `App\Services\Arbiter\OpenAiArbiterProvider` | Optional fallback: OpenAI Chat Completions; when a receipt PDF is attached, **OpenAI Responses** (`POST /v1/responses`) with `input_file` + `input_text` (vision-capable models such as `gpt-4o-mini`). |
+| `App\Services\Arbiter\GigaChatArbiterProvider` | **Production LLM:** Sber GigaChat — OAuth token (cached ~30 min) + OpenAI-compatible `POST /chat/completions` under `api/v1`. |
+| `App\Services\Arbiter\StubArbiterProvider` | PHPUnit / local: used when `ARBITER_PRIMARY_PROVIDER=stub`. |
+| `App\Services\Arbiter\DeepSeekArbiterProvider` | *(DI only)* Not called unless `ARBITER_PRIMARY_PROVIDER=deepseek`. No failover from GigaChat. |
+| `App\Services\Arbiter\AnthropicArbiterProvider` | *(DI only)* Same — single-provider policy. |
+| `App\Services\Arbiter\OpenAiArbiterProvider` | *(DI only)* Same. |
 | `App\Support\ArbiterReceiptPdfResolver` | Resolves a stored receipt PDF path for the lot whose `sha256` matches the client `pdf_sha256` (via `transactions.receipt_links_json` + `ReceiptAttachmentStorage`). |
 | `App\Support\ArbiterDealContextPlainText` | Shared plain-text block (dispute fields, digests, receipt excerpt) for LLM `user_prompt` and operator escalation email. |
 | `App\Services\Arbiter\ArbiterOperatorEscalationNotifier` | Sends `ArbiterOperatorEscalationMail` when receipt PDF is image-only (no extractable text). |
-| `App\Services\Arbiter\ArbiterService` | Rules-first orchestration + failover order. |
+| `App\Services\Arbiter\ArbiterService` | Rules-first orchestration; calls **only** the configured primary provider id. |
 | `App\Support\ArbiterPromptContextAssembler` | Loads `resources/prompts/arbiter_exchange_rules.md`, `DealChatTagSequenceValidator::computeStateForLot`, and a requester-visible chat digest for the LLM user prompt. |
 | `resources/prompts/arbiter_exchange_rules.md` | Canonical English digest for the model (not end-user UI copy). |
 | `App\Providers\AppServiceProvider` | Wires providers and thresholds from config. |
-| `ExchangeLotController::requestArbiterMessage` | Authz, validation, anti-replay check, merges arbiter prompt context, dispute row update, chat insert. |
+| `ExchangeLotController::requestArbiterMessage` | Authz; **atomic `arbiter_ai_invocations` reservation** when cap &gt; 0; validation; anti-replay; `ArbiterService`; dispute row update; chat insert. |
 
 ---
 
@@ -81,35 +130,25 @@ The server splits **display text** (everything before that last non-empty line) 
 2. **Anti-replay:** if any of `pdf_sha256` / `email_message_sha256` / `dkim_signature_sha256` matches a previous arbiter message’s `deal_tag.anti_replay.*` for the same lot → **manual review**, no LLM call (`reason_code`: `anti_replay_triggered`).  
 3. **No-AI band:** if context score **≤ `ARBITER_NO_AI_BELOW`** → **manual review**, no LLM (`reason_code`: `insufficient_context`).  
 4. **Image-only receipt PDF:** if `pdf_sha256` matches a file on disk but **text extraction yields empty** → **no LLM**; operator email with full text context and signed action links when `ARBITER_OPERATOR_ESCALATION_EMAIL` is set (`reason_code`: `receipt_pdf_image_only_operator_notified`).  
-5. **Gray zone:** otherwise the server calls the **primary** provider, then **fallback** providers on transport/API failure.  
+5. **Gray zone:** otherwise the server calls **only** the configured primary provider (`ARBITER_PRIMARY_PROVIDER`, default `gigachat`). On transport/API failure there is **no** switch to another LLM — the request ends in `provider_unavailable` and operator escalation (see step 7).  
 6. **Post-LLM escalation:** if context score **&lt; `ARBITER_MANUAL_REVIEW_THRESHOLD`** but LLM ran, the response body includes the model text plus an English escalation suffix; `arbiter_status` is `manual_review` (`reason_code`: `low_confidence`).  
-7. **All providers fail:** fixed English manual message (`reason_code`: `provider_unavailable`).
+7. **Primary provider fails:** fixed English manual message (`reason_code`: `provider_unavailable`). **`ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('provider_unavailable', …)`** runs immediately (same path as other policy escalations): if **`ARBITER_OPERATOR_ESCALATION_EMAIL`** / `config('arbiter_operator_mail.escalation_email')` is set, the operator receives **`ArbiterOperatorEscalationMail`** with full deal context and signed `/arbiter/operator/{lot}/…` links — this is the intended **hand-off off the LLM budget**. The chat row’s `deal_tag` includes **`operator_escalation_email_sent`: true|false** so clients can show accurate copy. If the inbox is not configured, only a warning is logged and the flag is **false** (operators must be reached by other ops channels).
 
 ---
 
-## Failover order
+## Single provider (no failover)
 
-`ARBITER_PRIMARY_PROVIDER` first, then each id in `ARBITER_FALLBACK_PROVIDERS` (comma-separated).  
-Unknown ids are skipped (logged at debug).  
-Currently registered provider ids: `gigachat`, `deepseek`, `anthropic`, `openai`.
+`ArbiterService::resolveProviderOrder()` returns **only** `[ARBITER_PRIMARY_PROVIDER]`. There is **no** second LLM attempt on error.  
+`config('services.arbiter.fallback_providers')` is always **`[]`**; **`ARBITER_FALLBACK_PROVIDERS`** in `.env` is **ignored** (deprecated).
 
-**Default stack (config):** primary `gigachat`, fallback `deepseek` — set `ARBITER_GIGACHAT_AUTHORIZATION_KEY` and ideally `ARBITER_DEEPSEEK_API_KEY` so failover works if GigaChat OAuth/API errors.
-
-Example (RF-friendly):
+**Production default:** `ARBITER_PRIMARY_PROVIDER=gigachat` + `ARBITER_GIGACHAT_AUTHORIZATION_KEY`.
 
 ```env
 ARBITER_PRIMARY_PROVIDER=gigachat
 ARBITER_GIGACHAT_AUTHORIZATION_KEY=<from Sber studio>
-ARBITER_FALLBACK_PROVIDERS=deepseek
-ARBITER_DEEPSEEK_API_KEY=sk-...
 ```
 
-Example (EU/US host, Western APIs only):
-
-```env
-ARBITER_PRIMARY_PROVIDER=anthropic
-ARBITER_FALLBACK_PROVIDERS=openai,deepseek
-```
+PHPUnit uses `ARBITER_PRIMARY_PROVIDER=stub` (see `phpunit.xml`).
 
 ---
 
@@ -117,8 +156,8 @@ ARBITER_FALLBACK_PROVIDERS=openai,deepseek
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ARBITER_PRIMARY_PROVIDER` | `gigachat` | First provider id to try. |
-| `ARBITER_FALLBACK_PROVIDERS` | `deepseek` | Comma-separated fallback ids. |
+| `ARBITER_PRIMARY_PROVIDER` | `gigachat` | **Only** LLM provider id invoked for arbiter (`gigachat` or `stub` in tests). |
+| `ARBITER_FALLBACK_PROVIDERS` | *(ignored)* | **Deprecated.** Arbiter never switches providers; leave unset. |
 | `ARBITER_NO_AI_BELOW` | `0.35` | Skip LLM when deterministic score is **≤** this value. |
 | `ARBITER_MANUAL_REVIEW_THRESHOLD` | `0.55` | After LLM, mark `arbiter_status=manual_review` when score is below this. |
 | `ARBITER_RECEIPT_PDF_MAX_BYTES` | `5242880` | Max receipt PDF size read from disk for hashing, text extraction, and binary attachment. |
@@ -142,9 +181,13 @@ ARBITER_FALLBACK_PROVIDERS=openai,deepseek
 | `ARBITER_ANTHROPIC_API_KEY` | *(empty)* | Anthropic API key. |
 | `ARBITER_ANTHROPIC_MODEL` | `claude-3-7-sonnet-latest` | Model id. |
 | `ARBITER_ANTHROPIC_TIMEOUT` | `20` | HTTP timeout (seconds). |
-| `ARBITER_OPENAI_API_KEY` | *(empty)* | OpenAI API key (fallback). |
+| `ARBITER_OPENAI_API_KEY` | *(empty)* | OpenAI API key (only used when `ARBITER_PRIMARY_PROVIDER=openai`). |
 | `ARBITER_OPENAI_MODEL` | `gpt-4o-mini` | Model id. |
 | `ARBITER_OPENAI_TIMEOUT` | `20` | HTTP timeout (seconds). |
+| `DEAL_MAX_AI_ARBITER_INVOCATIONS_PER_LOT` | `30` | Max successful **reservations** per lot for `POST …/arbiter-message` (see *Per-lot AI invocation budget*). Primary env key. |
+| `DEAL_MAX_AI_ARBITER_MESSAGES_PER_LOT` | *(fallback)* | Legacy alias: used only if `DEAL_MAX_AI_ARBITER_INVOCATIONS_PER_LOT` is unset. Same numeric meaning as today’s invocation cap. |
+
+**Config file:** `config/deal.php` → `max_ai_arbiter_invocations_per_lot` (reads the env keys above; `0` = disable cap).
 
 Copy from `.env.example` and set keys only on the server.
 
@@ -187,7 +230,7 @@ Server computes `bank_time.normalized_utc` when both timezone and raw time are v
 
 ### 1) Happy path (LLM + in_review)
 
-- **Setup:** `ARBITER_PRIMARY_PROVIDER=gigachat`, `ARBITER_GIGACHAT_AUTHORIZATION_KEY` set (or primary `deepseek` + `ARBITER_DEEPSEEK_API_KEY`); thresholds default; message length ≥ 40; include one evidence hash.  
+- **Setup:** `ARBITER_PRIMARY_PROVIDER=gigachat`, `ARBITER_GIGACHAT_AUTHORIZATION_KEY` set; thresholds default; message length ≥ 40; include one evidence hash.  
 - **Request:**
 
 ```bash
@@ -197,7 +240,7 @@ curl -sS -X POST "https://sandbox.api.xdexboard.com/api/v1/exchange-lots/{id}/ar
   -d "{\"message\":\"Buyer states payment was sent with reference ABC123 and requests seller confirmation.\",\"pdf_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"bank_timezone\":\"UTC\",\"payment_time_raw\":\"2026-03-27 12:00:00\"}"
 ```
 
-- **Expect:** HTTP 200, `success: true`, `data.dispute_status` = `in_review`, `data.arbiter_status` = `in_review`, `data.provider_used` = `gigachat` (or `deepseek` if that is primary), `data.body` = model text (English).  
+- **Expect:** HTTP 200, `success: true`, `data.dispute_status` = `in_review`, `data.arbiter_status` = `in_review`, `data.provider_used` = `gigachat`, `data.body` = model text (English).  
 - **Logs:** `[arbiter] policy_applied` with `arbiter_status=in_review`, matching `provider_used`.
 
 ### 2) Provider hint ignored
@@ -206,13 +249,7 @@ curl -sS -X POST "https://sandbox.api.xdexboard.com/api/v1/exchange-lots/{id}/ar
 - **Expect:** `provider_used` matches server primary (`gigachat` by default) when the call succeeds; `provider_hint_applied` = `false`.  
 - **Logs:** `provider_hint` present in log line, `provider_used` unchanged.
 
-### 3) Failover chain
-
-- **Setup A (GigaChat → DeepSeek):** invalid `ARBITER_GIGACHAT_AUTHORIZATION_KEY`; valid `ARBITER_DEEPSEEK_API_KEY`; `ARBITER_FALLBACK_PROVIDERS=deepseek`.  
-- **Expect:** `provider_used` = `deepseek` after GigaChat OAuth or chat fails.  
-- **Setup B:** any primary + valid fallback provider keys — same pattern.
-
-### 4) No-AI path (insufficient context)
+### 3) No-AI path (insufficient context)
 
 - **Setup:** very short `message` and no hashes so score &lt; `ARBITER_NO_AI_BELOW`.  
 - **Request:**
@@ -227,27 +264,35 @@ curl -sS -X POST "https://sandbox.api.xdexboard.com/api/v1/exchange-lots/{id}/ar
 - **Expect:** HTTP 200, `data.arbiter_status` = `manual_review`, `reason_code` = `insufficient_context`, `provider_used` = null, fixed English body.  
 - **Logs:** `policy_applied` with `arbiter_status=manual_review`, `reason_code=insufficient_context`.
 
-### 5) Anti-replay
+### 4) Anti-replay
 
 - **Steps:** Run (1) with a fixed `email_message_sha256` (64 hex). Repeat the same hash on a second request.  
 - **Expect:** second response `arbiter_status` = `manual_review`, `reason_code` = `anti_replay_triggered`, `deal_tag.anti_replay.triggered` = true on the new message.  
 - **Logs:** `has_replay=true`.
 
-### 6) All providers down
+### 5) Primary LLM unreachable
 
-- **Setup:** wrong or empty keys for every provider in the primary + fallback list.  
-- **Expect:** HTTP 200, `manual_review`, `reason_code` = `provider_unavailable`.  
-- **Logs:** `[arbiter] provider_failed` for each, then `[arbiter] all_providers_failed`.
+- **Setup:** invalid or empty `ARBITER_GIGACHAT_AUTHORIZATION_KEY` while `ARBITER_PRIMARY_PROVIDER=gigachat` (no other LLM is tried).  
+- **Expect:** HTTP 200, `manual_review`, `reason_code` = `provider_unavailable`. Chat `deal_tag` includes **`operator_escalation_email_sent`** (`true` when escalation mail actually sent, else `false`).  
+- **Operator mail:** With `ARBITER_OPERATOR_ESCALATION_EMAIL` set, **`Mail::assertSent(ArbiterOperatorEscalationMail::class)`** in a feature test should see `policyReasonCode = provider_unavailable`.  
+- **Logs:** `[arbiter] provider_failed` (primary), then `[arbiter] primary_provider_failed`.
 
-### 7) `dispute-status` still returns row
+### 6) `dispute-status` still returns row
 
 - After any successful arbiter call, `GET /api/v1/exchange-lots/{id}/dispute-status` should still return an active dispute with `status: in_review` (not `manual_review` at DB level).
+
+### 7) Invocation cap (`422`)
+
+- **Setup:** cap enabled (default). Pick a test lot id.  
+- **Loop:** Call `POST …/arbiter-message` with valid escrow auth until `arbiter_ai_invocations` reaches `max_invocations` (or temporarily set `DEAL_MAX_AI_ARBITER_INVOCATIONS_PER_LOT=1` on a dev host).  
+- **Expect:** Next call returns **HTTP 422**, `success: false`, `error_code` = `ai_arbiter_iteration_limit_reached`, `max_ai_arbiter_invocations` in body. **No** new `[arbiter] policy_applied` with a fresh `provider_used` from a new LLM success path for that attempt.  
+- **`GET dispute-status`:** `arbiter_ai.limit_reached` = `true`, `arbiter_ai.invocations` equals cap.
 
 ---
 
 ## Operational notes
 
 - Rotate keys in `.env` only; restart PHP / `php artisan config:clear` after changes.  
-- **RU connectivity:** GigaChat and DeepSeek are typical defaults; Western APIs (Anthropic, OpenAI) often need VPN from RU. Tune `ARBITER_PRIMARY_PROVIDER` / fallbacks per host and compliance requirements.  
+- **RU connectivity:** Production stack is **GigaChat only**; ensure OAuth + API endpoints are reachable from the server.  
 - **GigaChat TLS:** if OAuth or chat fails with certificate errors on the server, temporarily set `ARBITER_GIGACHAT_VERIFY_SSL=false` to confirm the diagnosis, then fix the host trust store or proxy.  
 - Do not log raw prompts if they may contain PII; current info logs avoid message bodies beyond client-provided fields in structured keys—trim further if needed for compliance.

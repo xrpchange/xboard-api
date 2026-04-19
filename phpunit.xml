@@ -38,7 +38,6 @@
         <env name="NIGHTWATCH_ENABLED" value="false"/>
         <env name="PAYMENT_VERIFICATION_EMAIL" value="check@example.test"/>
         <env name="ARBITER_PRIMARY_PROVIDER" value="stub"/>
-        <env name="ARBITER_FALLBACK_PROVIDERS" value=""/>
         <env name="ARBITER_OPERATOR_ACTION_LINK_TTL_DAYS" value="7"/>
     </php>
 </phpunit>
