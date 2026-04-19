@@ -2545,6 +2545,7 @@ class ExchangeLotController extends Controller
      * Unlike {@see sendMessageToBuyer} with seller_exited, buyer cancel is not blocked by the pending sale
      * transaction timeout window nor by payment_details_set_by — the buyer may leave while payment details
      * are shown; the seller remains subject to timeout / side rules on seller exit.
+     * Buyer cancel is blocked while an {@see DealDispute} is opened or in_review (same as seller exit).
      */
     public function buyerCancelDeal(Request $request, ExchangeLot $lot): JsonResponse
     {
@@ -2599,6 +2600,14 @@ class ExchangeLotController extends Controller
                 'success' => false,
                 'message' => 'Only the buyer can cancel this deal.',
                 'error_code' => 'forbidden',
+            ], 403);
+        }
+
+        if ($this->lotHasActiveDispute($lot)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot cancel this deal while a dispute is open. Wait for the AI arbiter or exchange operator to resolve the case.',
+                'error_code' => 'buyer_cancel_blocked_active_dispute',
             ], 403);
         }
 

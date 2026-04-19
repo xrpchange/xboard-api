@@ -27,11 +27,24 @@
         </div>
     @endif
 
-    <form method="post" action="{{ $formAction }}">
+    <form method="post" action="{{ $formAction }}" id="operator-reply-form">
         @csrf
         <label for="body">Message</label>
         <textarea id="body" name="body" required maxlength="{{ max(1, (int) config('deal.max_message_length', 1000)) }}">{{ old('body') }}</textarea>
-        <button type="submit">Send to chat</button>
+        <button type="submit" id="operator-reply-send">Send to chat</button>
     </form>
+    <script>
+        (function () {
+            var form = document.getElementById('operator-reply-form');
+            var btn = document.getElementById('operator-reply-send');
+            if (!form || !btn) return;
+            form.addEventListener('submit', function () {
+                if (btn.disabled) return;
+                btn.disabled = true;
+                btn.setAttribute('aria-busy', 'true');
+                btn.textContent = 'Sending…';
+            });
+        })();
+    </script>
 </body>
 </html>

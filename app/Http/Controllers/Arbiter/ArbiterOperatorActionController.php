@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Arbiter;
 use App\Http\Controllers\Controller;
 use App\Models\DealChatMessage;
 use App\Models\ExchangeLot;
+use App\Services\Deal\DealChatImapWakeMailer;
 use App\Support\PublicHttpsUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,6 +19,10 @@ use Illuminate\View\View;
  */
 final class ArbiterOperatorActionController extends Controller
 {
+    public function __construct(
+        private readonly DealChatImapWakeMailer $dealChatImapWakeMailer,
+    ) {}
+
     public function handle(Request $request, string $lot, string $action): View|RedirectResponse
     {
         Log::info('[arbiter] operator_mail_action', [
@@ -88,6 +93,8 @@ final class ArbiterOperatorActionController extends Controller
         ]);
 
         $this->enforceMaxMessagesPerDeal($lotModel->id);
+        $lotModel->refresh();
+        $this->dealChatImapWakeMailer->pokeMailboxesAfterServerChatWrite($lotModel);
 
         Log::info('[arbiter] operator_mail_reply_posted', [
             'lot_id' => $lotModel->id,
