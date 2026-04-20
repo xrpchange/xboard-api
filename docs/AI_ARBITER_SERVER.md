@@ -173,7 +173,7 @@ PHPUnit uses `ARBITER_PRIMARY_PROVIDER=stub` (see `phpunit.xml`).
 | `ARBITER_GIGACHAT_API_BASE_URL` | `https://gigachat.devices.sberbank.ru/api/v1` | OpenAI-compatible API root. |
 | `ARBITER_GIGACHAT_MODEL` | `GigaChat` | Model name. |
 | `ARBITER_GIGACHAT_TIMEOUT` | `45` | HTTP timeout (seconds) for OAuth + chat. |
-| `ARBITER_GIGACHAT_VERIFY_SSL` | `true` | Set `false` only if TLS to Sber endpoints fails on the host (diagnostics). |
+| `ARBITER_GIGACHAT_VERIFY_SSL` | *(env-dependent)* | If **unset**: verify TLS only when `APP_ENV=production`; otherwise `false` (many dev hosts / XAMPP lack a good CA bundle for Sber). Set explicitly `true` or `false` to override. |
 | `ARBITER_DEEPSEEK_API_KEY` | *(empty)* | DeepSeek API key. |
 | `ARBITER_DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | API base (no trailing slash); override only for compatible proxies. |
 | `ARBITER_DEEPSEEK_MODEL` | `deepseek-chat` | Model id (see DeepSeek docs). |
@@ -294,5 +294,5 @@ curl -sS -X POST "https://sandbox.api.xdexboard.com/api/v1/exchange-lots/{id}/ar
 
 - Rotate keys in `.env` only; restart PHP / `php artisan config:clear` after changes.  
 - **RU connectivity:** Production stack is **GigaChat only**; ensure OAuth + API endpoints are reachable from the server.  
-- **GigaChat TLS:** if OAuth or chat fails with certificate errors on the server, temporarily set `ARBITER_GIGACHAT_VERIFY_SSL=false` to confirm the diagnosis, then fix the host trust store or proxy.  
+- **GigaChat TLS:** non-production defaults to **no certificate verify** for Sber OAuth + chat (see `ARBITER_GIGACHAT_VERIFY_SSL` above). On production, set `ARBITER_GIGACHAT_VERIFY_SSL=true` when the host trust store is correct; if Sber is still unreachable with verify on, set `false` explicitly (weaker transport security).  
 - Do not log raw prompts if they may contain PII; current info logs avoid message bodies beyond client-provided fields in structured keys—trim further if needed for compliance.
