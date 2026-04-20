@@ -176,11 +176,15 @@ class ArbiterService
         }
 
         $hasReplay = (bool) ($context['has_replay'] ?? false);
+        $chatDigest = trim((string) ($context['recent_chat_digest'] ?? ''));
+        $hasServerChatContext = $chatDigest !== ''
+            && $chatDigest !== '(no chat messages in requester view)';
         $confidence = 0.65;
         if (! $hasEvidence) {
             $confidence -= 0.2;
         }
-        if (mb_strlen($message) < 40) {
+        // Short *client* message alone is weak; server-assembled chat thread still gives the LLM enough to work with.
+        if (mb_strlen($message) < 40 && ! $hasServerChatContext) {
             $confidence -= 0.1;
         }
         if (trim((string) ($context['dkim_signature_sha256'] ?? '')) !== '') {
@@ -188,6 +192,10 @@ class ArbiterService
         }
         if ($hasReplay) {
             $confidence -= 0.35;
+        }
+        // Requester-visible chat assembled on the server: compensates missing client evidence hashes for score gates.
+        if (! $hasEvidence && $hasServerChatContext) {
+            $confidence += 0.12;
         }
 
         $confidence = max(0.0, min(1.0, $confidence));

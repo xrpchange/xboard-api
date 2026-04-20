@@ -126,13 +126,24 @@ The server splits **display text** (everything before that last non-empty line) 
 
 ## Rules-first policy
 
-1. **Deterministic context score** from message length, presence of evidence hashes, DKIM hash, and replay flag.  
+1. **Deterministic context score** from message length, presence of evidence hashes, DKIM hash, replay flag, and whether the server assembled a **non-empty** `recent_chat_digest` (requester-visible chat). A very short client `message` does **not** apply the extra down-score when that digest exists; if fingerprints are absent but the digest exists, a small **+0.12** bump avoids treating “chat-only” disputes as below the post-LLM manual threshold solely due to missing hashes.  
 2. **Anti-replay:** if any of `pdf_sha256` / `email_message_sha256` / `dkim_signature_sha256` matches a previous arbiter message’s `deal_tag.anti_replay.*` for the same lot → **manual review**, no LLM call (`reason_code`: `anti_replay_triggered`).  
 3. **No-AI band:** if context score **≤ `ARBITER_NO_AI_BELOW`** → **manual review**, no LLM (`reason_code`: `insufficient_context`).  
 4. **Image-only receipt PDF:** if `pdf_sha256` matches a file on disk but **text extraction yields empty** → **no LLM**; operator email with full text context and signed action links when `ARBITER_OPERATOR_ESCALATION_EMAIL` is set (`reason_code`: `receipt_pdf_image_only_operator_notified`).  
 5. **Gray zone:** otherwise the server calls **only** the configured primary provider (`ARBITER_PRIMARY_PROVIDER`, default `gigachat`). On transport/API failure there is **no** switch to another LLM — the request ends in `provider_unavailable` and operator escalation (see step 7).  
 6. **Post-LLM escalation:** if context score **&lt; `ARBITER_MANUAL_REVIEW_THRESHOLD`** but LLM ran, the response body includes the model text plus an English escalation suffix; `arbiter_status` is `manual_review` (`reason_code`: `low_confidence`).  
 7. **Primary provider fails:** fixed English manual message (`reason_code`: `provider_unavailable`). **`ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('provider_unavailable', …)`** runs immediately (same path as other policy escalations): if **`ARBITER_OPERATOR_ESCALATION_EMAIL`** / `config('arbiter_operator_mail.escalation_email')` is set, the operator receives **`ArbiterOperatorEscalationMail`** with full deal context and signed `/arbiter/operator/{lot}/…` links — this is the intended **hand-off off the LLM budget**. The chat row’s `deal_tag` includes **`operator_escalation_email_sent`: true|false** so clients can show accurate copy. If the inbox is not configured, only a warning is logged and the flag is **false** (operators must be reached by other ops channels).
+
+### After operator reply: restart full review cycle
+
+When an exchange operator replies in the dispute thread, subsequent checks are treated as a **fresh review pass**:
+
+- do **not** assume prior AI/operator conclusions are final for new evidence;
+- re-check payment proof and bank receipt context from scratch;
+- re-check crypto-side facts (tx refs / payout state) from scratch;
+- keep the same deterministic anti-replay and confidence gates for each new `POST …/arbiter-message`.
+
+In short: operator participation does not enable a "shortcut mode" - each new review round follows the normal rules-first pipeline again.
 
 ---
 
