@@ -87,6 +87,28 @@ class ArbiterServiceStubTest extends TestCase
         $this->assertStringContainsString('insufficient', strtolower((string) $out['message']));
     }
 
+    /** @see SPEC_REGISTRY ARB-013 */
+    #[Group('spec-ARB-013')]
+    public function test_spec_arb_013_short_client_message_with_server_chat_digest_still_invokes_llm(): void
+    {
+        $svc = new ArbiterService(
+            [new StubArbiterProvider],
+            'stub',
+            0.35,
+            0.55,
+        );
+        $out = $svc->buildArbiterMessage([
+            'lot_id' => 1,
+            'requester_side' => 'buyer',
+            'message' => 'short',
+            'has_replay' => false,
+            'recent_chat_digest' => 'id=1 side=buyer tag=(none) body='.str_repeat('x', 120),
+        ]);
+        $this->assertSame('in_review', $out['arbiter_status']);
+        $this->assertSame('stub', $out['provider_used']);
+        $this->assertSame('ai_generated', $out['reason_code']);
+    }
+
     /** @see SPEC_REGISTRY ARB-005 */
     #[Group('spec-ARB-005')]
     public function test_spec_arb_005_low_confidence_escalation(): void

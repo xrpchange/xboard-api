@@ -1693,6 +1693,7 @@ class ExchangeLotController extends Controller
                 if (! array_key_exists('lot_id', $customDealTagData)) {
                     $customDealTagData['lot_id'] = (int) $lot->id;
                 }
+                $customDealTagData = $this->sanitizeIncomingCustomDealTag($customDealTagData);
                 $customDealTagData = $this->promoteReceiptLinksInDealTag($customDealTagData, $receiptLinkReplacements);
                 if (count($receiptLinkReplacements) > 0) {
                     $body = strtr($body, $receiptLinkReplacements);
@@ -1706,6 +1707,18 @@ class ExchangeLotController extends Controller
                         'error_code' => $seqErr['error_code'],
                     ], 422);
                 }
+                $coreTxCheck = $this->verifyCryptoTxDealTagViaCore($lot, $customDealTagData);
+                if (($coreTxCheck['error'] ?? null) !== null) {
+                    /** @var array{message:string,error_code:string,status?:int,verification?:array<string,mixed>} $err */
+                    $err = $coreTxCheck['error'];
+                    return response()->json([
+                        'success' => false,
+                        'message' => $err['message'],
+                        'error_code' => $err['error_code'],
+                        'verification' => $err['verification'] ?? null,
+                    ], (int) ($err['status'] ?? 422));
+                }
+                $customDealTagData = $coreTxCheck['deal_tag'] ?? $customDealTagData;
                 $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
             $this->sendDealEmail(
@@ -2274,6 +2287,7 @@ class ExchangeLotController extends Controller
                 if (! array_key_exists('lot_id', $customDealTagData)) {
                     $customDealTagData['lot_id'] = (int) $lot->id;
                 }
+                $customDealTagData = $this->sanitizeIncomingCustomDealTag($customDealTagData);
                 $customDealTagData = $this->promoteReceiptLinksInDealTag($customDealTagData, $receiptLinkReplacements);
                 if (count($receiptLinkReplacements) > 0) {
                     $body = strtr($body, $receiptLinkReplacements);
@@ -2287,6 +2301,18 @@ class ExchangeLotController extends Controller
                         'error_code' => $seqErr['error_code'],
                     ], 422);
                 }
+                $coreTxCheck = $this->verifyCryptoTxDealTagViaCore($lot, $customDealTagData);
+                if (($coreTxCheck['error'] ?? null) !== null) {
+                    /** @var array{message:string,error_code:string,status?:int,verification?:array<string,mixed>} $err */
+                    $err = $coreTxCheck['error'];
+                    return response()->json([
+                        'success' => false,
+                        'message' => $err['message'],
+                        'error_code' => $err['error_code'],
+                        'verification' => $err['verification'] ?? null,
+                    ], (int) ($err['status'] ?? 422));
+                }
+                $customDealTagData = $coreTxCheck['deal_tag'] ?? $customDealTagData;
                 $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
         }
@@ -4375,6 +4401,9 @@ class ExchangeLotController extends Controller
                 'arbiter_status' => $arbiterResult['arbiter_status'] ?? null,
                 'confidence' => $arbiterResult['confidence'] ?? null,
                 'reason_code' => $arbiterResult['reason_code'] ?? null,
+                'operator_escalation_email_sent' => array_key_exists('operator_escalation_email_sent', $arbiterResult)
+                    ? (bool) $arbiterResult['operator_escalation_email_sent']
+                    : null,
                 'provider_used' => $arbiterResult['provider_used'] ?? null,
                 'provider_hint_applied' => false,
                 'reservation_payout' => [
@@ -5595,5 +5624,174 @@ class ExchangeLotController extends Controller
         }
 
         return (string) config('services.core.key');
+    }
+
+    /**
+     * @param  array<string, mixed>  $dealTagData
+     * @return array{
+     *   deal_tag: array<string, mixed>,
+     *   error: array{message:string,error_code:string,status?:int,verification?:array<string,mixed>}|null
+     * }
+     */
+    private function verifyCryptoTxDealTagViaCore(ExchangeLot $lot, array $dealTagData): array
+    {
+        $tagType = trim((string) ($dealTagData['t'] ?? ''));
+        if (! in_array($tagType, ['buyer_crypto_tx', 'seller_transfer_tx'], true)) {
+            return ['deal_tag' => $dealTagData, 'error' => null];
+        }
+
+        $txRef = trim((string) ($dealTagData['tx_ref'] ?? $dealTagData['transaction_id'] ?? ''));
+        if ($txRef === '') {
+            return [
+                'deal_tag' => $dealTagData,
+                'error' => [
+                    'message' => 'transaction id (tx_ref) is required for crypto transfer proof.',
+                    'error_code' => 'crypto_tx_id_required',
+                ],
+            ];
+        }
+
+        try {
+            $cryptoType = self::coreCryptoTypeForSellerEscrow($lot);
+        } catch (\InvalidArgumentException $e) {
+            return [
+                'deal_tag' => $dealTagData,
+                'error' => [
+                    'message' => $e->getMessage(),
+                    'error_code' => 'invalid_lot_crypto',
+                ],
+            ];
+        }
+
+        $payload = [
+            'transaction_id' => $txRef,
+            'crypto_type' => $cryptoType,
+            'min_confirmations' => 0,
+            'strict_checks' => false,
+        ];
+        $expectedAddress = $this->expectedAddressForCoreTxCheck($lot, $tagType);
+        if ($expectedAddress !== null && $expectedAddress !== '') {
+            $payload['expected_address'] = $expectedAddress;
+        }
+
+        $coreUrl = rtrim($this->getCoreApiUrl(), '/');
+        $endpoint = $coreUrl.'/api/escrow-tokens/verify-external-payment';
+        $req = Http::timeout((int) config('services.core.timeout', 10));
+        $coreKey = $this->getCoreApiKey();
+        if ($coreKey !== '') {
+            $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+        }
+
+        try {
+            $resp = $req->asJson()->post($endpoint, $payload);
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] verifyCryptoTxDealTagViaCore: transport exception', [
+                'lot_id' => $lot->id,
+                'tag_type' => $tagType,
+                'tx_ref' => $txRef,
+                'error' => $e->getMessage(),
+            ]);
+            return [
+                'deal_tag' => $dealTagData,
+                'error' => [
+                    'message' => 'Failed to verify crypto transaction id via Core.',
+                    'error_code' => 'core_crypto_tx_verify_transport_failed',
+                    'status' => 502,
+                ],
+            ];
+        }
+
+        $body = $resp->json();
+        $data = is_array($body) && is_array($body['data'] ?? null) ? $body['data'] : [];
+        if (! $resp->successful()) {
+            return [
+                'deal_tag' => $dealTagData,
+                'error' => [
+                    'message' => is_array($body) ? (string) ($body['message'] ?? 'Core tx verification failed.') : 'Core tx verification failed.',
+                    'error_code' => is_array($body) ? (string) ($body['error_code'] ?? 'core_crypto_tx_verify_failed') : 'core_crypto_tx_verify_failed',
+                    'status' => $resp->status() >= 500 ? 502 : 422,
+                ],
+            ];
+        }
+
+        $verified = (bool) ($data['verified'] ?? false);
+        $verification = [
+            'source' => 'core_verify_external_payment',
+            'checked_at_utc' => now()->utc()->toIso8601String(),
+            'verified' => $verified,
+            'status' => $data['status'] ?? null,
+            'is_confirmed' => $data['is_confirmed'] ?? null,
+            'confirmations' => $data['confirmations'] ?? null,
+            'checks' => is_array($data['checks'] ?? null) ? $data['checks'] : [],
+        ];
+        $dealTagData['core_tx_check'] = $verification;
+
+        if (! $verified) {
+            return [
+                'deal_tag' => $dealTagData,
+                'error' => [
+                    'message' => 'Crypto transaction id is not verified yet. Check tx id / confirmations and try again.',
+                    'error_code' => 'crypto_tx_not_verified',
+                    'status' => 422,
+                    'verification' => $verification,
+                ],
+            ];
+        }
+
+        return ['deal_tag' => $dealTagData, 'error' => null];
+    }
+
+    private function expectedAddressForCoreTxCheck(ExchangeLot $lot, string $tagType): ?string
+    {
+        if ($tagType === 'buyer_crypto_tx') {
+            $tx = Transaction::query()
+                ->where('exchange_lot_id', $lot->id)
+                ->where('payment_details_set_by', 'seller')
+                ->whereNotNull('crypto_address')
+                ->orderByDesc('id')
+                ->first();
+            $addr = trim((string) ($tx?->crypto_address ?? ''));
+            return $addr !== '' ? $addr : null;
+        }
+        if ($tagType === 'seller_transfer_tx') {
+            $rows = DealChatMessage::query()
+                ->where('exchange_lot_id', $lot->id)
+                ->orderByDesc('id')
+                ->limit(60)
+                ->pluck('deal_tag')
+                ->all();
+            foreach ($rows as $raw) {
+                if (! is_string($raw) || trim($raw) === '') {
+                    continue;
+                }
+                $obj = json_decode($raw, true);
+                if (! is_array($obj) || (($obj['t'] ?? '') !== 'buyer_destination_details')) {
+                    continue;
+                }
+                $addr = trim((string) ($obj['address'] ?? ''));
+                if ($addr !== '') {
+                    return $addr;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Strip verification-shaped keys from client deal_tag.
+     * Only server code is allowed to write `core_tx_check`.
+     *
+     * @param  array<string, mixed>  $dealTagData
+     * @return array<string, mixed>
+     */
+    private function sanitizeIncomingCustomDealTag(array $dealTagData): array
+    {
+        unset(
+            $dealTagData['core_tx_check'],
+            $dealTagData['core_tx_check_signature'],
+            $dealTagData['core_tx_check_raw']
+        );
+
+        return $dealTagData;
     }
 }

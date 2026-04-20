@@ -66,11 +66,25 @@ Auth:
 
 ### AI arbiter (server-side)
 
-Full setup, env vars, failover, security, and curl checklist: **[docs/AI_ARBITER_SERVER.md](AI_ARBITER_SERVER.md)** (includes **GigaChat** + DeepSeek and other providers).
+Full setup, env vars, single-provider policy (no vendor failover), security, and curl checklist: **[docs/AI_ARBITER_SERVER.md](AI_ARBITER_SERVER.md)**.
 
 - **Dispute row** `deal_disputes.status` remains `in_review` after an arbiter message (so `GET .../dispute-status` keeps returning the active row).
 - **Semantic outcome** is returned as `arbiter_status` (`in_review` | `manual_review`) in the POST JSON and in `deal_chat_messages.deal_tag` for `t=arbiter_message`.
 - Optional body fields: `message`, `provider` / `provider_hint` (hint only; **not** used to choose the LLM provider), `bank_timezone`, `payment_time_raw`, `pdf_sha256`, `email_message_sha256`, `dkim_signature_sha256`.
+- After an operator reply in dispute chat, the next review is treated as a fresh pass: payment/bank/crypto checks are re-run by the normal rules-first logic (no shortcut mode).
+
+### Crypto tx id verification via Core
+
+When participants send crypto proof tags in deal chat (`deal_tag.t = buyer_crypto_tx` or `seller_transfer_tx` with `tx_ref`), Laravel now calls Core endpoint:
+
+- `POST /api/escrow-tokens/verify-external-payment`
+
+The tx id must be verifiable on-chain by Core (`data.verified=true`), otherwise message sending is rejected with **422**:
+
+- `error_code = crypto_tx_not_verified` (tx not confirmed / mismatched / not found), or
+- `error_code = core_crypto_tx_verify_*` for Core-side transport/HTTP failures.
+
+Successful checks are written into `deal_tag.core_tx_check` (source, UTC check time, status, confirmations, checks) for auditability in chat history.
 
 ### `GET …/dispute-status` response extras
 
