@@ -121,7 +121,14 @@ return [
             'api_base_url' => rtrim((string) env('ARBITER_GIGACHAT_API_BASE_URL', 'https://gigachat.devices.sberbank.ru/api/v1'), '/'),
             'model' => env('ARBITER_GIGACHAT_MODEL', 'GigaChat'),
             'timeout' => (int) env('ARBITER_GIGACHAT_TIMEOUT', 45),
-            'verify_ssl' => filter_var(env('ARBITER_GIGACHAT_VERIFY_SSL', true), FILTER_VALIDATE_BOOL),
+            // Sber TLS + dev CA bundles often disagree; default verify only in production unless overridden.
+            'verify_ssl' => filter_var(
+                env(
+                    'ARBITER_GIGACHAT_VERIFY_SSL',
+                    env('APP_ENV', 'local') === 'production' ? '1' : '0'
+                ),
+                FILTER_VALIDATE_BOOL
+            ),
         ],
     ],
 
