@@ -113,4 +113,30 @@ class DealChatTagSequenceValidatorTest extends TestCase
         $state = DealChatTagSequenceValidator::reduceStateFromOrderedDealTags($tags, false);
         $this->assertSame(DealChatTagSequenceValidator::STATE_WAIT_BUYER_PAY, $state);
     }
+
+    public function test_buyer_dispute_rejected_before_payment_proof_stage(): void
+    {
+        $err = DealChatTagSequenceValidator::validateBuyerDisputeTagForState(
+            DealChatTagSequenceValidator::STATE_WAIT_BUYER_PAY
+        );
+        $this->assertNotNull($err);
+        $this->assertSame('dispute_not_allowed_before_buyer_payment_proof', $err['error_code']);
+    }
+
+    public function test_buyer_dispute_allowed_after_payment_proof_stage(): void
+    {
+        $err = DealChatTagSequenceValidator::validateBuyerDisputeTagForState(
+            DealChatTagSequenceValidator::STATE_WAIT_SELLER_CONFIRM
+        );
+        $this->assertNull($err);
+    }
+
+    public function test_seller_dispute_rejected_before_payment_proof_stage(): void
+    {
+        $err = DealChatTagSequenceValidator::validateSellerDisputeTagForState(
+            DealChatTagSequenceValidator::STATE_WAIT_BUYER_PAY
+        );
+        $this->assertNotNull($err);
+        $this->assertSame('dispute_not_allowed_before_buyer_payment_proof', $err['error_code']);
+    }
 }

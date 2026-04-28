@@ -94,7 +94,9 @@ return [
         'receipt_pdf_text_excerpt_max_chars' => (int) env('ARBITER_RECEIPT_PDF_TEXT_EXCERPT_MAX_CHARS', 8000),
         // When LLM verdict is favor_buyer|favor_seller and arbiter_status is in_review, close deal_disputes so deal actions (e.g. seller crypto payout) are no longer blocked. Signing stays client-side (seller escrow token).
         'resolve_on_favor_buyer' => filter_var(env('ARBITER_RESOLVE_ON_FAVOR_BUYER', true), FILTER_VALIDATE_BOOL),
-        'resolve_on_favor_seller' => filter_var(env('ARBITER_RESOLVE_ON_FAVOR_SELLER', false), FILTER_VALIDATE_BOOL),
+        'resolve_on_favor_seller' => filter_var(env('ARBITER_RESOLVE_ON_FAVOR_SELLER', true), FILTER_VALIDATE_BOOL),
+        // Hard-stop for abusive buyer disputes: even if generic resolve_on_favor_seller is disabled, close buyer-opened dispute on AI favor_seller.
+        'force_close_buyer_dispute_on_favor_seller' => filter_var(env('ARBITER_FORCE_CLOSE_BUYER_DISPUTE_ON_FAVOR_SELLER', true), FILTER_VALIDATE_BOOL),
         // When true and arbiter verdict is favor_buyer: Laravel calls Core POST /deal-payout-to-buyer-from-reservation (token from reservations / test_reservations).
         'auto_core_payout_on_favor_buyer' => filter_var(env('ARBITER_AUTO_CORE_PAYOUT_ON_FAVOR_BUYER', false), FILTER_VALIDATE_BOOL),
         'anthropic' => [

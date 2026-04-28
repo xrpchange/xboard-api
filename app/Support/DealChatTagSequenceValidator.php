@@ -88,8 +88,9 @@ final class DealChatTagSequenceValidator
                 'error_code' => 'deal_tag_invalid',
             ];
         }
+        $state = self::computeStateForLot($lot);
         if (self::isDisputeTag($t)) {
-            return null;
+            return self::validateBuyerDisputeTagForState($state);
         }
         $allowedBuyer = [
             'receipt_confirmation',
@@ -103,7 +104,6 @@ final class DealChatTagSequenceValidator
                 'error_code' => 'deal_tag_not_allowed_for_sender',
             ];
         }
-        $state = self::computeStateForLot($lot);
 
         return self::validateBuyerTagForState($state, $t);
     }
@@ -128,8 +128,9 @@ final class DealChatTagSequenceValidator
                 'error_code' => 'deal_tag_invalid',
             ];
         }
+        $state = self::computeStateForLot($lot);
         if (self::isDisputeTag($t)) {
-            return null;
+            return self::validateSellerDisputeTagForState($state);
         }
         $allowedSeller = [
             'seller_received_funds',
@@ -142,7 +143,6 @@ final class DealChatTagSequenceValidator
                 'error_code' => 'deal_tag_not_allowed_for_sender',
             ];
         }
-        $state = self::computeStateForLot($lot);
 
         return self::validateSellerTagForState($state, $t);
     }
@@ -150,6 +150,52 @@ final class DealChatTagSequenceValidator
     public static function isDisputeTag(string $t): bool
     {
         return in_array($t, ['dispute_requested', 'dispute_requested_by_buyer', 'dispute_requested_by_seller'], true);
+    }
+
+    /**
+     * Buyer is allowed to open dispute only after first-leg payment proof is already posted.
+     *
+     * @return array{message: string, error_code: string}|null
+     */
+    public static function validateBuyerDisputeTagForState(string $state): ?array
+    {
+        $allowed = [
+            self::STATE_WAIT_SELLER_CONFIRM,
+            self::STATE_WAIT_BUYER_DEST,
+            self::STATE_WAIT_SELLER_TRANSFER,
+            self::STATE_WAIT_BUYER_COMPLETE,
+        ];
+        if (in_array($state, $allowed, true)) {
+            return null;
+        }
+
+        return [
+            'message' => 'Buyer can open dispute only after posting first-leg payment proof.',
+            'error_code' => 'dispute_not_allowed_before_buyer_payment_proof',
+        ];
+    }
+
+    /**
+     * Seller is allowed to open dispute only after buyer first-leg payment proof stage starts.
+     *
+     * @return array{message: string, error_code: string}|null
+     */
+    public static function validateSellerDisputeTagForState(string $state): ?array
+    {
+        $allowed = [
+            self::STATE_WAIT_SELLER_CONFIRM,
+            self::STATE_WAIT_BUYER_DEST,
+            self::STATE_WAIT_SELLER_TRANSFER,
+            self::STATE_WAIT_BUYER_COMPLETE,
+        ];
+        if (in_array($state, $allowed, true)) {
+            return null;
+        }
+
+        return [
+            'message' => 'Seller can open dispute only after buyer first-leg payment proof is present.',
+            'error_code' => 'dispute_not_allowed_before_buyer_payment_proof',
+        ];
     }
 
     /**

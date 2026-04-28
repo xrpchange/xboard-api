@@ -1719,6 +1719,33 @@ class ExchangeLotController extends Controller
                     ], (int) ($err['status'] ?? 422));
                 }
                 $customDealTagData = $coreTxCheck['deal_tag'] ?? $customDealTagData;
+                $receiptReuseCheck = $this->validateAndAttachReceiptChecksums(
+                    lot: $lot,
+                    senderSide: 'buyer',
+                    dealTagData: $customDealTagData
+                );
+                if (($receiptReuseCheck['error'] ?? null) !== null) {
+                    /** @var array{message:string,error_code:string,status?:int} $err */
+                    $err = $receiptReuseCheck['error'];
+                    return response()->json([
+                        'success' => false,
+                        'message' => $err['message'],
+                        'error_code' => $err['error_code'],
+                    ], (int) ($err['status'] ?? 422));
+                }
+                $customDealTagData = $receiptReuseCheck['deal_tag'] ?? $customDealTagData;
+                $disputeOpenCheck = $this->validateDisputeOpenGuard(
+                    lot: $lot,
+                    senderSide: 'buyer',
+                    dealTagData: $customDealTagData
+                );
+                if ($disputeOpenCheck !== null) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $disputeOpenCheck['message'],
+                        'error_code' => $disputeOpenCheck['error_code'],
+                    ], (int) ($disputeOpenCheck['status'] ?? 422));
+                }
                 $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
             $this->sendDealEmail(
@@ -2316,6 +2343,33 @@ class ExchangeLotController extends Controller
                     ], (int) ($err['status'] ?? 422));
                 }
                 $customDealTagData = $coreTxCheck['deal_tag'] ?? $customDealTagData;
+                $receiptReuseCheck = $this->validateAndAttachReceiptChecksums(
+                    lot: $lot,
+                    senderSide: 'seller',
+                    dealTagData: $customDealTagData
+                );
+                if (($receiptReuseCheck['error'] ?? null) !== null) {
+                    /** @var array{message:string,error_code:string,status?:int} $err */
+                    $err = $receiptReuseCheck['error'];
+                    return response()->json([
+                        'success' => false,
+                        'message' => $err['message'],
+                        'error_code' => $err['error_code'],
+                    ], (int) ($err['status'] ?? 422));
+                }
+                $customDealTagData = $receiptReuseCheck['deal_tag'] ?? $customDealTagData;
+                $disputeOpenCheck = $this->validateDisputeOpenGuard(
+                    lot: $lot,
+                    senderSide: 'seller',
+                    dealTagData: $customDealTagData
+                );
+                if ($disputeOpenCheck !== null) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $disputeOpenCheck['message'],
+                        'error_code' => $disputeOpenCheck['error_code'],
+                    ], (int) ($disputeOpenCheck['status'] ?? 422));
+                }
                 $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
         }
@@ -4308,6 +4362,7 @@ class ExchangeLotController extends Controller
 
         $resolveBuyerConfig = (bool) config('services.arbiter.resolve_on_favor_buyer', true);
         $resolveSellerConfig = (bool) config('services.arbiter.resolve_on_favor_seller', false);
+        $forceCloseBuyerDisputeOnFavorSeller = (bool) config('services.arbiter.force_close_buyer_dispute_on_favor_seller', true);
         $autoCorePayout = (bool) config('services.arbiter.auto_core_payout_on_favor_buyer', false);
 
         $payoutResult = ['success' => false, 'error' => null, 'crypto_tx_id' => null];
@@ -4335,7 +4390,11 @@ class ExchangeLotController extends Controller
                 $dispute->arbiter_verdict = $verdict;
                 $dispute->save();
             }
-        } elseif ($verdict === 'favor_seller' && $arbiterStatus === 'in_review' && $resolveSellerConfig) {
+        } elseif (
+            $verdict === 'favor_seller'
+            && $arbiterStatus === 'in_review'
+            && ($resolveSellerConfig || ($forceCloseBuyerDisputeOnFavorSeller && $dispute->opened_by === 'buyer'))
+        ) {
             $this->closeOpenDisputesForLot(
                 $lot,
                 'arbiter_ai',
@@ -5466,9 +5525,11 @@ class ExchangeLotController extends Controller
             if ($newLink !== $link) {
                 $replacements[$link] = $newLink;
             }
+            $sha256 = $this->receiptFileSha256FromLink($newLink);
             $normalizedLinks[] = [
                 'filename' => $filename,
                 'link' => $newLink,
+                'sha256' => $sha256,
             ];
         }
 
@@ -5511,9 +5572,11 @@ class ExchangeLotController extends Controller
             }
             // Move file from tmp to permanent if needed; store the permanent link in receipt_links_json
             $link = ReceiptAttachmentStorage::moveTmpToPermanentAndReturnNewLink($link);
+            $sha256 = $this->receiptFileSha256FromLink($link);
             $normalizedLinks[] = [
                 'filename' => $filename,
                 'link' => $link,
+                'sha256' => $sha256,
             ];
         }
 
@@ -5539,6 +5602,13 @@ class ExchangeLotController extends Controller
             if (is_array($previousLinks) && count($previousLinks) > 0) {
                 ReceiptAttachmentStorage::deleteFilesRemovedFromReceiptLinks($previousLinks, $normalizedLinks);
             }
+            $senderSide = $tagType === 'receipt_confirmation' ? 'buyer' : 'seller';
+            $this->rememberReceiptHashes(
+                lot: $lot,
+                senderSide: $senderSide,
+                tagType: (string) $tagType,
+                receiptLinks: $normalizedLinks
+            );
             Log::info('[exchange-lots] storeReceiptLinksInLatestTransaction: saved', [
                 'lot_id' => $lot->id,
                 'transaction_id' => $transaction->id,
@@ -5642,6 +5712,353 @@ class ExchangeLotController extends Controller
         }
     }
 
+    /**
+     * @param  array<string, mixed>  $dealTagData
+     * @return array{
+     *   deal_tag: array<string, mixed>,
+     *   error: array{message:string,error_code:string,status?:int}|null
+     * }
+     */
+    private function validateAndAttachReceiptChecksums(ExchangeLot $lot, string $senderSide, array $dealTagData): array
+    {
+        $tagType = trim((string) ($dealTagData['t'] ?? ''));
+        if (! in_array($tagType, ['receipt_confirmation', 'seller_transfer_tx'], true)) {
+            return ['deal_tag' => $dealTagData, 'error' => null];
+        }
+        $rawLinks = $dealTagData['receipt_links'] ?? null;
+        if (! is_array($rawLinks) || count($rawLinks) === 0) {
+            return ['deal_tag' => $dealTagData, 'error' => null];
+        }
+
+        $normalizedLinks = [];
+        $hashes = [];
+        foreach ($rawLinks as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $link = trim((string) ($item['link'] ?? ''));
+            if ($link === '') {
+                continue;
+            }
+            $sha256 = strtolower(trim((string) ($item['sha256'] ?? '')));
+            if (! preg_match('/^[a-f0-9]{64}$/', $sha256)) {
+                $sha256 = $this->receiptFileSha256FromLink($link) ?? '';
+            }
+            if ($sha256 !== '') {
+                $hashes[] = $sha256;
+            }
+            $normalizedLinks[] = [
+                'filename' => trim((string) ($item['filename'] ?? '')),
+                'link' => $link,
+                'sha256' => $sha256 !== '' ? $sha256 : null,
+            ];
+        }
+
+        if (count($normalizedLinks) > 0) {
+            $dealTagData['receipt_links'] = $normalizedLinks;
+        }
+        $hashes = array_values(array_unique(array_filter($hashes, static fn (string $v): bool => $v !== '')));
+        if (count($hashes) > 0) {
+            $dealTagData['receipt_sha256'] = $hashes;
+        }
+
+        if (count($hashes) === 0) {
+            return ['deal_tag' => $dealTagData, 'error' => null];
+        }
+
+        if ($this->hasReceiptHashDuplicateRecorded($lot, $senderSide, $tagType, $hashes)) {
+            return [
+                'deal_tag' => $dealTagData,
+                'error' => [
+                    'message' => 'This bank receipt was already sent for this deal. Re-sending identical receipt is blocked.',
+                    'error_code' => 'duplicate_receipt_checksum',
+                    'status' => 422,
+                ],
+            ];
+        }
+
+        return ['deal_tag' => $dealTagData, 'error' => null];
+    }
+
+    /**
+     * @param  array<string, mixed>  $dealTagData
+     * @return array{message:string,error_code:string,status?:int}|null
+     */
+    private function validateDisputeOpenGuard(ExchangeLot $lot, string $senderSide, array $dealTagData): ?array
+    {
+        $tagType = trim((string) ($dealTagData['t'] ?? ''));
+        if (! DealChatTagSequenceValidator::isDisputeTag($tagType)) {
+            return null;
+        }
+
+        $hasVerifiedCryptoProof = $this->hasVerifiedCryptoProofInChat($lot, $senderSide);
+        $latestReceiptTx = $lot->latestReceiptTransaction();
+        $bankHashes = $this->extractReceiptHashesFromLinks(
+            is_array($latestReceiptTx?->receipt_links_json) ? $latestReceiptTx->receipt_links_json : []
+        );
+        $hasBankProof = count($bankHashes) > 0;
+        if (! $hasVerifiedCryptoProof && ! $hasBankProof) {
+            return [
+                'message' => 'Dispute can be opened only after payment proof is provided (bank receipt or verified crypto tx id).',
+                'error_code' => 'dispute_requires_payment_proof',
+                'status' => 422,
+            ];
+        }
+
+        $receiptTimeCheck = $this->validateReceiptTimeWindowForDispute($lot, $senderSide);
+        if ($receiptTimeCheck !== null) {
+            return $receiptTimeCheck;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<string>  $hashes
+     */
+    private function hasReceiptHashDuplicateRecorded(ExchangeLot $lot, string $senderSide, string $tagType, array $hashes): bool
+    {
+        return DB::table('receipt_file_checksums')
+            ->where('exchange_lot_id', $lot->id)
+            ->where('sender_side', $senderSide)
+            ->where('tag_type', $tagType)
+            ->whereIn('sha256', $hashes)
+            ->exists();
+    }
+
+    /**
+     * @param  array<int, mixed>  $links
+     * @return list<string>
+     */
+    private function extractReceiptHashesFromLinks(array $links): array
+    {
+        $hashes = [];
+        foreach ($links as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $sha = strtolower(trim((string) ($item['sha256'] ?? '')));
+            if (! preg_match('/^[a-f0-9]{64}$/', $sha)) {
+                $link = trim((string) ($item['link'] ?? ''));
+                if ($link !== '') {
+                    $sha = $this->receiptFileSha256FromLink($link) ?? '';
+                }
+            }
+            if ($sha !== '') {
+                $hashes[] = $sha;
+            }
+        }
+
+        return array_values(array_unique($hashes));
+    }
+
+    private function receiptFileSha256FromLink(string $link): ?string
+    {
+        $relativePath = ReceiptAttachmentStorage::linkToRelativePath($link);
+        if ($relativePath === null || $relativePath === '') {
+            return null;
+        }
+        $absolutePath = ReceiptAttachmentStorage::absolutePathIfExists($relativePath);
+        if ($absolutePath === null) {
+            return null;
+        }
+        try {
+            $sha = hash_file('sha256', $absolutePath);
+            return is_string($sha) && preg_match('/^[a-f0-9]{64}$/', $sha)
+                ? strtolower($sha)
+                : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * @param  array<int, array{filename?:string,link?:string,sha256?:string|null}>  $receiptLinks
+     */
+    private function rememberReceiptHashes(ExchangeLot $lot, string $senderSide, string $tagType, array $receiptLinks): void
+    {
+        $hashes = $this->extractReceiptHashesFromLinks($receiptLinks);
+        if (count($hashes) === 0) {
+            return;
+        }
+
+        $now = now();
+        $rows = array_map(static function (string $sha) use ($lot, $senderSide, $tagType, $now): array {
+            return [
+                'exchange_lot_id' => $lot->id,
+                'sender_side' => $senderSide,
+                'tag_type' => $tagType,
+                'sha256' => $sha,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }, $hashes);
+
+        DB::table('receipt_file_checksums')->insertOrIgnore($rows);
+    }
+
+    private function hasVerifiedCryptoProofInChat(ExchangeLot $lot, string $senderSide): bool
+    {
+        $messages = DealChatMessage::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->where('sender_side', $senderSide)
+            ->whereNotNull('deal_tag')
+            ->orderByDesc('id')
+            ->limit(120)
+            ->get(['deal_tag']);
+        foreach ($messages as $message) {
+            $raw = trim((string) ($message->deal_tag ?? ''));
+            if ($raw === '') {
+                continue;
+            }
+            $tag = json_decode($raw, true);
+            if (! is_array($tag)) {
+                continue;
+            }
+            $type = trim((string) ($tag['t'] ?? ''));
+            if (! in_array($type, ['buyer_crypto_tx', 'seller_transfer_tx'], true)) {
+                continue;
+            }
+            $checked = is_array($tag['core_tx_check'] ?? null) ? $tag['core_tx_check'] : [];
+            if ((bool) ($checked['verified'] ?? false)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array{message:string,error_code:string,status?:int}|null
+     */
+    private function validateReceiptTimeWindowForDispute(ExchangeLot $lot, string $senderSide): ?array
+    {
+        $proofTag = $this->latestPaymentProofTagForSender($lot, $senderSide);
+        if ($proofTag === null) {
+            return null;
+        }
+        $receiptPaidAtUtc = $this->extractReceiptPaidAtUtcFromTag($proofTag);
+        if ($receiptPaidAtUtc === null) {
+            return null;
+        }
+
+        $dealStartedAt = $this->dealStartedAtUtc($lot);
+        if ($dealStartedAt === null) {
+            return null;
+        }
+
+        $graceHours = max(0, (int) config('deal.bank_receipt_dispute_time_grace_hours', 12));
+        $oldestAllowed = $dealStartedAt->copy()->subHours($graceHours);
+        if ($receiptPaidAtUtc->lt($oldestAllowed)) {
+            return [
+                'message' => 'Receipt payment time is too far before deal start (outside allowed UTC grace window).',
+                'error_code' => 'bank_receipt_time_too_old_for_deal',
+                'status' => 422,
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function latestPaymentProofTagForSender(ExchangeLot $lot, string $senderSide): ?array
+    {
+        $messages = DealChatMessage::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->where('sender_side', $senderSide)
+            ->whereNotNull('deal_tag')
+            ->orderByDesc('id')
+            ->limit(120)
+            ->get(['deal_tag']);
+        foreach ($messages as $message) {
+            $raw = trim((string) ($message->deal_tag ?? ''));
+            if ($raw === '') {
+                continue;
+            }
+            $tag = json_decode($raw, true);
+            if (! is_array($tag)) {
+                continue;
+            }
+            $type = trim((string) ($tag['t'] ?? ''));
+            if (in_array($type, ['receipt_confirmation', 'seller_transfer_tx', 'buyer_crypto_tx'], true)) {
+                return $tag;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string,mixed>  $tag
+     */
+    private function extractReceiptPaidAtUtcFromTag(array $tag): ?\Carbon\CarbonImmutable
+    {
+        $utcFields = ['payment_time_utc', 'paid_at_utc', 'receipt_time_utc'];
+        foreach ($utcFields as $field) {
+            $raw = trim((string) ($tag[$field] ?? ''));
+            if ($raw === '') {
+                continue;
+            }
+            try {
+                return \Carbon\CarbonImmutable::parse($raw)->utc();
+            } catch (\Throwable) {
+            }
+        }
+
+        $paymentRaw = trim((string) ($tag['payment_time_raw'] ?? $tag['payment_time'] ?? ''));
+        if ($paymentRaw === '') {
+            return null;
+        }
+        $timezone = trim((string) ($tag['bank_timezone'] ?? 'UTC'));
+        if ($timezone === '') {
+            $timezone = 'UTC';
+        }
+        try {
+            return \Carbon\CarbonImmutable::parse($paymentRaw, $timezone)->utc();
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function dealStartedAtUtc(ExchangeLot $lot): ?\Carbon\CarbonImmutable
+    {
+        $startTagRow = DealChatMessage::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->whereNotNull('deal_tag')
+            ->orderBy('id')
+            ->get(['deal_tag', 'created_at']);
+        foreach ($startTagRow as $row) {
+            $raw = trim((string) ($row->deal_tag ?? ''));
+            if ($raw === '') {
+                continue;
+            }
+            $tag = json_decode($raw, true);
+            if (! is_array($tag) || trim((string) ($tag['t'] ?? '')) !== 'start_deal') {
+                continue;
+            }
+            try {
+                return \Carbon\CarbonImmutable::parse((string) $row->created_at)->utc();
+            } catch (\Throwable) {
+                break;
+            }
+        }
+
+        $tx = Transaction::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->orderBy('id')
+            ->first(['created_at']);
+        if ($tx !== null && $tx->created_at !== null) {
+            try {
+                return \Carbon\CarbonImmutable::parse((string) $tx->created_at)->utc();
+            } catch (\Throwable) {
+            }
+        }
+
+        return null;
+    }
+
     private function getCoreApiUrl(): string
     {
         $host = $_SERVER['HTTP_HOST'] ?? '';
@@ -5703,11 +6120,15 @@ class ExchangeLotController extends Controller
             'transaction_id' => $txRef,
             'crypto_type' => $cryptoType,
             'min_confirmations' => 0,
-            'strict_checks' => false,
+            'strict_checks' => true,
         ];
         $expectedAddress = $this->expectedAddressForCoreTxCheck($lot, $tagType);
         if ($expectedAddress !== null && $expectedAddress !== '') {
             $payload['expected_address'] = $expectedAddress;
+        }
+        $expectedAmount = $this->expectedAmountForCoreTxCheck($lot, $tagType);
+        if ($expectedAmount !== null && $expectedAmount > 0) {
+            $payload['expected_amount'] = $expectedAmount;
         }
 
         $coreUrl = rtrim($this->getCoreApiUrl(), '/');
@@ -5763,6 +6184,18 @@ class ExchangeLotController extends Controller
         $dealTagData['core_tx_check'] = $verification;
 
         if (! $verified) {
+            $amountMatches = $verification['checks']['amount_matches'] ?? null;
+            if ($amountMatches === false) {
+                return [
+                    'deal_tag' => $dealTagData,
+                    'error' => [
+                        'message' => 'Crypto payment amount is lower than required for this deal.',
+                        'error_code' => 'crypto_tx_amount_too_low',
+                        'status' => 422,
+                        'verification' => $verification,
+                    ],
+                ];
+            }
             return [
                 'deal_tag' => $dealTagData,
                 'error' => [
@@ -5810,6 +6243,48 @@ class ExchangeLotController extends Controller
                 }
             }
         }
+        return null;
+    }
+
+    private function expectedAmountForCoreTxCheck(ExchangeLot $lot, string $tagType): ?float
+    {
+        // Primary source for partial deals: current receipt-related transaction row.
+        $receiptTx = $lot->latestReceiptTransaction();
+        $receiptAmount = is_numeric($receiptTx?->amount) ? (float) $receiptTx->amount : null;
+        if ($receiptAmount !== null && $receiptAmount > 0) {
+            return $receiptAmount;
+        }
+
+        if ($tagType === 'buyer_crypto_tx') {
+            $tx = Transaction::query()
+                ->where('exchange_lot_id', $lot->id)
+                ->where('payment_details_set_by', 'seller')
+                ->orderByDesc('id')
+                ->first(['amount']);
+            $amount = is_numeric($tx?->amount) ? (float) $tx->amount : null;
+            if ($amount !== null && $amount > 0) {
+                return $amount;
+            }
+        }
+
+        if ($tagType === 'seller_transfer_tx') {
+            $tx = Transaction::query()
+                ->where('exchange_lot_id', $lot->id)
+                ->where('payment_details_set_by', 'buyer')
+                ->orderByDesc('id')
+                ->first(['amount']);
+            $amount = is_numeric($tx?->amount) ? (float) $tx->amount : null;
+            if ($amount !== null && $amount > 0) {
+                return $amount;
+            }
+
+            // Fallback only when explicit transaction row is not available.
+            $selected = is_numeric($lot->buyer_selected_amount) ? (float) $lot->buyer_selected_amount : null;
+            if ($selected !== null && $selected > 0) {
+                return $selected;
+            }
+        }
+
         return null;
     }
 
