@@ -11,7 +11,7 @@ use App\Models\ExchangeLot;
  */
 final class ArbiterPromptContextAssembler
 {
-    public const MAX_RULES_CHARS = 14000;
+    public const MAX_RULES_CHARS = 200000;
 
     public const MAX_CHAT_LINES = 45;
 
@@ -49,7 +49,12 @@ final class ArbiterPromptContextAssembler
             $text = 'Rules digest file missing or empty. Be conservative: prefer manual_review; ask for evidence; do not invent payment or address facts.';
         }
 
-        return mb_substr($text, 0, self::MAX_RULES_CHARS);
+        // We intentionally send the full rules file to the arbiter (single source of truth for policy text).
+        if (mb_strlen($text) > self::MAX_RULES_CHARS) {
+            return mb_substr($text, 0, self::MAX_RULES_CHARS);
+        }
+
+        return $text;
     }
 
     /**

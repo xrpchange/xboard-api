@@ -2198,6 +2198,16 @@ class ExchangeLotController extends Controller
                     'release_at' => $lock['release_at'],
                 ], 403);
             }
+            $disputeLock = $this->getActiveDisputeExitLock($lot);
+            if ($disputeLock !== null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'A dispute is open. Deal exit is temporarily locked for compensation review.',
+                    'error_code' => 'deal_exit_blocked_active_dispute_window',
+                    'remaining_seconds' => $disputeLock['remaining_seconds'],
+                    'release_at' => $disputeLock['release_at'],
+                ], 403);
+            }
             $exitPermission = $this->getDealExitPermissionForTimeout($lot);
             if ($exitPermission !== null && $exitPermission['allowed_side'] !== 'seller') {
                 return response()->json([
@@ -2206,13 +2216,6 @@ class ExchangeLotController extends Controller
                     'error_code' => 'deal_exit_not_allowed_for_side',
                     'allowed_side' => $exitPermission['allowed_side'],
                     'transaction_id' => $exitPermission['transaction_id'],
-                ], 403);
-            }
-            if ($this->lotHasActiveDispute($lot)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot exit the deal while a dispute is open. Wait for resolution or continue in the dispute flow.',
-                    'error_code' => 'deal_exit_blocked_active_dispute',
                 ], 403);
             }
         }
@@ -2629,11 +2632,14 @@ class ExchangeLotController extends Controller
             ], 403);
         }
 
-        if ($this->lotHasActiveDispute($lot)) {
+        $disputeLock = $this->getActiveDisputeExitLock($lot);
+        if ($disputeLock !== null) {
             return response()->json([
                 'success' => false,
-                'message' => 'Cannot cancel this deal while a dispute is open. Wait for the AI arbiter or exchange operator to resolve the case.',
-                'error_code' => 'buyer_cancel_blocked_active_dispute',
+                'message' => 'A dispute is open. Deal cancellation is temporarily locked for compensation review.',
+                'error_code' => 'buyer_cancel_blocked_active_dispute_window',
+                'remaining_seconds' => $disputeLock['remaining_seconds'],
+                'release_at' => $disputeLock['release_at'],
             ], 403);
         }
 
@@ -4984,6 +4990,36 @@ class ExchangeLotController extends Controller
             ->where('exchange_lot_id', $lot->id)
             ->whereIn('status', ['opened', 'in_review'])
             ->exists();
+    }
+
+    /**
+     * During an active dispute we keep exit/cancel locked for compensation review window.
+     * After the window expires, normal legacy exit rules apply again.
+     *
+     * @return array{remaining_seconds:int,release_at:string}|null
+     */
+    private function getActiveDisputeExitLock(ExchangeLot $lot): ?array
+    {
+        $active = DealDispute::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->whereIn('status', ['opened', 'in_review'])
+            ->orderByDesc('id')
+            ->first();
+        if ($active === null) {
+            return null;
+        }
+
+        $hours = max(1, (int) config('deal.active_dispute_exit_lock_hours', 24));
+        $openedAt = $active->opened_at ?? $active->created_at ?? now();
+        $releaseAt = $openedAt->copy()->addHours($hours);
+        if ($releaseAt->isPast()) {
+            return null;
+        }
+
+        return [
+            'remaining_seconds' => (int) now()->diffInSeconds($releaseAt),
+            'release_at' => $this->toUtcIso8601($releaseAt),
+        ];
     }
 
     /**
