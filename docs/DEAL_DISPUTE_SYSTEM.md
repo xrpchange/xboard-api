@@ -72,6 +72,7 @@ Full setup, env vars, single-provider policy (no vendor failover), security, and
 - **Semantic outcome** is returned as `arbiter_status` (`in_review` | `manual_review`) in the POST JSON and in `deal_chat_messages.deal_tag` for `t=arbiter_message`.
 - Optional body fields: `message`, `provider` / `provider_hint` (hint only; **not** used to choose the LLM provider), `bank_timezone`, `payment_time_raw`, `pdf_sha256`, `email_message_sha256`, `dkim_signature_sha256`.
 - After an operator reply in dispute chat, the next review is treated as a fresh pass: payment/bank/crypto checks are re-run by the normal rules-first logic (no shortcut mode).
+- While dispute is active (`opened` / `in_review`), `buyerCancelDeal` and `seller_exited` are locked for `DEAL_ACTIVE_DISPUTE_EXIT_LOCK_HOURS` (default 24h). After lock expiry, legacy timeout/side exit rules apply again even if dispute is still open.
 
 ### Crypto tx id verification via Core
 

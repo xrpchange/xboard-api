@@ -94,7 +94,7 @@ Clients may use this to disable **Ask AI arbiter** before the user taps (optiona
 
 Before calling the provider, the controller attaches (non-authoritative) context:
 
-- **`exchange_rules_digest`** — trimmed contents of **`resources/prompts/arbiter_exchange_rules.md`** (fallback English line if file missing).  
+- **`exchange_rules_digest`** — full contents of **`resources/prompts/arbiter_exchange_rules.md`** (fallback English line if file missing; hard safety cap in code).  
 - **`deal_machine_state`** — `DealChatTagSequenceValidator::computeStateForLot($lot)` (same reducer as `deal_tag` validation).  
 - **`recent_chat_digest`** — last N messages visible to the **requester** (same `deleted_by_*` filters as `GET …/chat-messages`), one line per message with truncated `body` / `deal_tag`.
 
