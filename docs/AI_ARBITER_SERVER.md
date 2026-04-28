@@ -133,6 +133,7 @@ The server splits **display text** (everything before that last non-empty line) 
 5. **Gray zone:** otherwise the server calls **only** the configured primary provider (`ARBITER_PRIMARY_PROVIDER`, default `gigachat`). On transport/API failure there is **no** switch to another LLM — the request ends in `provider_unavailable` and operator escalation (see step 7).  
 6. **Post-LLM escalation:** if context score **&lt; `ARBITER_MANUAL_REVIEW_THRESHOLD`** but LLM ran, the response body includes the model text plus an English escalation suffix; `arbiter_status` is `manual_review` (`reason_code`: `low_confidence`).  
 7. **Primary provider fails:** fixed English manual message (`reason_code`: `provider_unavailable`). **`ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('provider_unavailable', …)`** runs immediately (same path as other policy escalations): if **`ARBITER_OPERATOR_ESCALATION_EMAIL`** / `config('arbiter_operator_mail.escalation_email')` is set, the operator receives **`ArbiterOperatorEscalationMail`** with full deal context and signed `/arbiter/operator/{lot}/…` links — this is the intended **hand-off off the LLM budget**. The chat row’s `deal_tag` includes **`operator_escalation_email_sent`: true|false** so clients can show accurate copy. If the inbox is not configured, only a warning is logged and the flag is **false** (operators must be reached by other ops channels).
+8. **Bank receipt duplicate guard:** receipt-file checksums (`sha256`) are persisted in `receipt_file_checksums`; duplicate submission (`sender_side` + `tag_type` + checksum within same lot) is rejected (`error_code`: `duplicate_receipt_checksum`). Retention is aligned to deal chat TTL via `receipt-checksums:prune` (default 15 days).
 
 ### After operator reply: restart full review cycle
 
@@ -176,7 +177,8 @@ PHPUnit uses `ARBITER_PRIMARY_PROVIDER=stub` (see `phpunit.xml`).
 | `ARBITER_OPERATOR_ESCALATION_EMAIL` | *(empty)* | When a receipt PDF matches on disk but has **no extractable text**, send internal context to this address (no LLM). Wired through `config/arbiter_operator_mail.php`. Example in `.env.example`: `tehnograny@yandex.ru`. |
 | `ARBITER_OPERATOR_ACTION_LINK_TTL_DAYS` | `7` | Expiry (days) for signed operator action URLs in that email. Set explicitly in `.env` / `.env.example` alongside the operator inbox. |
 | `ARBITER_RESOLVE_ON_FAVOR_BUYER` | `true` | When LLM `verdict` is `favor_buyer` and `arbiter_status` is `in_review`, close `deal_disputes` so seller can use normal crypto payout (unless auto Core payout is on and fails). |
-| `ARBITER_RESOLVE_ON_FAVOR_SELLER` | `false` | Same for `favor_seller`. |
+| `ARBITER_RESOLVE_ON_FAVOR_SELLER` | `true` | Same for `favor_seller`. |
+| `ARBITER_FORCE_CLOSE_BUYER_DISPUTE_ON_FAVOR_SELLER` | `true` | If enabled, AI verdict `favor_seller` closes buyer-opened disputes even when generic `ARBITER_RESOLVE_ON_FAVOR_SELLER` is disabled. |
 | `ARBITER_AUTO_CORE_PAYOUT_ON_FAVOR_BUYER` | `false` | When `true`, after `favor_buyer` Laravel calls Core `POST /api/deal-payout-to-buyer-from-reservation` (seller token loaded from `reservations` / `test_reservations`; same `X-Core-Key` as other API-only Core calls). |
 | `ARBITER_GIGACHAT_AUTHORIZATION_KEY` | *(empty)* | Sber **authorization key** (see studio quickstart): paste Base64 value only, or full `Basic …` / `Bearer …` header value. |
 | `ARBITER_GIGACHAT_SCOPE` | `GIGACHAT_API_PERS` | OAuth scope (`GIGACHAT_API_B2B` / `GIGACHAT_API_CORP` for legal entities per Sber docs). |

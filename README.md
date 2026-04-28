@@ -346,7 +346,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **[Cron Jobs Setup](CRON_SSL_SETUP.md)** - Automatic certificate renewal
 - **[Email Server Setup](docs/EMAIL_SERVER_SETUP.md)** - Email server for payment verification (DKIM checking)
 - **[Postfix relay & queue](docs/POSTFIX_RELAY_AND_QUEUE.md)** - Open relay, queue limits, `postsuper`, firewall (self-hosted SMTP)
-- **[Scheduled Pruning](docs/SCHEDULED_PRUNING.md)** - Daily cleanup: `deal_chat_messages` and `transactions` older than 15 days
+- **[Scheduled Pruning](docs/SCHEDULED_PRUNING.md)** - Daily cleanup: `deal_chat_messages`, `receipt_file_checksums`, and `transactions` older than 15 days
 - **[Lot Mailbox and IMAP Chat](docs/LOT_MAILBOX_AND_IMAP_CHAT.md)** - Концепция: почтовые ящики для лотов, чат на IMAP (не реализовано)
 - **[Deal Dispute System](docs/DEAL_DISPUTE_SYSTEM.md)** - Separate dispute lifecycle state (`deal_disputes`) and API flow
 - **[AI Arbiter (server)](docs/AI_ARBITER_SERVER.md)** - Single LLM provider (default **GigaChat**, no vendor failover), env, security, **per-lot invocation cap** (`exchange_lots.arbiter_ai_invocations`), `dispute-status` fields, curl test checklist

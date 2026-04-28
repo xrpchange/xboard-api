@@ -19,5 +19,11 @@ return [
      * After this period, legacy timeout/side exit rules apply again even if dispute is still open.
      */
     'active_dispute_exit_lock_hours' => (int) env('DEAL_ACTIVE_DISPUTE_EXIT_LOCK_HOURS', 24),
+
+    /**
+     * Receipt payment time can be this many hours older than deal start (UTC) before dispute open is rejected.
+     * Helps absorb unknown bank timezone in receipts while still catching obviously stale proofs.
+     */
+    'bank_receipt_dispute_time_grace_hours' => (int) env('DEAL_BANK_RECEIPT_DISPUTE_TIME_GRACE_HOURS', 12),
 ];
 

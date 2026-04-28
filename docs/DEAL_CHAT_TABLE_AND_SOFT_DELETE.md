@@ -97,4 +97,4 @@ Messages older than **15 days** are permanently deleted to keep the table small.
 - **Command:** `php artisan deal-chat:prune` — deletes rows where `created_at` is older than 15 days (default).
 - **Options:** `--days=15` (default), `--dry-run` (show count only, no delete).
 - **Schedule:** Registered in `bootstrap/app.php`; runs daily. Ensure the server runs the Laravel scheduler (e.g. cron: `* * * * * cd /path && php artisan schedule:run >> /dev/null 2>&1`).
-- **Overview of all pruning tasks:** [SCHEDULED_PRUNING.md](SCHEDULED_PRUNING.md) (includes `transactions:prune`).
+- **Overview of all pruning tasks:** [SCHEDULED_PRUNING.md](SCHEDULED_PRUNING.md) (includes `receipt-checksums:prune` and `transactions:prune`).
