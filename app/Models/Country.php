@@ -48,6 +48,14 @@ class Country extends Model
     }
 
     /**
+     * Exchange nodes (обменники) whose country_code matches this country's alpha-3 code.
+     */
+    public function nodes(): HasMany
+    {
+        return $this->hasMany(Node::class, 'country_code', 'code');
+    }
+
+    /**
      * Получить активные страны
      */
     public function scopeActive($query)
