@@ -57,6 +57,7 @@ class ExchangeLot extends Model
         'seller_notification_email',
         'expires_at',
         'escrow_multisig_2_of_3_required',
+        'sold_crypto_amount',
     ];
 
     protected $casts = [
@@ -203,6 +204,52 @@ class ExchangeLot extends Model
     public function getSoldAmountAttribute(): float
     {
         return (float) ($this->sold_crypto_amount ?? 0);
+    }
+
+    /**
+     * Remaining "from" side volume (sell_amount minus accumulated completed sales).
+     */
+    public function getRemainingAmountAttribute(): float
+    {
+        return max(0.0, (float) $this->sell_amount - (float) ($this->sold_crypto_amount ?? 0));
+    }
+
+    /**
+     * Buy-side tier amounts (to currency) that still fit into {@see getRemainingAmountAttribute} at the lot rate.
+     *
+     * @return list<float>
+     */
+    public function availableBuyAmountsForRemaining(): array
+    {
+        $raw = $this->buy_amounts ?? [];
+        $amounts = is_array($raw)
+            ? array_values(array_filter(array_map('floatval', $raw), fn ($v) => $v > 0))
+            : [];
+        if ($amounts === []) {
+            return [];
+        }
+        $remaining = max(0.0, (float) $this->sell_amount - (float) ($this->sold_crypto_amount ?? 0));
+        if ($remaining <= 0) {
+            return [];
+        }
+        $rate = isset($this->rate) ? (float) $this->rate : 0.0;
+        if ($rate <= 0 && count($amounts) === 1) {
+            $sell = (float) $this->sell_amount;
+            $rate = $sell > 0 ? $amounts[0] / $sell : 0.0;
+        }
+        if ($rate <= 0) {
+            return [];
+        }
+        $tol = max(1e-9, 1e-12 * max($remaining, 1.0));
+        $out = [];
+        foreach ($amounts as $b) {
+            $fromNeeded = $b / $rate;
+            if ($fromNeeded <= $remaining + $tol) {
+                $out[] = $b;
+            }
+        }
+
+        return $out;
     }
 
     public function scopeActive($query)

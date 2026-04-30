@@ -595,6 +595,11 @@ class ExchangeLotController extends Controller
             $query->where(function ($q) {
                 $q->whereNull('buyer_lot_email')->orWhere('buyer_lot_email', '');
             });
+            // Show only lots that still have remaining volume and at least one tier that fits remaining "from" volume at rate.
+            $query->whereRaw('(sell_amount - COALESCE(sold_crypto_amount, 0)) > 0');
+            $query->whereRaw(
+                '(buy_amount_min / NULLIF(CAST(`rate` AS DECIMAL(24,14)), 0)) <= (sell_amount - COALESCE(sold_crypto_amount, 0))'
+            );
         }
 
         // Sorting
@@ -1133,6 +1138,8 @@ class ExchangeLotController extends Controller
             'buy_amount_max' => max($buyAmounts),
             'buy_amounts' => $buyAmounts,
             'rate' => $rateValue,
+            // Editing/re-saving lot resets partial sale accumulator by request.
+            'sold_crypto_amount' => 0,
         ];
         if ($request->exists('escrow_multisig_2_of_3_required')) {
             $updateData['escrow_multisig_2_of_3_required'] = $request->boolean('escrow_multisig_2_of_3_required');
@@ -1460,6 +1467,47 @@ class ExchangeLotController extends Controller
                     'success' => false,
                     'message' => 'selected_amount must equal the lot\'s single buy amount (full lot only).',
                     'error_code' => 'multisig_2_of_3_selected_amount_mismatch',
+                ], 422);
+            }
+        }
+        if ($messageType === 'start_deal') {
+            $remainingAmount = $lot->remaining_amount;
+            if ($remainingAmount <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Lot has no remaining amount for a new deal.',
+                    'error_code' => 'lot_no_remaining_amount',
+                ], 409);
+            }
+            $availableAmounts = $lot->availableBuyAmountsForRemaining();
+            if (count($availableAmounts) === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Lot has no available amount tiers for the current remaining volume.',
+                    'error_code' => 'lot_no_available_tiers',
+                ], 409);
+            }
+            $selectedAmount = $request->input('selected_amount');
+            if (! is_numeric($selectedAmount)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'selected_amount is required.',
+                    'error_code' => 'selected_amount_required',
+                ], 422);
+            }
+            $selected = (float) $selectedAmount;
+            $matchesAvailableTier = false;
+            foreach ($availableAmounts as $allowed) {
+                if (abs($selected - (float) $allowed) <= max(1e-6, 1e-8 * max(abs($selected), abs((float) $allowed), 1.0))) {
+                    $matchesAvailableTier = true;
+                    break;
+                }
+            }
+            if (! $matchesAvailableTier) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'selected_amount is not available for the lot remaining volume.',
+                    'error_code' => 'selected_amount_not_available',
                 ], 422);
             }
         }
