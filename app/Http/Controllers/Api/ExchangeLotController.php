@@ -3202,6 +3202,13 @@ class ExchangeLotController extends Controller
             if (! $resp->successful()) {
                 $body = $responseBody;
                 $message = is_array($body) ? (string) ($body['message'] ?? 'Core payout failed') : $resp->body();
+                $transaction->aml_check_json = [
+                    'context' => 'buyer_crypto_payout_to_seller',
+                    'http_status' => $resp->status(),
+                    'aml' => is_array($body) ? ($body['aml'] ?? null) : null,
+                    'core_response' => is_array($body) ? $body : ['raw' => (string) $resp->body()],
+                ];
+                $transaction->save();
                 Log::warning('[exchange-lots] buyerCryptoPayoutToSeller: core payout non-success', [
                     'lot_id' => $lot->id,
                     'transaction_id' => $transaction->id,
@@ -3229,6 +3236,12 @@ class ExchangeLotController extends Controller
             }
 
             $transaction->buyer_crypto_payout_tx_hash = $cryptoTxId;
+            $transaction->aml_check_json = [
+                'context' => 'buyer_crypto_payout_to_seller',
+                'http_status' => $resp->status(),
+                'aml' => is_array($body) ? ($body['data']['aml'] ?? $body['aml'] ?? null) : null,
+                'core_response' => is_array($body) ? $body : null,
+            ];
             $transaction->save();
             Log::info('[exchange-lots] buyerCryptoPayoutToSeller: payout success', [
                 'lot_id' => $lot->id,
@@ -3479,6 +3492,13 @@ class ExchangeLotController extends Controller
             if (! $resp->successful()) {
                 $body = $responseBody;
                 $message = is_array($body) ? (string) ($body['message'] ?? 'Core payout failed') : $resp->body();
+                $transaction->aml_check_json = [
+                    'context' => 'seller_crypto_payout_to_buyer',
+                    'http_status' => $resp->status(),
+                    'aml' => is_array($body) ? ($body['aml'] ?? null) : null,
+                    'core_response' => is_array($body) ? $body : ['raw' => (string) $resp->body()],
+                ];
+                $transaction->save();
                 Log::warning('[exchange-lots] sellerCryptoPayoutToBuyer: core payout non-success', [
                     'lot_id' => $lot->id,
                     'transaction_id' => $transaction->id,
@@ -3507,6 +3527,12 @@ class ExchangeLotController extends Controller
 
             $transaction->seller_crypto_payout_tx_hash = $cryptoTxId;
             $transaction->status = 'completed';
+            $transaction->aml_check_json = [
+                'context' => 'seller_crypto_payout_to_buyer',
+                'http_status' => $resp->status(),
+                'aml' => is_array($body) ? ($body['data']['aml'] ?? $body['aml'] ?? null) : null,
+                'core_response' => is_array($body) ? $body : null,
+            ];
             $transaction->save();
             Log::info('[exchange-lots] sellerCryptoPayoutToBuyer: payout success', [
                 'lot_id' => $lot->id,
@@ -3698,6 +3724,12 @@ class ExchangeLotController extends Controller
 
                 $transaction->seller_crypto_payout_tx_hash = $cryptoTxId;
                 $transaction->status = 'completed';
+                $transaction->aml_check_json = [
+                    'context' => 'arbiter_reservation_payout_to_buyer',
+                    'http_status' => $resp->status(),
+                    'aml' => is_array($body) ? ($body['data']['aml'] ?? $body['aml'] ?? null) : null,
+                    'core_response' => is_array($body) ? $body : null,
+                ];
                 $transaction->save();
 
                 $tagJson = json_encode([
