@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * XBoard Node Model
@@ -70,6 +71,14 @@ class Node extends Model
         'endpoint_permissions' => 'array',
         'features' => 'array'
     ];
+
+    /**
+     * Country by ISO 3166-1 alpha-3 code (matches countries.code).
+     */
+    public function country(): BelongsTo
+    {
+        return $this->belongsTo(Country::class, 'country_code', 'code');
+    }
     
     /**
      * Получить доступные endpoints для клиента в зависимости от его роли

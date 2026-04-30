@@ -18,7 +18,7 @@ CREATE TABLE `nodes` (
     `name` varchar(255) NOT NULL,
     `domain` varchar(255) NOT NULL,
     `api_url` varchar(255) NOT NULL,
-    `country_code` varchar(10) DEFAULT NULL,
+    `country_code` varchar(3) DEFAULT NULL COMMENT 'ISO 3166-1 alpha-3; FK to countries.code when set',
     `owner` varchar(255) DEFAULT NULL,
     `is_default` tinyint(1) NOT NULL DEFAULT '0',
     `is_required` tinyint(1) NOT NULL DEFAULT '0',
