@@ -19,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withSchedule(function (Schedule $schedule): void {
         $schedule->command('deal-chat:prune')->daily();
+        $schedule->command('deal-disputes:prune')->daily();
         $schedule->command('receipt-checksums:prune')->daily();
         $schedule->command('transactions:prune')->daily();
         $schedule->command('email-attachments-tmp:prune')->daily();

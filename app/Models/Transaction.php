@@ -24,6 +24,7 @@ class Transaction extends Model
         'tx_hash',
         'buyer_crypto_payout_tx_hash',
         'seller_crypto_payout_tx_hash',
+        'aml_check_json',
         'tx_type',
         'from_address',
         'to_address',
@@ -61,6 +62,7 @@ class Transaction extends Model
     protected $casts = [
         'amount' => 'decimal:8',
         'receipt_links_json' => 'array',
+        'aml_check_json' => 'array',
         'is_test' => 'boolean',
     ];
 
