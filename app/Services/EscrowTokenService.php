@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Exceptions\InvalidTokenException;
 use App\Exceptions\UnsupportedCurrencyException;
+use App\Models\Node;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
@@ -11,38 +13,162 @@ class EscrowTokenService
 {
     public function __construct() {}
 
+    private function normalizeCoreBaseUrl(string $url): string
+    {
+        return rtrim(trim($url), '/');
+    }
+
+    /**
+     * One key per logical Core base so allowlist matches client and DB even if one side uses a trailing "/api".
+     */
+    private function canonicalCoreBaseKey(string $url): ?string
+    {
+        $trimmed = rtrim(trim($url), '/');
+        $parts = parse_url($trimmed);
+        if ($parts === false || empty($parts['host'])) {
+            return null;
+        }
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        if ($scheme !== 'https') {
+            return null;
+        }
+        $host = strtolower((string) $parts['host']);
+        $path = isset($parts['path']) ? str_replace('\\', '/', (string) $parts['path']) : '';
+        $path = rtrim($path, '/');
+        if ($path === '/') {
+            $path = '';
+        }
+        while ($path !== '' && str_ends_with(strtolower($path), '/api')) {
+            $path = rtrim(substr($path, 0, -strlen('/api')), '/');
+        }
+        if ($path === '' || $path === '/') {
+            return 'https://'.$host;
+        }
+
+        return 'https://'.$host.$path;
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    private function registeredCoreBaseKeysFromActiveNodes(): array
+    {
+        $keys = [];
+        foreach (Node::query()->where('is_active', true)->cursor() as $node) {
+            $endpoints = $node->endpoints;
+            if (! is_array($endpoints)) {
+                continue;
+            }
+            foreach ($endpoints as $name => $value) {
+                if (! is_string($name)) {
+                    continue;
+                }
+                if (! str_starts_with($name, 'core_') && $name !== 'core_api') {
+                    continue;
+                }
+                if (is_array($value)) {
+                    $value = $value['url'] ?? null;
+                }
+                if (! is_string($value) || trim($value) === '') {
+                    continue;
+                }
+                $k = $this->canonicalCoreBaseKey($value);
+                if ($k !== null) {
+                    $keys[$k] = true;
+                }
+            }
+        }
+
+        return $keys;
+    }
+
+    private function clientCoreBaseUrlIsAllowlisted(string $normalized): bool
+    {
+        $clientKey = $this->canonicalCoreBaseKey($normalized);
+
+        return $clientKey !== null && isset($this->registeredCoreBaseKeysFromActiveNodes()[$clientKey]);
+    }
+
+    private function coreBaseAllowlistErrorMessage(string $normalized): string
+    {
+        $clientKey = $this->canonicalCoreBaseKey($normalized) ?? 'invalid';
+        $registered = array_keys($this->registeredCoreBaseKeysFromActiveNodes());
+        sort($registered);
+
+        return 'core_base_url is not registered for any active exchange node'
+            . ' (client=' . $clientKey
+            . ', registered=' . implode(',', $registered) . ')';
+    }
+
+    /**
+     * Client sends the same Core base URL it uses for get-encrypted-part (HTTPS; must match nodes.endpoints core_* canonically).
+     */
+    private function assertClientCoreBaseUrlShape(string $normalized): void
+    {
+        if ($normalized === '') {
+            throw new \InvalidArgumentException('core_base_url is empty');
+        }
+        $parts = parse_url($normalized);
+        if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
+            throw new \InvalidArgumentException('core_base_url is not a valid URL');
+        }
+        if (strcasecmp((string) $parts['scheme'], 'https') !== 0) {
+            throw new \InvalidArgumentException('core_base_url must use HTTPS');
+        }
+    }
+
+    /**
+     * @return array{0: string, 1: string} [coreBaseUrl, xCoreKey]
+     */
+    private function resolveCoreUrlAndKey(Request $request, string $coreBaseUrlFromClient): array
+    {
+        $host = $request->getHost();
+        $useProductionConfig = ! preg_match('/^(sandbox\.|dev\.)/', $host);
+        $defaultKey = (string) ($useProductionConfig ? config('services.core_production.key') : config('services.core.key'));
+
+        $trimmed = trim($coreBaseUrlFromClient);
+        if ($trimmed === '') {
+            throw new \InvalidArgumentException('core_base_url is required');
+        }
+
+        $normalized = $this->normalizeCoreBaseUrl($trimmed);
+        $this->assertClientCoreBaseUrlShape($normalized);
+        if (! $this->clientCoreBaseUrlIsAllowlisted($normalized)) {
+            throw new \InvalidArgumentException($this->coreBaseAllowlistErrorMessage($normalized));
+        }
+
+        return [$normalized, $defaultKey];
+    }
+
     /**
      * Create escrow token through core API
      * Stage 1: Get open part of token
+     *
+     * @param  Request  $request  Use the same host the controller sees (TrustedProxies / X-Forwarded-Host),
+     *                             not raw {@see $_SERVER['HTTP_HOST']}, so sandbox vs production Core URL matches the public API host.
+     * @param  string  $coreBaseUrlFromClient  Required; same Core base the client uses for get-encrypted-part (allowlisted).
      */
     public function createToken(
+        Request $request,
         string $cryptoType,
         float $amount = 0.0,
         ?string $network = null,
-        bool $escrowMultisig2Of3Required = false
+        bool $escrowMultisig2Of3Required = false,
+        string $coreBaseUrlFromClient
     ): array {
-        // Determine Core URL and key based on current API host (preserve environment)
-        $host = $_SERVER['HTTP_HOST'] ?? '';
-        $coreUrl = config('services.core.url'); // default (sandbox)
-        $coreKey = config('services.core.key');
-        
-        // If request came to production API, use production Core URL and key
-        if (!preg_match('/^(sandbox\.|dev\.)/', $host)) {
-            $coreUrl = config('services.core_production.url');
-            $coreKey = config('services.core_production.key');
-        }
-        
+        [$coreUrl, $coreKey] = $this->resolveCoreUrlAndKey($request, $coreBaseUrlFromClient);
+
         $timeout = config('services.core.timeout', 10);
 
         try {
-            $request = Http::timeout($timeout);
-            
+            $http = Http::timeout($timeout);
+
             if (!empty($coreKey)) {
-                $request = $request->withHeaders([
+                $http = $http->withHeaders([
                     'X-Core-Key' => $coreKey,
                 ]);
             }
-            
+
             $body = [
                 'crypto_type' => $cryptoType,
                 'amount' => $amount,
@@ -55,7 +181,7 @@ class EscrowTokenService
                 $body['escrow_multisig_2_of_3_required'] = true;
             }
 
-            $response = $request->post($coreUrl . '/api/escrow-tokens/create', $body);
+            $response = $http->post($coreUrl . '/api/escrow-tokens/create', $body);
 
             if (!$response->successful()) {
                 $errorData = $response->json();

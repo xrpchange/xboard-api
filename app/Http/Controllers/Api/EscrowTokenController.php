@@ -67,6 +67,8 @@ class EscrowTokenController extends BaseApiController
             'email' => 'required|string|email',
             'puzzle_token' => 'required|string|max:128',
             'puzzle_answer' => 'required|string|max:64',
+            // Optional: same mailbox code for up to N successful creates (multi-node batch).
+            'batch_size' => 'nullable|integer|min:1|max:50',
         ]);
         $email = $validated['email'];
         $puzzleError = $this->consumePuzzle(
@@ -101,7 +103,16 @@ class EscrowTokenController extends BaseApiController
         $ttlMinutes = config('mail.mailbox_verification.code_ttl_minutes', 30);
         $code = (string) random_int(100000, 999999);
         $cacheKey = self::CACHE_KEY_PREFIX . strtolower($email);
-        Cache::put($cacheKey, $code, now()->addMinutes($ttlMinutes));
+        $batchSize = isset($validated['batch_size']) ? (int) $validated['batch_size'] : 1;
+        $batchSize = max(1, min(50, $batchSize));
+        if ($batchSize > 1) {
+            Cache::put($cacheKey, [
+                'code' => $code,
+                'remaining' => $batchSize,
+            ], now()->addMinutes($ttlMinutes));
+        } else {
+            Cache::put($cacheKey, $code, now()->addMinutes($ttlMinutes));
+        }
 
         try {
             Mail::send(new MailboxVerificationCodeMail($code, $email));
@@ -483,10 +494,12 @@ class EscrowTokenController extends BaseApiController
      *     @OA\RequestBody(
      *         required=true,
      *         @OA\JsonContent(
-     *             required={"crypto_type", "email"},
+     *             required={"crypto_type", "email", "verification_code", "core_base_url"},
      *             @OA\Property(property="crypto_type", type="string", example="usdt_tron", description="Cryptocurrency type; validated by Core"),
      *             @OA\Property(property="amount", type="number", example=10, description="Optional amount"),
-     *             @OA\Property(property="email", type="string", example="user@gmail.com", description="Email from a supported provider (for rate limiting)")
+     *             @OA\Property(property="email", type="string", example="user@gmail.com", description="Email from a supported provider (for rate limiting)"),
+     *             @OA\Property(property="verification_code", type="string", example="123456", description="Mailbox verification code"),
+     *             @OA\Property(property="core_base_url", type="string", example="https://sandbox.api.core.example.com", description="HTTPS Core base URL (same as client uses for get-encrypted-part); must match an active node endpoints core_* entry")
      *         )
      *     ),
      *     @OA\Response(response=429, description="Rate limit exceeded (email or IP)"),
@@ -517,14 +530,16 @@ class EscrowTokenController extends BaseApiController
             'escrow_multisig_2_of_3_required' => 'nullable|boolean',
             'email' => 'required|string|email',
             'verification_code' => 'required|string|size:6',
+            // Required: same Core base the client uses for get-encrypted-part; allowlisted against nodes.endpoints core_*.
+            'core_base_url' => ['required', 'string', 'max:512', 'regex:/^https:\/\/.+/i'],
         ]);
 
         $email = $validated['email'];
         $code = $validated['verification_code'];
         $cacheKey = self::CACHE_KEY_PREFIX . strtolower($email);
-        $cachedCode = Cache::get($cacheKey);
-
-        if ($cachedCode === null || $cachedCode !== $code) {
+        $cached = Cache::get($cacheKey);
+        $cachedEntry = $this->normalizeMailboxVerificationCacheEntry($cached);
+        if ($cachedEntry === null || $cachedEntry['code'] !== $code) {
             return response()->json([
                 'message' => 'Invalid or expired verification code. Request a new code.',
                 'error_code' => 'invalid_verification_code',
@@ -562,14 +577,26 @@ class EscrowTokenController extends BaseApiController
 
         try {
             $network = isset($validated['network']) ? trim((string) $validated['network']) : null;
+            $coreBaseUrl = trim((string) $validated['core_base_url']);
             $result = $this->escrowTokenService->createToken(
+                $request,
                 $validated['crypto_type'],
                 (float)($validated['amount'] ?? 0.0),
                 $network !== '' ? $network : null,
-                (bool)($validated['escrow_multisig_2_of_3_required'] ?? false)
+                (bool)($validated['escrow_multisig_2_of_3_required'] ?? false),
+                $coreBaseUrl
             );
 
-            Cache::forget($cacheKey);
+            $ttlMinutes = (int) config('mail.mailbox_verification.code_ttl_minutes', 30);
+            $remaining = (int) ($cachedEntry['remaining'] ?? 1);
+            if ($remaining <= 1) {
+                Cache::forget($cacheKey);
+            } else {
+                Cache::put($cacheKey, [
+                    'code' => $cachedEntry['code'],
+                    'remaining' => $remaining - 1,
+                ], now()->addMinutes($ttlMinutes));
+            }
             $this->rateLimitService->incrementEmail($email, $environment);
             $this->rateLimitService->incrementIp($ip);
 
@@ -580,6 +607,31 @@ class EscrowTokenController extends BaseApiController
         } catch (\Exception $e) {
             return $this->errorResponse($e->getMessage(), 400);
         }
+    }
+
+    /**
+     * @param  mixed  $cached
+     * @return array{code: string, remaining: int}|null
+     */
+    private function normalizeMailboxVerificationCacheEntry(mixed $cached): ?array
+    {
+        if ($cached === null) {
+            return null;
+        }
+        if (\is_string($cached)) {
+            return ['code' => $cached, 'remaining' => 1];
+        }
+        if (\is_array($cached)) {
+            $code = $cached['code'] ?? null;
+            if (!\is_string($code) || strlen($code) !== 6 || !ctype_digit($code)) {
+                return null;
+            }
+            $remaining = (int) ($cached['remaining'] ?? 1);
+
+            return ['code' => $code, 'remaining' => max(1, min(50, $remaining))];
+        }
+
+        return null;
     }
 
     /**
