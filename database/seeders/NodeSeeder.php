@@ -39,6 +39,7 @@ class NodeSeeder extends Seeder
                     'dev' => 'https://dev.api.xdexboard.com',
                     'core_production' => $coreUrlProduction,
                     'core_sandbox' => $coreUrlSandbox,
+                    'core_dev' => $coreUrlSandbox,
                 ],
                 'endpoint_permissions' => [
                     'production' => 'public',
