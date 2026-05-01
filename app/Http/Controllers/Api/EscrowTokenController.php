@@ -270,6 +270,149 @@ class EscrowTokenController extends BaseApiController
     }
 
     /**
+     * Read Core fee scalars for one crypto_key (rates, min/max fees, AML reserves). Requires admin mode password.
+     */
+    public function getCryptoFeeParams(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'admin_mode_password' => 'required|string|min:1|max:256',
+            'crypto_key' => 'required|string|regex:/^[a-z0-9_]+$/',
+        ]);
+
+        $escrowToken = (string) ($request->header('X-Escrow-Token') ?? '');
+        if ($escrowToken === '') {
+            return response()->json([
+                'message' => 'Escrow token header is required.',
+                'error_code' => 'escrow_token_missing',
+            ], 401);
+        }
+
+        [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($escrowToken);
+
+        $req = Http::timeout((int) config('services.core.timeout', 10));
+        if ($coreKey !== '') {
+            $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+        }
+
+        try {
+            $coreResponse = $req->asJson()->post(rtrim($coreUrl, '/') . '/api/admin/get-crypto-fee-params', [
+                'admin_mode_password' => (string) $validated['admin_mode_password'],
+                'crypto_key' => strtolower(trim((string) $validated['crypto_key'])),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Core is unavailable: ' . $e->getMessage(),
+                'error_code' => 'core_unavailable',
+            ], 502);
+        }
+
+        $payload = $coreResponse->json();
+        if (!$coreResponse->successful()) {
+            return response()->json([
+                'message' => $payload['message'] ?? 'Failed to load crypto fee parameters.',
+                'error_code' => $payload['error_code'] ?? 'crypto_fee_params_fetch_failed',
+            ], $coreResponse->status());
+        }
+
+        return response()->json([
+            'success' => true,
+            'crypto_key' => (string) ($payload['crypto_key'] ?? strtolower(trim((string) $validated['crypto_key']))),
+            'params' => $payload['params'] ?? [],
+        ]);
+    }
+
+    /**
+     * Update Core fee scalars for one crypto_key after mailbox verification + Core admin password.
+     */
+    public function setCryptoFeeParams(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => 'required|string|email',
+            'verification_code' => 'required|string|size:6',
+            'admin_password' => 'required|string|min:1|max:256',
+            'crypto_key' => 'required|string|regex:/^[a-z0-9_]+$/',
+            'params' => 'required|array|min:1',
+        ]);
+
+        $allowedSuffixes = [
+            'rate_individual',
+            'min_fee',
+            'max_fee_individual',
+            'aml_fee',
+        ];
+
+        foreach ($validated['params'] as $key => $value) {
+            if (! in_array((string) $key, $allowedSuffixes, true)) {
+                return response()->json([
+                    'message' => 'Unknown or disallowed param key: ' . $key,
+                    'error_code' => 'param_not_allowed',
+                ], 422);
+            }
+            if ($value === null || $value === '' || ! is_numeric($value)) {
+                return response()->json([
+                    'message' => 'All params must be numeric.',
+                    'error_code' => 'validation_failed',
+                ], 422);
+            }
+        }
+
+        $email = strtolower(trim((string) $validated['email']));
+        $cacheKey = self::CACHE_KEY_PREFIX . 'fee_wallet:' . $email;
+        $cachedCode = Cache::get($cacheKey);
+        if ($cachedCode === null || $cachedCode !== $validated['verification_code']) {
+            return response()->json([
+                'message' => 'Invalid or expired verification code. Request a new code.',
+                'error_code' => 'invalid_verification_code',
+            ], 422);
+        }
+
+        $escrowToken = (string) ($request->header('X-Escrow-Token') ?? '');
+        if ($escrowToken === '') {
+            return response()->json([
+                'message' => 'Escrow token header is required.',
+                'error_code' => 'escrow_token_missing',
+            ], 401);
+        }
+
+        [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($escrowToken);
+
+        $req = Http::timeout((int) config('services.core.timeout', 10));
+        if ($coreKey !== '') {
+            $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+        }
+
+        try {
+            $coreResponse = $req->asJson()->post(rtrim($coreUrl, '/') . '/api/admin/set-crypto-fee-params', [
+                'admin_email' => $email,
+                'admin_password' => $validated['admin_password'],
+                'crypto_key' => strtolower(trim((string) $validated['crypto_key'])),
+                'params' => $validated['params'],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Core is unavailable: ' . $e->getMessage(),
+                'error_code' => 'core_unavailable',
+            ], 502);
+        }
+
+        $payload = $coreResponse->json();
+        if (!$coreResponse->successful()) {
+            return response()->json([
+                'message' => $payload['message'] ?? 'Failed to update crypto fee parameters.',
+                'error_code' => $payload['error_code'] ?? 'crypto_fee_params_update_failed',
+            ], $coreResponse->status());
+        }
+
+        Cache::forget($cacheKey);
+
+        return response()->json([
+            'success' => true,
+            'crypto_key' => $payload['crypto_key'] ?? strtolower(trim((string) $validated['crypto_key'])),
+            'updated_keys' => $payload['updated_keys'] ?? [],
+        ]);
+    }
+
+    /**
      * Set one Core fee-wallet config parameter (clean/dirty) after email verification and admin password check in Core.
      */
     public function setFeeWalletAddress(Request $request): JsonResponse
