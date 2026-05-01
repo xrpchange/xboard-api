@@ -187,6 +187,8 @@ After starting the server, documentation is available at:
 #### Escrow Tokens (protected utility endpoints)
 - `POST /api/v1/escrow-tokens/request-fee-wallet-verification-code` - Send one-time code to email for fee wallet update
 - `POST /api/v1/escrow-tokens/set-fee-wallet-address` - Set one Core `*_fee_wallet_clean` / `*_fee_wallet_dirty` value
+- `POST /api/v1/escrow-tokens/get-crypto-fee-params` - Read Core merged fee scalars for a `crypto_key` (rates, min/max fees, AML reserve); body: `admin_mode_password`, `crypto_key`; header `X-Escrow-Token`
+- `POST /api/v1/escrow-tokens/set-crypto-fee-params` - Update those scalars in Core INI after the same mailbox verification flow as fee wallet; body: `email`, `verification_code`, `admin_password`, `crypto_key`, `params` (map of allowed suffixes → numbers)
 
 ### Fee Wallet Admin Flow (clean / dirty)
 
