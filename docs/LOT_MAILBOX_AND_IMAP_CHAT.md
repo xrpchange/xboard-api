@@ -18,7 +18,7 @@
 ### Текущее состояние
 
 - Postfix, Dovecot, OpenDKIM
-- Один ящик `check@xdexboard.com` для верификации платежей
+- Служебный ящик поддержки `support@xdexboard.com` (опционально, см. раздел «Ящик поддержки»). Адрес для верификации платежей задаётся в API (`PAYMENT_VERIFICATION_EMAIL`) и может быть любым принимаемым на сервере ящиком.
 - Виртуальные пользователи статичные, Dovecot с `nopassword`
 - См. `docs/EMAIL_SERVER_SETUP.md`. Для доставки исходящей почты (в т.ч. с ящиков лотов) на внешние адреса нужны SPF, DKIM, DMARC — см. `docs/MAIL_SPF_DKIM_DMARC.md`.
 
@@ -27,7 +27,7 @@
 Чтобы пользователь почтового клиента не мог отправлять письма «от имени» чужого адреса, на сервере включена проверка Postfix:
 
 - **smtpd_sender_login_maps** — карта «адрес отправителя → разрешённый SASL-логин»:
-  - статичный файл `hash:/etc/postfix/sender_login_maps`: `noreply@xdexboard.com`, `check@xdexboard.com` (каждый только со своим логином);
+  - статичный файл `hash:/etc/postfix/sender_login_maps`: например `noreply@xdexboard.com`, `support@xdexboard.com` (каждый только со своим логином);
   - MySQL `mysql:/etc/postfix/mysql-sender-login-lot.cf`: ящики из `lot_mailboxes` (логин = полный адрес ящика).
 - **smtpd_sender_restrictions** включает **reject_sender_login_mismatch** перед `permit_sasl_authenticated`: если MAIL FROM не совпадает с разрешённым для данного логина, письмо отклоняется.
 
@@ -538,6 +538,23 @@ sudo postmap /etc/postfix/exempt_senders
   ```
 
 **После добавления или удаления домена/адреса в любом из этих файлов — обязательно:** `postmap` по изменённому файлу и `postfix reload`; иначе изменения не применятся.
+
+### Ящик поддержки (внешняя + внутренняя почта), **не** `lot_mailboxes`
+
+Таблица **`lot_mailboxes`** и MySQL-карты Postfix/Dovecot для неё предназначены **только** для ящиков чата по сделкам (`{currency}_{address}@xdexboard.com`). Туда **не** добавляют адрес вроде `support@xdexboard.com`.
+
+Для **одного** общего ящика поддержки (письма **с интернета** на порт 25, ответы **наружу** через 587/465, чтение по **IMAP** на `mail.xdexboard.com`) используйте **статическую** схему виртуального ящика (как в `EMAIL_SERVER_SETUP.md` для произвольного `user@xdexboard.com`), плюс карты из этого раздела:
+
+| Шаг | Что сделать |
+|-----|-------------|
+| 1 | **`exempt_recipients`** — добавить строку `support@xdexboard.com<TAB>OK`. На такой адрес **не распространяются** ограничения по отправителю/получателю из таблицы выше (в т.ч. приём с произвольных доменов на порт 25). Шаблон: `scripts/email-server/exempt_recipients`. |
+| 2 | **Не** добавлять `support@` в **`exempt_senders`**. В шаблоне `exempt_senders` — адреса **без приёма почты**, только обход `allowed_sender_domains` на 25 порту (как `noreply@`). У полноценного support есть входящий ящик — он туда **не** подходит. |
+| 3 | **Postfix `virtual_mailbox_maps`** (обычно `hash:/etc/postfix/virtual-mailbox-maps`, рядом с mysql для лотов, если уже склеено в `main.cf`): строка `support@xdexboard.com xdexboard.com/support/` (путь **относительно** `virtual_mailbox_base`, как в `CHECK_POSTFIX_DEAL_MESSAGE.md`). |
+| 4 | **Maildir** на диске: `/var/mail/vhosts/xdexboard.com/support/{cur,new,tmp}` и при необходимости `.Trash/{cur,new,tmp}`, владелец **`vmail:vmail`**. |
+| 5 | **Dovecot** — отдельный **парольный** passdb для этого логина (например `passwd-file` только для `support@`, или иной согласованный на сервере способ). **Не** хранить support в `lot_mailboxes`, если только вы специально не завели отдельную таблицу под операторские ящики. Файл `passwd-file` должен быть читаем для пользователя **`dovecot`** (типично `chgrp dovecot` и `chmod 640`), иначе в логе будет `Permission denied` и аутентификация уйдёт в следующий passdb. |
+| 6 | **`sender_login_maps`** (hash): `support@xdexboard.com support@xdexboard.com`, чтобы при SASL на 587/465 нельзя было подменить `MAIL FROM` на чужой адрес того же домена. |
+| 7 | Исходящие **на внешние** домены (Gmail и т.д.) по-прежнему требуют строк в **`allowed_recipient_domains`** для этих доменов (или политики, принятой у вас на сервере). |
+| 8 | После правок: `sudo postmap` по всем изменённым файлам, `sudo postfix reload`, при смене Dovecot — `sudo systemctl restart dovecot`. |
 
 ---
 
