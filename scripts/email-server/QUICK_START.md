@@ -78,7 +78,7 @@ mail._domainkey.xdexboard.com    TXT    "v=DKIM1; k=rsa; p=YOUR_PUBLIC_KEY"
 
 #### DMARC (TXT)
 ```
-_dmarc.xdexboard.com    TXT    "v=DMARC1; p=quarantine; rua=mailto:check@xdexboard.com"
+_dmarc.xdexboard.com    TXT    "v=DMARC1; p=quarantine; rua=mailto:receipts@your-domain.example"
 ```
 
 ### 3. Перезапустите сервисы
@@ -104,7 +104,7 @@ sudo systemctl status opendkim
 
 ```bash
 # На сервере
-echo "Test email" | mail -s "Test" check@xdexboard.com
+echo "Test email" | mail -s "Test" receipts@your-domain.example
 
 # Проверьте логи
 tail -f /var/log/mail.log
@@ -114,7 +114,7 @@ tail -f /var/log/xboard-email/verifier.log
 ### Тест 2: Пересылка письма от банка
 
 1. Получите реальное письмо от банка (уведомление о переводе)
-2. Перешлите его на `check@xdexboard.com`
+2. Перешлите его на `receipts@your-domain.example`
 3. **ВАЖНО:** Не добавляйте текст при пересылке!
 4. Проверьте ответное письмо и логи
 

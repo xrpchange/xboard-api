@@ -6,7 +6,7 @@ When you need to verify a payment, you have **5 options**. Choose the one that w
 
 1. **Automatic (OAuth)** - Fastest, works with Gmail/Outlook
 2. **Upload .eml File** - Works if your email client supports it
-3. **Forward Email** - Forward as attachment to `check@xdexboard.com`
+3. **Forward as attachment → upload** - Use your client’s “forward as attachment”, then upload the file in XBoard (preserves MIME when done correctly)
 4. **Copy-Paste** - Always works, just copy email content
 5. **Client Copy** - OAuth to copy email content
 
@@ -66,44 +66,25 @@ When you need to verify a payment, you have **5 options**. Choose the one that w
 
 ---
 
-## Method 3: Forward Email Manually
+## Method 3: Forward as attachment, then upload
 
-**Works with:** Any email client
+**Works with:** Any email client that can forward as attachment or export MIME
 
-**Steps:**
+**Goal:** Get the **original MIME** (or an `.eml`) into the XBoard app so it can call the server’s verification API with unchanged headers/body.
 
-### Gmail (Web)
-1. Open email from bank
-2. Click three dots (⋮) → **"Forward as attachment"** ⚠️ Important!
-3. Enter: `check@xdexboard.com`
-4. Click "Send"
-5. Done! ✅
+**Steps (generic):**
+1. In your mail client, use **“Forward as attachment”** (not a plain inline forward) if available.
+2. Either:
+   - **Save** the resulting attachment as `.eml` and use **Upload** in XBoard (same as Method 2), or  
+   - **Share** the attachment / message into XBoard if your build supports a share target.
+3. Submit verification in the app.
 
-### Outlook (Web)
-1. Open email from bank
-2. Click three dots (⋮) → **"Forward as attachment"** ⚠️ Important!
-3. Enter: `check@xdexboard.com`
-4. Click "Send"
-5. Done! ✅
-
-### Thunderbird
-1. Right-click email → "Forward As" → **"Attachment"** ⚠️ Important!
-2. Enter: `check@xdexboard.com`
-3. Click "Send"
-4. Done! ✅
-
-### Apple Mail
-1. Right-click email → **"Forward as Attachment"** ⚠️ Important!
-2. Enter: `check@xdexboard.com`
-3. Click "Send"
-4. Done! ✅
-
-**⚠️ Important:** Use "Forward as attachment", NOT regular forward!
+**⚠️ Important:** A normal inline forward often **breaks DKIM**. Prefer attachment/export flows that keep the bank MIME intact.
 
 **Why it works:**
-- ✅ Preserves DKIM signature (if done correctly)
-- ✅ Works with any email client
-- ✅ No app needed
+- ✅ Can preserve DKIM when the raw message is preserved
+- ✅ No OAuth needed
+- ✅ Works with many desktop clients
 
 ---
 
@@ -176,8 +157,8 @@ Subject: Оплата получена
 ### If you use Thunderbird/Outlook Desktop/Apple Mail:
 → **Method 2 (.eml Upload)** - Preserves DKIM
 
-### If you can forward emails:
-→ **Method 3 (Forward as Attachment)** - Simple and preserves DKIM
+### If you can forward as attachment but not OAuth:
+→ **Method 3** - Then upload/share into XBoard
 
 ### If nothing else works:
 → **Method 4 (Copy-Paste)** - Always works!
@@ -191,31 +172,31 @@ Subject: Оплата получена
 **Solution:**
 - Try Method 1 (OAuth) - preserves DKIM
 - Try Method 2 (.eml Upload) - preserves DKIM
-- Try Method 3 (Forward as Attachment) - preserves DKIM
+- Try Method 3 with **attachment/export**, not a broken inline forward
 - Use Method 4 (Copy-Paste) - no DKIM needed
 
 ### "Cannot export .eml file"
 
 **Solution:**
 - Use Method 1 (OAuth) if Gmail/Outlook
-- Use Method 3 (Forward as Attachment)
+- Use Method 3 (attachment → upload) if your client supports it
 - Use Method 4 (Copy-Paste)
 
 ### "OAuth not available"
 
 **Solution:**
 - Use Method 2 (.eml Upload) if supported
-- Use Method 3 (Forward as Attachment)
+- Use Method 3 (attachment → upload)
 - Use Method 4 (Copy-Paste)
 
 ---
 
 ## Security Notes
 
-**Methods with DKIM verification:**
+**Methods with DKIM verification (when MIME is intact):**
 - Method 1 (OAuth)
 - Method 2 (.eml Upload)
-- Method 3 (Forward as Attachment)
+- Method 3 (attachment → upload, if MIME preserved)
 
 **Methods without DKIM:**
 - Method 4 (Copy-Paste)
@@ -245,4 +226,3 @@ If you're having trouble verifying your payment email:
 ✅ **OAuth is fastest** - if you use Gmail/Outlook
 
 **Just pick the method that works with your email client!**
-

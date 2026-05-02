@@ -32,7 +32,6 @@ API поддерживает отдельную конфигурацию для 
    | `CORE_PRODUCTION_KEY` | API-ключ Core (production) |
 
    Выбор URL по полю `environment` токена описан в `docs/ESCROW_TOKEN_AUTHENTICATION.md` (§ Calling Core API: URL by token environment).
-   | `PAYMENT_VERIFICATION_EMAIL` | Email для верификации платежей |
    | `SANDBOX_VIRTUAL_BANK_WEBSITE` | (Необязательно) Hostname синтетического банка для песочницы; см. `docs/SANDBOX_VIRTUAL_BANK.md` |
    | `SANDBOX_VIRTUAL_BANK_COUNTRY_CODE` | (Необязательно) Код страны в `countries.code` для песочного банка (например `RUS`); по умолчанию `RUS` |
    | `SANDBOX_VIRTUAL_BANK_ID` | (Необязательно) Числовой id виртуального банка в JSON; по умолчанию `900000001` |

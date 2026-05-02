@@ -95,36 +95,17 @@ Payment processing
 │  (Gmail, Outlook, etc. - any provider)                      │
 └──────────────────────┬──────────────────────────────────────┘
                        │
-                       │ 1. User forwards bank email
-                       │    (with DKIM signature preserved)
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│              check@xdexboard.com (Postfix)                  │
-│  - Receives forwarded email                                  │
-│  - Preserves DKIM signature                                  │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-                       │ 2. Pipe to PHP verifier
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│           php-verifier.php (Server-side)                     │
-│  - Verifies DKIM signature (cryptographic)                   │
-│  - Checks sender domain (bank whitelist)                     │
-│  - Extracts payment details (pattern matching)              │
-│  - Stores proof on server                                    │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-                       │ 3. API call to update transaction
+                       │ 1. Client sends raw MIME (HTTPS)
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              Laravel API (xboard-api)                        │
-│  - Updates transaction status                                │
-│  - Stores email proof (encrypted)                           │
-│  - Links verification to transaction                         │
+│  POST /api/v1/payments/verify-email (+ related endpoints)    │
+│  - Verifies DKIM / patterns as implemented                    │
+│  - Updates transaction / stores proof                         │
 └─────────────────────────────────────────────────────────────┘
+
+(Optional) Operator Postfix mailbox → php-verifier.php → API (legacy infra; not Laravel env)
 ```
 
 ## Bank domain whitelist (DKIM / sender verification)

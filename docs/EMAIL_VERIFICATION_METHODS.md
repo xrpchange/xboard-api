@@ -12,7 +12,7 @@ XBoard supports **multiple methods** for verifying payment emails, from fully au
 
 **How it works:**
 - Client app uses OAuth to get email in raw format (preserves DKIM)
-- App automatically forwards to `check@xdexboard.com`
+- App POSTs base64(raw MIME) to `POST /api/v1/payments/verify-email`
 - Server verifies DKIM and processes payment
 
 **Advantages:**
@@ -57,29 +57,28 @@ See `CLIENT_OAUTH_EMAIL_FORWARDING.md` for detailed guide.
 
 ---
 
-### 3. ⚠️ Manual Email Forwarding (Manual - DKIM May Not Be Preserved)
+### 3. ⚠️ Manual forward then upload (Manual - DKIM may not be preserved)
 
-**Best for:** Users who cannot use OAuth method (e.g., Yandex personal accounts)
+**Best for:** Users who cannot use OAuth (e.g., Yandex personal accounts) but can save or share the message
 
 **How it works:**
-- User forwards email from their email client to `check@xdexboard.com`
-- Server receives email and attempts DKIM verification
-- If DKIM is broken, server falls back to pattern matching
+- User forwards or saves the bank message (e.g. as `.eml` / attachment) and uploads it in the client, **or** pastes content for `verify-email-content`
+- The app calls `POST /api/v1/payments/verify-email` (raw MIME) or `verify-email-content` (text path)
+- If DKIM is broken, the server falls back to pattern matching where applicable
 
 **Advantages:**
 - ✅ No OAuth needed
-- ✅ Works with any email client
-- ✅ **Only available method for Yandex personal accounts** (@yandex.ru - OAuth IMAP not supported)
+- ✅ Works with any email client that can export/share the message into the app
 
 **Limitations:**
 - ⚠️ **DKIM is usually NOT preserved** when forwarding from web interfaces
-- ⚠️ Server must rely on pattern matching instead of DKIM
-- ⚠️ Less secure, but acceptable for P2P with seller template verification
+- ⚠️ Server may rely on pattern matching instead of DKIM
+- ⚠️ Less secure than raw MIME with intact DKIM, but acceptable for P2P with seller template verification
 
 **Instructions:**
-1. Open email from bank in your email client
-2. Forward email to: `check@xdexboard.com`
-3. **Note:** DKIM signature will likely be broken, but server will use pattern matching
+1. Open the bank email in the client
+2. Prefer **Save as .eml** or **share attachment** into XBoard; otherwise use **copy-paste** (method 4)
+3. **Note:** Plain “forward in mail client” without upload does not hit the API — the app must send the bytes to `verify-email` / `verify-email-content`
 
 ---
 
@@ -279,49 +278,6 @@ Content-Type: application/json
 
 ---
 
-### Forward Email (Client-Side Forwarding)
-
-**Note:** This endpoint is currently used for testing email forwarding. `transaction_id` is optional.
-
-```http
-POST /api/v1/payments/forward-email
-Content-Type: application/json
-
-{
-  "email_raw": "base64_encoded_raw_email"
-}
-```
-
-**Authentication:**
-- ❌ **Escrow token NOT required** - currently used for testing email forwarding only
-- Endpoint forwards email to the verification email address configured in `PAYMENT_VERIFICATION_EMAIL` environment variable (default: `check@xdexboard.com`) for DKIM verification
-
-**Configuration:**
-- The verification email address must be set in `.env` file as `PAYMENT_VERIFICATION_EMAIL`
-- This parameter is **required** - the application will not start if it's not configured
-- Example: `PAYMENT_VERIFICATION_EMAIL=check@xdexboard.com`
-
-**Email Sending:**
-- The endpoint uses email service API (Postmark/Resend/Mailgun) with API token authentication
-- Configured in `config/services.php` and `config/mail.php`
-- Uses `MAIL_MAILER` environment variable to select mailer (postmark, resend, mailgun)
-- **DO NOT** use SMTP with password - use API tokens instead
-- Raw email is sent as-is to preserve DKIM signature
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Email forwarded to verification server",
-  "data": {
-    "transaction_id": 123,
-    "status": "pending_verification"
-  }
-}
-```
-
----
-
 ## Authentication Summary
 
 | Endpoint | Escrow Token Required? | OAuth Token Required? | Notes |
@@ -329,11 +285,11 @@ Content-Type: application/json
 | `GET /api/v1/payments/emails` | ❌ No | ✅ Yes | Uses OAuth access token only |
 | `GET /api/v1/payments/emails/{messageId}` | ❌ No | ✅ Yes | Uses OAuth access token only |
 | `POST /api/v1/payments/verify-email` | ❌ No | ❌ No | Testing mode - verifies DKIM and email structure |
-| `POST /api/v1/payments/forward-email` | ❌ No | ❌ No | Testing mode - forwards email to check@xdexboard.com |
+| `POST /api/v1/payments/verify-email-content` | ❌ No | ❌ No | Testing mode - DKIM, sender, optional `bank_id` |
 
 **Authentication Summary:**
 - Email list/raw endpoints use OAuth because they access the user's email account directly (Yandex/Gmail/Outlook)
-- Verification/forwarding endpoints are currently in testing mode - no authentication required
+- Verification endpoints are currently in testing mode - no authentication required
 - All endpoints focus on testing email verification and DKIM validation functionality
 - No transaction-related data required - pure email verification and DKIM testing
 
@@ -364,9 +320,9 @@ Content-Type: application/json
 - If email client supports .eml → Export and upload
 - Preserves DKIM
 
-### Step 3: Try Manual Forward (If Available)
-- Forward as attachment to `check@xdexboard.com`
-- Preserves DKIM if done correctly
+### Step 3: Manual path (If OAuth unavailable)
+- Export/share as `.eml` or attachment and upload in the app (`verify-email`)
+- Preserves DKIM when the original MIME is preserved
 
 ### Step 4: Use Copy-Paste (Fallback)
 - Copy email content and paste in app
@@ -451,10 +407,9 @@ apiService.verifyEmail(
 )
 ```
 
-**4. Manual Forward:**
-- User forwards email to `check@xdexboard.com`
-- Server processes automatically
-- No app action needed
+**4. Manual upload / paste:**
+- User brings the message into the app (file upload or paste)
+- App calls `verify-email` or `verify-email-content`
 
 ---
 

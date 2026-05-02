@@ -68,9 +68,6 @@ php artisan key:generate
 ```
 
 **Required environment variables:**
-- `PAYMENT_VERIFICATION_EMAIL` - Email address where payment verification emails are forwarded (e.g., `check@xdexboard.com`)
-  - This email receives forwarded payment emails for DKIM verification
-  - **Required:** Application will not start if this parameter is not set
 - **Optional (sandbox virtual receipt bank):** `SANDBOX_VIRTUAL_BANK_WEBSITE`, `SANDBOX_VIRTUAL_BANK_COUNTRY_CODE`, `SANDBOX_VIRTUAL_BANK_ID` — documented in [docs/SANDBOX_VIRTUAL_BANK.md](docs/SANDBOX_VIRTUAL_BANK.md); commented examples in `.env.example`.
 - **Core API key** — `CORE_KEY` (sandbox) and `CORE_PRODUCTION_KEY` (production). Required for API-only Core endpoints (token creation, delete reservation). Must match Core config `[api] CORE_API_KEY`. See [docs/CORE_API_KEY_AND_API_ONLY_ENDPOINTS.md](docs/CORE_API_KEY_AND_API_ONLY_ENDPOINTS.md).
 
@@ -390,21 +387,6 @@ CORE_URL=https://api.core.xdexboard.com
 CORE_KEY=your_api_key
 CORE_TIMEOUT=10
 CORE_PAYOUT_TIMEOUT=120
-PAYMENT_VERIFICATION_EMAIL=check@xdexboard.com
-```
-
-### Payment Verification Email Configuration
-
-**Required:** `PAYMENT_VERIFICATION_EMAIL` - Email address where payment verification emails are forwarded.
-
-- This email receives forwarded payment emails for DKIM verification
-- Must be configured in `.env` file
-- Application will not start if this parameter is not set
-- Used by `/api/v1/payments/forward-email` endpoint to forward emails for verification
-
-Example:
-```env
-PAYMENT_VERIFICATION_EMAIL=check@xdexboard.com
 ```
 
 ### Usage Examples

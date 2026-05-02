@@ -34,7 +34,7 @@ sudo systemctl stop nginx
 # Get SSL certificate
 echo "Getting SSL certificate from Let's Encrypt..."
 sudo certbot certonly --standalone --non-interactive --agree-tos \
-    --email check@xdexboard.com \
+    --email admin@your-domain.example \
     -d xdexboard.com \
     -d mail.xdexboard.com
 
