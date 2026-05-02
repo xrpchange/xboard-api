@@ -1338,6 +1338,7 @@ class ExchangeLotController extends Controller
      *     ),
      *
      *     @OA\Response(response=200, description="Message sent"),
+     *     @OA\Response(response=409, description="start_deal: lot inactive, no remaining amount, lot taken, multisig misconfiguration"),
      *     @OA\Response(response=400, description="Cannot send to yourself / no seller mailbox"),
      *     @OA\Response(response=401, description="Unauthorized"),
      *     @OA\Response(response=404, description="Lot not found")
@@ -1441,6 +1442,13 @@ class ExchangeLotController extends Controller
                 'buyer_notification_email_in_request' => $request->input('buyer_notification_email'),
                 'requester_mailbox_email' => $requesterMailboxEmail,
             ]);
+        }
+        if ($messageType === 'start_deal' && ! $lot->is_active) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This lot is not active. The seller may have disabled it.',
+                'error_code' => 'lot_inactive',
+            ], 409);
         }
         if ($messageType === 'start_deal' && ($lot->escrow_multisig_2_of_3_required ?? false)) {
             $amounts = is_array($lot->buy_amounts) ? $lot->buy_amounts : [];
