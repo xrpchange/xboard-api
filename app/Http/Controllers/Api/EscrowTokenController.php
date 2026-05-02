@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
 class EscrowTokenController extends BaseApiController
@@ -135,6 +136,8 @@ class EscrowTokenController extends BaseApiController
             return $this->errorResponse('Failed to send verification email: ' . $e->getMessage(), 500);
         }
 
+        $this->warnIfVerificationMailSkippedRealDelivery(strtolower(trim((string) $email)));
+
         return response()->json([
             'success' => true,
             'expires_in_minutes' => $ttlMinutes,
@@ -200,6 +203,8 @@ class EscrowTokenController extends BaseApiController
             Cache::forget($cacheKey);
             return $this->errorResponse('Failed to send verification email: ' . $e->getMessage(), 500);
         }
+
+        $this->warnIfVerificationMailSkippedRealDelivery($email);
 
         return response()->json([
             'success' => true,
@@ -889,6 +894,25 @@ class EscrowTokenController extends BaseApiController
 
         Cache::forget($cacheKey);
         return null;
+    }
+
+    /**
+     * When MAIL_MAILER is `log` or `array`, Laravel reports success but no message is delivered over SMTP.
+     */
+    private function warnIfVerificationMailSkippedRealDelivery(string $normalizedEmail): void
+    {
+        $mailer = (string) config('mail.default', 'log');
+        if (!in_array($mailer, ['log', 'array'], true)) {
+            return;
+        }
+        $domain = str_contains($normalizedEmail, '@')
+            ? strtolower(substr($normalizedEmail, (int) strrpos($normalizedEmail, '@') + 1))
+            : '';
+        Log::warning('escrow_mailbox_verification_no_real_email_delivery', [
+            'mailer' => $mailer,
+            'recipient_domain' => $domain,
+            'hint' => 'Set MAIL_MAILER to smtp, postmark, resend, etc. on the API host. log/array only records locally.',
+        ]);
     }
 
     /**
