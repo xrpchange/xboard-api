@@ -1,5 +1,7 @@
 # Sender addresses that can send without domain restriction (port 25).
 # Full address<TAB>OK — we accept mail FROM these addresses regardless of allowed_sender_domains.
 # These addresses do not have mailboxes: they only send, no incoming delivery.
+# Do NOT put full mailboxes here (e.g. support@) — use exempt_recipients + virtual_mailbox_maps
+# + Dovecot + sender_login_maps; see docs/LOT_MAILBOX_AND_IMAP_CHAT.md «Ящик поддержки».
 # Add one line per address; postmap + postfix reload after changes.
 noreply@xdexboard.com	OK
