@@ -51,9 +51,9 @@
 ### 3.1. Вариант A: два шага (request-code → create с code)
 
 1. **POST /v1/escrow-tokens/request-verification-code**  
-   - Body: `{ "email": "user@gmail.com" }`  
-   - Проверки: email из разрешённого провайдера, rate limit.  
-   - Действия: сгенерировать код (например 6 цифр), сохранить в кэш/БД с TTL (30 мин), отправить письмо на `email` (шаблон `mailbox_verification_code.blade.php`).  
+   - Body: `email`, puzzle fields, опционально `batch_size`; **опционально локализованные фрагменты письма** с клиента: `mail_subject`, `mail_header`, `mail_intro`, `mail_after_code`, `mail_footer` — API только подставляет в шаблон (см. `MailboxVerificationCodeMail`, view `mailbox_verification_code_*`). Если `mail_subject`+`mail_intro` не переданы, используется **legacy English** текст.  
+   - Проверки: proof-of-work puzzle, email из разрешённого провайдера, rate limit.  
+   - Действия: сгенерировать код (например 6 цифр), сохранить в кэш с TTL, отправить **multipart text+HTML** на `email`.  
    - Ответ: `{ "success": true, "expires_in_minutes": 30 }` или ошибка.
 
 2. **POST /v1/escrow-tokens/create** (текущий, расширить)  
@@ -102,7 +102,7 @@
 
 ### 4.3. Поиск кода в письмах
 
-- Код в письме: число (например 6 цифр), в шаблоне — «Your mailbox verification code: 123456».  
+- Текущий текст письма: произвольный (локализованный); тело содержит **строку из шести цифр** (отдельной строкой) или строку вида «… creation: 123456» — см. клиентский `EscrowVerificationCode`.
 - Алгоритм: для каждой папки запросить последние N писем (например 20), по каждому при необходимости запросить raw/body (или subject + snippet), искать по регулярному выражению (код из 5–8 цифр или конкретный формат от бэкенда).  
 - Как только код найден — вернуть его и прекратить сканирование.  
 - Ограничение по времени: например 5 минут ожидания, затем предложить «Ввести код вручную».
@@ -142,7 +142,7 @@
 
 1. **API**  
    - Конфиг/кэш: TTL кода (например 30 мин).  
-   - Маршрут POST `request-verification-code`, контроллер: генерация кода, сохранение в кэш, отправка письма (Laravel Mail + mailbox_verification_code.blade.php).  
+   - Маршрут POST `request-verification-code`, контроллер: генерация кода, кэш, отправка Laravel Mail (`MailboxVerificationCodeMail`, Blade `mailbox_verification_code_layout` + plain). При отсутствии фрагментов от клиента — фиксированный English fallback в Mailable.  
    - В `EscrowTokenController::create`: проверка `verification_code` из body, сверка с кэшем по email, при успехе — вызов Core и удаление кода из кэша.
 
 2. **Клиент — слой данных**  
@@ -159,9 +159,7 @@
    - Экран создания токена: добавить шаг «Отправить код» и блок «Проверяем почту» с возможностью ручного ввода кода и кнопкой «Создать токен».
 
 5. **Шаблон письма**  
-   - Убедиться, что `resources/views/mail/mailbox_verification_code.blade.php` существует и выводит код в тексте (и при необходимости в subject через Mailable), чтобы парсинг на клиенте был однозначным (например одна строка «Код: 123456» или «Your mailbox verification code: 123456»).
-
----
+   - HTML в стилистике deal notification (`mailbox_verification_code_layout.blade.php`) + plain text (`mailbox_verification_code_plain.blade.php`). Числовой код на своей строке для парсинга в клиенте.---
 
 ## 6. Итоговая схема потока
 
