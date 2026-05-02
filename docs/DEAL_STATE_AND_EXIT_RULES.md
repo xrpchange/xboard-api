@@ -52,6 +52,7 @@ This section defines the restore approach that must be validated on final tests.
 - **Identity for restore is strict token hash match.** API endpoints `GET /exchange-lots/buyer-active-deal` and `GET /exchange-lots/buyer-active-deals` search by `exchange_lots.buyer_escrow_token_hash` using `token_hashes` from client.
 - **Client sends all known buyer token hashes per node in one request.** No per-token loop; one batched request per exchange node/environment.
 - **Lock is set at deal start in one flow.** On `start_deal`, API must set buyer mapping on lot (`buyer_lot_email`, `buyer_escrow_token_hash`, optional `buyer_selected_amount`) during the same operation that starts the deal.
+- **`start_deal` requires an active lot.** If `exchange_lots.is_active` is false (seller disabled the listing), `POST …/send-message` with `message_type=start_deal` returns **409** with `error_code=lot_inactive` (before buyer lock / remaining-amount checks). Other message types are unchanged.
 - **Mailbox availability must not silently skip lock.** If buyer mailbox cannot be resolved/created for `start_deal`, API returns explicit error (`buyer_mailbox_unavailable`) instead of creating partial/ambiguous deal state.
 - **Restore result handling on client:** open first active deal automatically for buyer; also show list of unfinished deals for manual open from Search screen.
 
