@@ -69,6 +69,12 @@ class EscrowTokenController extends BaseApiController
             'puzzle_answer' => 'required|string|max:64',
             // Optional: same mailbox code for up to N successful creates (multi-node batch).
             'batch_size' => 'nullable|integer|min:1|max:50',
+            // Client-localized user-visible fragments (preferred). When subject+intro omitted, legacy English template applies.
+            'mail_subject' => 'nullable|string|max:798',
+            'mail_header' => 'nullable|string|max:180',
+            'mail_intro' => 'nullable|string|max:6000',
+            'mail_after_code' => 'nullable|string|max:6000',
+            'mail_footer' => 'nullable|string|max:6000',
         ]);
         $email = $validated['email'];
         $puzzleError = $this->consumePuzzle(
@@ -115,7 +121,15 @@ class EscrowTokenController extends BaseApiController
         }
 
         try {
-            Mail::send(new MailboxVerificationCodeMail($code, $email));
+            Mail::send(new MailboxVerificationCodeMail(
+                code: $code,
+                toEmail: $email,
+                mailSubject: $validated['mail_subject'] ?? null,
+                mailHeader: $validated['mail_header'] ?? null,
+                mailIntro: $validated['mail_intro'] ?? null,
+                mailAfterCode: $validated['mail_after_code'] ?? null,
+                mailFooter: $validated['mail_footer'] ?? null,
+            ));
         } catch (\Throwable $e) {
             Cache::forget($cacheKey);
             return $this->errorResponse('Failed to send verification email: ' . $e->getMessage(), 500);
@@ -137,6 +151,11 @@ class EscrowTokenController extends BaseApiController
             'email' => 'required|string|email',
             'puzzle_token' => 'required|string|max:128',
             'puzzle_answer' => 'required|string|max:64',
+            'mail_subject' => 'nullable|string|max:798',
+            'mail_header' => 'nullable|string|max:180',
+            'mail_intro' => 'nullable|string|max:6000',
+            'mail_after_code' => 'nullable|string|max:6000',
+            'mail_footer' => 'nullable|string|max:6000',
         ]);
         $email = strtolower(trim((string) $validated['email']));
 
@@ -168,7 +187,15 @@ class EscrowTokenController extends BaseApiController
         Cache::put($cacheKey, $code, now()->addMinutes($ttlMinutes));
 
         try {
-            Mail::send(new MailboxVerificationCodeMail($code, $email));
+            Mail::send(new MailboxVerificationCodeMail(
+                code: $code,
+                toEmail: $email,
+                mailSubject: $validated['mail_subject'] ?? null,
+                mailHeader: $validated['mail_header'] ?? null,
+                mailIntro: $validated['mail_intro'] ?? null,
+                mailAfterCode: $validated['mail_after_code'] ?? null,
+                mailFooter: $validated['mail_footer'] ?? null,
+            ));
         } catch (\Throwable $e) {
             Cache::forget($cacheKey);
             return $this->errorResponse('Failed to send verification email: ' . $e->getMessage(), 500);
