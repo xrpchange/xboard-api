@@ -7,14 +7,15 @@
  * and sending responses to buyers
  * 
  * Usage: pipe through Postfix
- * Each email to check@xdexboard.com is passed to this script via STDIN
+ * Each message piped from Postfix (see master.cf / virtual maps) is passed via STDIN
  */
 
 declare(strict_types=1);
 
 // Configuration
 const LOG_FILE = '/var/log/xboard-email/verifier.log';
-const EMAIL_FROM = 'check@xdexboard.com';
+/** Outbound From for verifier auto-replies; set to an address on a domain you operate. */
+const EMAIL_FROM = 'receipts@your-domain.example';
 const EMAIL_REPLY_TO = 'noreply@xdexboard.com';
 const SMTP_HOST = 'localhost';
 const SMTP_PORT = 25;

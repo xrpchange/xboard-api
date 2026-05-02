@@ -39,7 +39,6 @@ Route::prefix('v1/payments')->group(function () {
     // Email verification and forwarding (client sends raw email from its own reader)
     Route::post('/verify-email', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'verifyEmail']);
     Route::post('/verify-email-content', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'verifyEmailContent']);
-    Route::post('/forward-email', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'forwardEmail']);
     // Serve saved PDF attachments from verify-email-content (token = long random filename without extension)
     // When bank_id was not passed, PDFs are saved under {date}/tmp/ for easier disk cleanup
     Route::get('/email-attachments/{date}/tmp/{token}.pdf', [\App\Http\Controllers\Api\PaymentVerificationController::class, 'showEmailAttachmentTmp']);

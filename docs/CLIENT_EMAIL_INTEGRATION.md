@@ -22,7 +22,7 @@ App requests OAuth (minimal scope: read this email)
     ↓
 App gets email in RAW format via API (DKIM preserved!)
     ↓
-App sends raw email to check@xdexboard.com via SMTP
+App POSTs base64(raw MIME) to POST /api/v1/payments/verify-email (HTTPS)
     ↓
 Server receives original email (DKIM intact)
     ↓
@@ -34,7 +34,7 @@ Server verifies DKIM (original email preserved)
 1. **User selects email** in our app (from email list)
 2. **OAuth request** - minimal scope: `gmail.readonly` (Gmail) or `Mail.Read` (Outlook)
 3. **Get raw email** - API returns email in raw format (all headers + DKIM preserved)
-4. **Send to server** - App sends raw email to `check@xdexboard.com` via SMTP
+4. **Send to server** - App POSTs base64(raw MIME) to `POST /api/v1/payments/verify-email`
 5. **Server verifies** - Original email with DKIM signature
 
 ### Advantages
@@ -53,7 +53,7 @@ Server verifies DKIM (original email preserved)
 1. **User selects email** in our app (from email list)
 2. **OAuth request** - minimal scope: `gmail.readonly` (Gmail) or `Mail.Read` (Outlook)
 3. **Get raw email** - API returns email in **raw format** (all headers + DKIM preserved)
-4. **Send to server** - App sends raw email to `check@xdexboard.com` via SMTP
+4. **Send to server** - App POSTs base64(raw MIME) to `POST /api/v1/payments/verify-email`
 5. **Server verifies** - Original email with DKIM signature
 
 ### Gmail API Implementation
@@ -75,30 +75,17 @@ class GmailEmailForwarder {
         )
         val rawEmail = String(rawEmailBytes, Charsets.UTF_8)
         
-        // 3. Send raw email to server via SMTP
-        // (or via API endpoint if SMTP not available)
+        // 3. Send raw MIME to XBoard API (preserves headers for DKIM)
         sendRawEmailToServer(rawEmail)
     }
     
-    private fun sendRawEmailToServer(rawEmail: String) {
-        // Option A: Send via SMTP (preserves all headers)
-        val session = Session.getDefaultInstance(Properties())
-        val message = MimeMessage(session)
-        message.setContent(
-            ByteArrayInputStream(rawEmail.toByteArray()),
-            "message/rfc822"
+    private suspend fun sendRawEmailToServer(rawEmail: String) {
+        val emailRaw = Base64.encodeToString(
+            rawEmail.toByteArray(Charsets.UTF_8),
+            Base64.NO_WRAP
         )
-        message.setRecipient(
-            Message.RecipientType.TO,
-            InternetAddress("check@xdexboard.com")
-        )
-        Transport.send(message)
-        
-        // Option B: Send via API (if SMTP not available)
-        // apiService.verifyPaymentEmail(
-        //     emailRaw = Base64.encodeToString(rawEmail.toByteArray()),
-        //     transactionId = transactionId
-        // )
+        // POST { "email_raw": "...", "transaction_id": ... } to /api/v1/payments/verify-email
+        apiService.verifyPaymentEmail(emailRaw = emailRaw, transactionId = transactionId)
     }
 }
 ```
@@ -108,7 +95,7 @@ class GmailEmailForwarder {
 2. App requests OAuth: `gmail.readonly` scope
 3. User grants permission (one-time per provider)
 4. App gets email in raw format (DKIM preserved)
-5. App sends raw email to server (SMTP or API)
+5. App sends raw email to server (HTTPS `verify-email` / `verify-email-content`)
 6. Server verifies DKIM on original email
 
 ### Alternative: Share Email as Attachment (If Available)
@@ -167,8 +154,7 @@ class EmailIntentHandler {
    - User selects email in app
    - Request OAuth: `gmail.readonly` or `Mail.Read`
    - Get email in **raw format** (preserves DKIM)
-   - Send raw email to `check@xdexboard.com` via SMTP
-   - Or send via API endpoint if SMTP not available
+   - POST base64(raw MIME) to `/api/v1/payments/verify-email` (or use `verify-email-content` when only body text is available)
 
 2. **API Endpoint (if SMTP not available):**
    ```php
@@ -361,7 +347,7 @@ class PaymentVerificationController extends Controller
    - ✅ No OAuth needed
 
 3. **Manual Email Forwarding** (Manual - Preserves DKIM if done correctly)
-   - ✅ Forward as attachment to `check@xdexboard.com`
+   - ✅ User forwards as attachment; app uploads raw MIME via `verify-email` / `verify-email-content`
    - ✅ Works with any email client
    - ✅ No app needed
 

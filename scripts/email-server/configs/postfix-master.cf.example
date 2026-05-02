@@ -2,8 +2,8 @@
 # Пример конфигурации для /etc/postfix/master.cf
 # Добавьте эти строки в конец файла /etc/postfix/master.cf
 
-# PHP verifier pipe для check@xdexboard.com
+# PHP verifier pipe для ящика приёма (замените локальную часть и домен)
 # Формат: адрес unix - n n - - pipe flags=F user=vmail argv=php /path/to/php-verifier.php
-check@xdexboard.com    unix - n n - - pipe
+receipts@your-domain.example    unix - n n - - pipe
   flags=F user=vmail argv=php /path/to/xboard-api/scripts/email-server/php-verifier.php
 

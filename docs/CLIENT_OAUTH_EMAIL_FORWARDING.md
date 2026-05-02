@@ -2,7 +2,7 @@
 
 ## Overview
 
-Client app uses OAuth to get email in **raw format** (preserves DKIM), then forwards it to server via SMTP without modification.
+Client app uses OAuth to get email in **raw format** (preserves DKIM), then sends it to the server with **`POST /api/v1/payments/verify-email`** (base64 raw MIME over HTTPS) without modifying the message body or headers.
 
 ## Architecture
 
@@ -35,19 +35,20 @@ Client app uses OAuth to get email in **raw format** (preserves DKIM), then forw
 ┌─────────────────────────────────────────┐
 │  XBoard Client App                       │
 │  - Decodes raw email                     │
-│  - Sends via SMTP to check@xdexboard.com│
+│  - POST /api/v1/payments/verify-email    │
+│    (JSON: base64 raw MIME, transaction id)│
 └──────────────┬──────────────────────────┘
                │
-               │ 4. SMTP send (original email)
+               │ 4. HTTPS (original bytes unchanged)
                │
                ▼
 ┌─────────────────────────────────────────┐
-│  check@xdexboard.com (Postfix)           │
-│  - Receives original email               │
+│  XBoard API (Laravel)                    │
+│  - Decodes base64 → original MIME        │
 │  - DKIM signature preserved              │
 └──────────────┬──────────────────────────┘
                │
-               │ 5. Pipe to php-verifier.php
+               │ 5. Verification pipeline
                │
                ▼
 ┌─────────────────────────────────────────┐
@@ -89,7 +90,7 @@ class GmailEmailForwarder {
                 return Result.failure(Exception("Email is not from a bank"))
             }
             
-            // 4. Send raw email to server via SMTP
+            // 4. Send raw MIME to XBoard API
             sendRawEmailToServer(rawEmail)
             
             Result.success(Unit)
@@ -99,25 +100,14 @@ class GmailEmailForwarder {
     }
     
     /**
-     * Send raw email to check@xdexboard.com via SMTP
+     * POST base64(raw MIME) to /api/v1/payments/verify-email
      */
     private suspend fun sendRawEmailToServer(rawEmail: String) {
-        // Use JavaMail API or similar
-        val session = Session.getDefaultInstance(Properties())
-        val message = MimeMessage(session)
-        
-        // Parse raw email
-        val inputStream = ByteArrayInputStream(rawEmail.toByteArray())
-        message.setContent(inputStream, "message/rfc822")
-        
-        // Set recipient
-        message.setRecipient(
-            Message.RecipientType.TO,
-            InternetAddress("check@xdexboard.com")
+        val emailRaw = Base64.encodeToString(
+            rawEmail.toByteArray(Charsets.UTF_8),
+            Base64.NO_WRAP
         )
-        
-        // Send via SMTP
-        Transport.send(message)
+        apiService.verifyPaymentEmail(emailRaw = emailRaw, transactionId = transactionId)
     }
     
     private fun isFromBank(rawEmail: String): Boolean {
@@ -189,21 +179,17 @@ actual class EmailApiClient {
 }
 ```
 
-## Server-Side: SMTP Reception
+## Server-Side
 
-### Postfix Configuration
+### Primary: HTTPS verify-email
 
-Already configured! `check@xdexboard.com` receives emails and pipes to `php-verifier.php`.
+Clients should call the API directly (no app-configured “forward to” mailbox env on the server).
 
-The raw email sent from client will:
-1. Arrive at Postfix
-2. Be piped to PHP script
-3. DKIM verified (original email, not modified)
-4. Transaction updated
+### Optional: operator mailbox + Postfix
 
-### API Endpoint (Alternative)
+Some deployments may still pipe **a mailbox they configure** into the verifier script; that is infrastructure outside the Laravel app and is **not** required for clients.
 
-If SMTP is not available from client, use API endpoint:
+### API contract
 
 ```php
 POST /api/v1/payments/verify-email
@@ -213,7 +199,7 @@ POST /api/v1/payments/verify-email
 }
 ```
 
-Client sends raw email via HTTPS instead of SMTP.
+Client sends raw email via HTTPS (preferred).
 
 ## Security Considerations
 
@@ -232,7 +218,7 @@ Client sends raw email via HTTPS instead of SMTP.
 - **Never modify** raw email before sending
 - **Preserve all headers** (especially DKIM-Signature)
 - **Send as-is** to server
-- **Base64 encode** if sending via API (not SMTP)
+- **Base64 encode** the raw MIME for the JSON body
 
 ### User Experience
 
@@ -269,17 +255,17 @@ select, not your entire inbox.
 1. Add Gmail API dependency
 2. Implement OAuth flow
 3. Get email in raw format
-4. Send to server (SMTP or API)
+4. Send to server (`POST /api/v1/payments/verify-email`)
 
 ### 2. Server
 
-Already ready! `check@xdexboard.com` receives and verifies.
+The API endpoint `POST /api/v1/payments/verify-email` accepts the raw message and runs verification.
 
 ### 3. Testing
 
 1. Test OAuth flow
 2. Test raw email retrieval
-3. Test SMTP sending
+3. Test HTTPS upload to verify-email
 4. Verify DKIM on server
 
 ## Advantages

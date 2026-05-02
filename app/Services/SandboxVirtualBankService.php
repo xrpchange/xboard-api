@@ -143,17 +143,6 @@ final class SandboxVirtualBankService
         return $lot->virtual_sandbox_bank_code === self::bankCode();
     }
 
-    public static function primaryPaymentVerificationEmail(): ?string
-    {
-        $raw = config('mail.verification_email');
-        if (! is_string($raw) || trim($raw) === '') {
-            return null;
-        }
-        $parts = preg_split('/\s*[,;]\s*/', trim($raw), -1, PREG_SPLIT_NO_EMPTY);
-
-        return is_array($parts) && $parts !== [] ? strtolower(trim($parts[0])) : null;
-    }
-
     public static function mailFromDomain(): string
     {
         $addr = (string) config('mail.from.address', 'noreply@xdexboard.com');

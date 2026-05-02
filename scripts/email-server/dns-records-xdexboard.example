@@ -26,4 +26,4 @@
 # --- DMARC ---
 # Host: _dmarc
 # Type: TXT
-# Value: v=DMARC1; p=quarantine; rua=mailto:check@xdexboard.com; adkim=r; aspf=r
+# Value: v=DMARC1; p=quarantine; rua=mailto:postmaster@your-domain.example; adkim=r; aspf=r

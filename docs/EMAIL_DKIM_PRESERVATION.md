@@ -68,14 +68,14 @@ function extractAttachedEmail(string $rawEmail): ?string
 **How it works:**
 - User configures email server forwarding
 - Server forwards email at SMTP level (preserves headers)
-- Original email with DKIM arrives at check@xdexboard.com
+- Original email with DKIM is delivered to an **operator-defined** mailbox (Postfix), or sent as raw MIME via **`POST /api/v1/payments/verify-email`**.
 
 **Implementation:**
 
-User's email server configuration:
+User's email server configuration (optional):
 ```
-# Postfix alias or forwarding rule
-user@example.com → check@xdexboard.com
+# Postfix alias or forwarding rule (example)
+user@example.com → receipts@your-domain.example
 ```
 
 **Advantages:**

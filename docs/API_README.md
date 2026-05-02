@@ -214,16 +214,15 @@ For sandbox synthetic receipt-bank behavior see [SANDBOX_VIRTUAL_BANK.md](SANDBO
 - `GET /api/v1/payments/emails` - Get email list from OAuth-connected account
 - `GET /api/v1/payments/emails/{messageId}` - Get raw email by message ID
 
-**Email Verification/Forwarding (No authentication required - testing mode):**
+**Email verification (no authentication required — testing mode):**
 - `POST /api/v1/payments/verify-email` - Verify email and DKIM (multiple formats)
 - `POST /api/v1/payments/verify-email-content` - Verify email content (DKIM, sender). Optional `bank_id` binds verification to a specific bank from `X-XBoard-Deal-Tag`; sender must match this bank whitelist entry. If DKIM/sender pass but no PDF links are extracted, email is treated as invalid.
-- `POST /api/v1/payments/forward-email` - Forward email to verification server
 - `GET /api/v1/payments/email-attachments/{date}/{token}.pdf` - Open a PDF at permanent path (date = UTC YYYY-MM-DD). Used for links stored in `receipt_links_json` after promotion from tmp.
 - `GET /api/v1/payments/email-attachments/{date}/tmp/{token}.pdf` - Open a PDF in the tmp area. All extracted PDFs are saved to tmp first; when receipt links are persisted (e.g. in a transaction), those files are moved to the permanent path and the stored links are updated to the `.../date/{token}.pdf` form. Tmp is pruned daily (see SCHEDULED_PRUNING.md).
 
 **Important:** 
 - Email list/raw endpoints use OAuth access tokens (Yandex/Gmail/Outlook)
-- Verification/forwarding endpoints are in testing mode - no authentication required
+- Verification endpoints are in testing mode - no authentication required
 - All endpoints focus on testing email verification and DKIM validation functionality
 - No transaction-related data required - pure email verification and DKIM testing
 

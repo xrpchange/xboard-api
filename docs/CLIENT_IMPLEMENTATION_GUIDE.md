@@ -10,7 +10,7 @@ Client app uses OAuth to get email in **raw format** (preserves DKIM), then forw
 1. User selects email in app
 2. OAuth request (gmail.readonly / Mail.Read)
 3. Get email in raw format via API
-4. Send raw email to check@xdexboard.com (SMTP or API)
+4. POST base64(raw MIME) to `/api/v1/payments/verify-email`
 5. Server verifies DKIM (original email preserved)
 ```
 
@@ -28,9 +28,6 @@ dependencies {
     // OAuth
     implementation("com.google.android.gms:play-services-auth:20.7.0")
     
-    // JavaMail for SMTP (if sending via SMTP)
-    implementation("com.sun.mail:android-mail:1.6.7")
-    implementation("com.sun.mail:android-activation:1.6.7")
 }
 ```
 
@@ -111,39 +108,7 @@ class GmailEmailService(private val accessToken: String) {
 }
 ```
 
-### 4. Send Raw Email to Server
-
-**Option A: Via SMTP (Recommended - preserves all headers)**
-
-```kotlin
-// EmailSender.kt
-class EmailSender {
-    fun sendRawEmailViaSMTP(rawEmail: String) {
-        val props = Properties().apply {
-            put("mail.smtp.host", "mail.xdexboard.com")
-            put("mail.smtp.port", "25")
-            put("mail.smtp.auth", "false")
-        }
-        
-        val session = Session.getDefaultInstance(props)
-        
-        // Create message from raw email
-        val inputStream = ByteArrayInputStream(rawEmail.toByteArray(Charsets.UTF_8))
-        val message = MimeMessage(session, inputStream)
-        
-        // Set recipient (keep original headers)
-        message.setRecipient(
-            Message.RecipientType.TO,
-            InternetAddress("check@xdexboard.com")
-        )
-        
-        // Send
-        Transport.send(message)
-    }
-}
-```
-
-**Option B: Via API (If SMTP not available)**
+### 4. Send raw MIME to the API
 
 ```kotlin
 // ApiService.kt
@@ -350,12 +315,13 @@ val rawEmail = gmailService.getEmailRaw("message_id_here")
 println("DKIM-Signature present: ${rawEmail.contains("DKIM-Signature")}")
 ```
 
-### Test SMTP Sending
+### Test verify-email
 
 ```kotlin
-// Test sending to check@xdexboard.com
-emailSender.sendRawEmailViaSMTP(testRawEmail)
-// Check server logs: /var/log/xboard-email/verifier.log
+apiService.verifyPaymentEmail(
+    emailRaw = Base64.encodeToString(testRawEmail.toByteArray(Charsets.UTF_8), Base64.NO_WRAP),
+    transactionId = testTransactionId
+)
 ```
 
 ## Troubleshooting
@@ -369,11 +335,6 @@ emailSender.sendRawEmailViaSMTP(testRawEmail)
 - Ensure using `format=raw` (not `format=full` or `format=metadata`)
 - Check email actually has DKIM signature
 - Verify base64 decoding is correct
-
-### SMTP Sending Fails
-- Check SMTP server (mail.xdexboard.com:25)
-- Verify network connectivity
-- Check firewall rules
 
 ## API Endpoint
 

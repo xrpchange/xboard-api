@@ -2,72 +2,29 @@
 
 ## Overview
 
-The email verification system automatically checks DKIM signatures of forwarded emails from banks and sends responses to buyers in the P2P exchange.
+The product path is the **authenticated HTTP API** (`POST /api/v1/payments/verify-email` and related endpoints): the client sends raw MIME (or text for `verify-email-content`), the API verifies and updates the deal.
+
+Some operators may additionally run **Postfix → `php-verifier.php`** for a dedicated inbound mailbox; that is **optional infrastructure** outside the Laravel app (no mailbox “forward target” in application `.env`).
 
 ## How It Works
 
-### 1. User Flow
+### 1. User flow (API — default)
 
 ```
-┌─────────────┐
-│   Buyer     │
-│  (User)     │
-└──────┬──────┘
-       │
-       │ 1. Receives payment notification from bank
-       │
-       ▼
-┌─────────────────────┐
-│  Bank Email         │
-│  (with DKIM)        │
-└──────┬──────────────┘
-       │
-       │ 2. Forwards email to check@xdexboard.com
-       │    (without adding text)
-       │
-       ▼
-┌─────────────────────┐
-│  Postfix            │
-│  (SMTP Server)      │
-└──────┬──────────────┘
-       │
-       │ 3. Pipes email to PHP script
-       │
-       ▼
-┌─────────────────────┐
-│  php-verifier.php   │
-│  (DKIM Checker)     │
-└──────┬──────────────┘
-       │
-       │ 4. Verifies:
-       │    - DKIM signature
-       │    - Sender domain (bank)
-       │
-       ├─── Success ────┐
-       │                │
-       ▼                ▼
-┌─────────────┐  ┌─────────────┐
-│  Success    │  │   Error     │
-│  Response   │  │   Response  │
-└─────────────┘  └─────────────┘
-       │                │
-       └────────┬───────┘
-                │
-                │ 5. Sends response email
-                │
-                ▼
-         ┌─────────────┐
-         │   Buyer     │
-         │  (User)     │
-         └─────────────┘
+Buyer → bank email (DKIM) → XBoard client → POST /api/v1/payments/verify-email
+  → Laravel verifies / updates transaction → result in app
 ```
+
+### 1b. Optional operator flow (Postfix pipe)
+
+If your deployment routes a mailbox to `php-verifier.php`, mail can still arrive via SMTP and be verified **outside** the `verify-email` request path. Configure addresses only in Postfix/virtual maps, not in Laravel `.env` for “forward target”.
 
 ### 2. Email Processing Steps
 
-1. **Email Reception**
-   - Email arrives at `check@xdexboard.com`
+1. **Email reception (Postfix path only)**
+   - Email arrives at the **operator-configured** mailbox
    - Postfix receives it via SMTP (port 25)
-   - Postfix pipes email to PHP script via `/etc/postfix/master.cf`
+   - Postfix pipes the message to `php-verifier.php` via `/etc/postfix/master.cf`
 
 2. **DKIM Verification**
    - PHP script reads email from STDIN
@@ -177,7 +134,7 @@ All actions are logged to `/var/log/xboard-email/verifier.log`:
 Email routing is configured in `/etc/postfix/master.cf`:
 
 ```
-check@xdexboard.com    unix - n n - - pipe
+receipts@your-domain.example    unix - n n - - pipe
   flags=F user=vmail argv=php /opt/xboard-api/scripts/email-server/php-verifier.php
 ```
 
@@ -195,14 +152,14 @@ check@xdexboard.com    unix - n n - - pipe
 
 ```bash
 ssh server@xrpchange.site
-echo "Test email body" | mail -s "Test Subject" check@xdexboard.com
+echo "Test email body" | mail -s "Test Subject" receipts@your-domain.example
 sudo tail -f /var/log/xboard-email/verifier.log
 ```
 
 ### Test 2: Forward Real Bank Email
 
 1. Get a real payment notification email from a bank
-2. Forward it to `check@xdexboard.com`
+2. Deliver it to the mailbox wired to `php-verifier.php` (see Postfix maps)
 3. **Important:** Don't add any text when forwarding!
 4. Check the response email and logs
 

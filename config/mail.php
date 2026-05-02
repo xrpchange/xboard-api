@@ -37,19 +37,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Payment Verification Email
-    |--------------------------------------------------------------------------
-    |
-    | Email address where payment verification emails are forwarded.
-    | This email receives forwarded payment emails for DKIM verification.
-    | REQUIRED: Must be set in .env file as PAYMENT_VERIFICATION_EMAIL
-    |
-    */
-
-    'verification_email' => env('PAYMENT_VERIFICATION_EMAIL'),
-
-    /*
-    |--------------------------------------------------------------------------
     | Mailbox verification (escrow token creation)
     |--------------------------------------------------------------------------
     | Code TTL in minutes; code is stored in cache and sent to user's email.

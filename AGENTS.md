@@ -57,7 +57,7 @@ Key points:
 2. **When implementing email features:**
    - Use `webklex/php-imap` for IMAP operations (reading emails)
    - Use Laravel Mail with configured mailer (Postmark/Mailgun/Resend) for sending emails
-   - Never hardcode email addresses - use `PAYMENT_VERIFICATION_EMAIL` from `.env`
+   - Never hardcode user-facing email addresses in PHP — use config / env (e.g. `MAIL_FROM_ADDRESS`, `config('mail.from.address')`) where appropriate.
    - Preserve DKIM signatures when forwarding raw emails
 
 3. **After implementation:**

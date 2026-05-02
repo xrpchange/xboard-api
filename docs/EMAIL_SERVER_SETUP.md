@@ -4,8 +4,10 @@
 
 Почтовый сервер для автоматической проверки DKIM подписи пересланных писем от банков и отправки ответов покупателям в P2P-обменнике.
 
-**Домен:** xdexboard.com  
-**Email для верификации:** check@xdexboard.com  
+**Важно:** приём почты для pipe в `php-verifier.php` настраивается **только** в Postfix/virtual maps на сервере. Ниже — пример с адресом-заглушкой `receipts@your-domain.example` (замените на свой домен и локальную часть).
+
+**Домен (пример документации):** your-domain.example  
+**Пример ящика приёма (Postfix):** receipts@your-domain.example  
 **ОС:** Ubuntu 24.04 LTS
 
 ## Архитектура
@@ -88,7 +90,7 @@ v=spf1 mx a:mail.xdexboard.com ip4:<IP_СЕРВЕРА> -all
 
 #### DMARC (TXT для _dmarc.xdexboard.com)
 ```
-v=DMARC1; p=quarantine; rua=mailto:check@xdexboard.com; adkim=r; aspf=r
+v=DMARC1; p=quarantine; rua=mailto:postmaster@xdexboard.com; adkim=r; aspf=r
 ```
 
 ### 5. Перезапуск сервисов
@@ -111,14 +113,14 @@ sudo systemctl restart opendkim
 
 Добавьте в конец файла:
 ```
-check@xdexboard.com    unix - n n - - pipe
+receipts@your-domain.example    unix - n n - - pipe
   flags=F user=vmail argv=php /path/to/xboard-api/scripts/email-server/php-verifier.php
 ```
 
 #### /etc/postfix/transport
 
 ```
-check@xdexboard.com    check@xdexboard.com:
+receipts@your-domain.example    receipts@your-domain.example:
 ```
 
 Затем:
@@ -128,14 +130,14 @@ sudo postmap /etc/postfix/transport
 
 #### Виртуальные пользователи
 
-- **Статические ящики** (check@xdexboard.com) — через hash-файлы.
+- **Статические ящики** (receipts@your-domain.example) — через hash-файлы.
 - **Ящики лотов (lot_mailboxes)** — через MySQL. См. [docs/LOT_MAILBOX_AND_IMAP_CHAT.md](LOT_MAILBOX_AND_IMAP_CHAT.md) и `scripts/email-server/setup-lot-mailboxes.sh`.
 
 ```bash
 # Создайте файлы для статических ящиков
 echo "xdexboard.com OK" | sudo tee /etc/postfix/virtual-mailbox-domains
-echo "check@xdexboard.com xdexboard.com/check/" | sudo tee /etc/postfix/virtual-mailbox-maps
-echo "check@xdexboard.com check@xdexboard.com" | sudo tee /etc/postfix/virtual-alias-maps
+echo "receipts@your-domain.example your-domain.example/receipts/" | sudo tee /etc/postfix/virtual-mailbox-maps
+echo "receipts@your-domain.example receipts@your-domain.example" | sudo tee /etc/postfix/virtual-alias-maps
 
 # Создайте hash файлы
 sudo postmap /etc/postfix/virtual-mailbox-domains
@@ -218,7 +220,7 @@ tail -f /var/log/xboard-email/verifier.log
 
 ```bash
 # Отправьте тестовое письмо
-echo "Test email" | mail -s "Test" check@xdexboard.com
+echo "Test email" | mail -s "Test" receipts@your-domain.example
 
 # Проверьте логи
 tail -f /var/log/mail.log
@@ -228,7 +230,7 @@ tail -f /var/log/xboard-email/verifier.log
 ### 2. Тест пересылки письма от банка
 
 1. Получите реальное письмо от банка (например, уведомление о переводе)
-2. Перешлите его на `check@xdexboard.com`
+2. Перешлите его на `receipts@your-domain.example`
 3. **ВАЖНО:** Не добавляйте никакого текста при пересылке!
 4. Проверьте логи и ответное письмо
 
@@ -240,7 +242,7 @@ tail -f /var/log/xboard-email/verifier.log
 - **Сервер:** mail.xdexboard.com
 - **Порт:** 993 (IMAPS)
 - **Протокол:** SSL/TLS
-- **Пользователь:** check@xdexboard.com
+- **Пользователь:** receipts@your-domain.example
 - **Пароль:** (не требуется для виртуальных пользователей, но может быть настроен)
 
 ### 4. Проверка DKIM подписи
