@@ -97,6 +97,10 @@ class ReceiptAttachmentStorage
         $tmpPath = self::ATTACHMENTS_SUBDIR.'/'.$parsed['date'].'/tmp/'.$parsed['token'].'.pdf';
         $permanentPath = self::ATTACHMENTS_SUBDIR.'/'.$parsed['date'].'/'.$parsed['token'].'.pdf';
 
+        // PDFs from verify-email-content are written with Storage::disk('local'). If PAYMENT_VERIFICATION_ATTACHMENTS_ROOT
+        // is set for deletes/prune but the tmp file only exists under the default disk, we must still move via Storage.
+        // Never rewrite the public URL to /date/token.pdf unless the file was actually moved (otherwise chat links 404).
+        $moved = false;
         $root = config('payment_verification.attachments_root');
         if (is_string($root) && $root !== '') {
             $tmpFull = rtrim($root, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $tmpPath);
@@ -109,26 +113,29 @@ class ReceiptAttachmentStorage
                     }
                     rename($tmpFull, $permFull);
                     Log::info('ReceiptAttachmentStorage: moved tmp to permanent via root', ['from' => $tmpPath, 'to' => $permanentPath]);
+                    $moved = true;
                 } catch (\Throwable $e) {
                     Log::warning('ReceiptAttachmentStorage: failed to move tmp to permanent via root', ['from' => $tmpPath, 'error' => $e->getMessage()]);
 
                     return $link;
                 }
             }
-        } else {
-            if (! Storage::disk('local')->exists($tmpPath)) {
-                return $link;
-            }
+        }
+        if (! $moved && Storage::disk('local')->exists($tmpPath)) {
             try {
                 $content = Storage::disk('local')->get($tmpPath);
                 Storage::disk('local')->put($permanentPath, $content);
                 Storage::disk('local')->delete($tmpPath);
                 Log::info('ReceiptAttachmentStorage: moved tmp to permanent via Storage', ['from' => $tmpPath, 'to' => $permanentPath]);
+                $moved = true;
             } catch (\Throwable $e) {
                 Log::warning('ReceiptAttachmentStorage: failed to move tmp to permanent via Storage', ['from' => $tmpPath, 'error' => $e->getMessage()]);
 
                 return $link;
             }
+        }
+        if (! $moved) {
+            return $link;
         }
 
         $path = parse_url($link, PHP_URL_PATH);

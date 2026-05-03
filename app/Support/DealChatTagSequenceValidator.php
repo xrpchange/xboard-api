@@ -93,6 +93,7 @@ final class DealChatTagSequenceValidator
             return self::validateBuyerDisputeTagForState($state);
         }
         $allowedBuyer = [
+            'buyer_message',
             'receipt_confirmation',
             'buyer_crypto_tx',
             'buyer_destination_details',
@@ -133,6 +134,7 @@ final class DealChatTagSequenceValidator
             return self::validateSellerDisputeTagForState($state);
         }
         $allowedSeller = [
+            'seller_message',
             'seller_received_funds',
             'seller_transfer_tx',
             'deal_completed_seller_timeout',
@@ -259,16 +261,36 @@ final class DealChatTagSequenceValidator
      */
     public static function validateBuyerTagForState(string $state, string $t): ?array
     {
+        if ($t === 'buyer_message') {
+            if (in_array($state, [self::STATE_BUYER_EXITED, self::STATE_SELLER_EXITED], true)) {
+                return [
+                    'message' => 'Free-form buyer messages are not allowed after this deal was exited.',
+                    'error_code' => 'deal_tag_out_of_sequence',
+                ];
+            }
+
+            return null;
+        }
         if (in_array($state, [self::STATE_COMPLETED, self::STATE_BUYER_EXITED, self::STATE_SELLER_EXITED], true)) {
             return [
                 'message' => 'This deal step is already finished; this deal_tag is not allowed.',
                 'error_code' => 'deal_tag_out_of_sequence',
             ];
         }
-        if ($t === 'receipt_confirmation' || $t === 'buyer_crypto_tx') {
+        if ($t === 'receipt_confirmation') {
+            if ($state === self::STATE_WAIT_BUYER_PAY || $state === self::STATE_WAIT_SELLER_CONFIRM) {
+                return null;
+            }
+
+            return [
+                'message' => 'Bank receipt confirmation is only allowed before the seller confirms receiving your first payment.',
+                'error_code' => 'deal_tag_out_of_sequence',
+            ];
+        }
+        if ($t === 'buyer_crypto_tx') {
             if ($state !== self::STATE_WAIT_BUYER_PAY) {
                 return [
-                    'message' => 'Bank receipt or buyer crypto proof is only allowed after the seller posted payment details for the first leg.',
+                    'message' => 'Buyer crypto proof is only allowed after the seller posted payment details for the first leg.',
                     'error_code' => 'deal_tag_out_of_sequence',
                 ];
             }
@@ -309,6 +331,16 @@ final class DealChatTagSequenceValidator
      */
     public static function validateSellerTagForState(string $state, string $t): ?array
     {
+        if ($t === 'seller_message') {
+            if (in_array($state, [self::STATE_BUYER_EXITED, self::STATE_SELLER_EXITED], true)) {
+                return [
+                    'message' => 'Free-form seller messages are not allowed after this deal was exited.',
+                    'error_code' => 'deal_tag_out_of_sequence',
+                ];
+            }
+
+            return null;
+        }
         if (in_array($state, [self::STATE_COMPLETED, self::STATE_BUYER_EXITED, self::STATE_SELLER_EXITED], true)) {
             return [
                 'message' => 'This deal step is already finished; this deal_tag is not allowed.',
@@ -326,9 +358,9 @@ final class DealChatTagSequenceValidator
             return null;
         }
         if ($t === 'seller_transfer_tx') {
-            if ($state !== self::STATE_WAIT_SELLER_TRANSFER) {
+            if ($state !== self::STATE_WAIT_SELLER_TRANSFER && $state !== self::STATE_WAIT_BUYER_COMPLETE) {
                 return [
-                    'message' => 'Seller transfer proof is only allowed after the buyer posted destination details for the second leg.',
+                    'message' => 'Seller transfer proof is only allowed after the buyer posted destination details for the second leg, or again while waiting for buyer completion to resend proof.',
                     'error_code' => 'deal_tag_out_of_sequence',
                 ];
             }
