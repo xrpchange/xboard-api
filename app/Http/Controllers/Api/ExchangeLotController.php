@@ -3260,11 +3260,13 @@ class ExchangeLotController extends Controller
 
             $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot))
                 ?? $lot->seller_lot_email;
+            // Client uses via_escrow_server for localized chat summary; chat row body is empty (no user-facing server prose in app).
             $tagJson = json_encode([
                 't' => 'buyer_crypto_tx',
                 'lot_id' => (int) $lot->id,
                 'tx_ref' => $cryptoTxId,
                 'laravel_transaction_id' => $transaction->id,
+                'via_escrow_server' => true,
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             if (! empty($sellerEmailForChat)) {
                 try {
@@ -3289,7 +3291,7 @@ class ExchangeLotController extends Controller
                 'buyer',
                 config('mail.from.address', 'noreply@xdexboard.com'),
                 $sellerEmailForChat,
-                'Buyer sent crypto to the seller address via escrow token.',
+                '',
                 $tagJson
             );
 
