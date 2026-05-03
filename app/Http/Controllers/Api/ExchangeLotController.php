@@ -5857,14 +5857,22 @@ class ExchangeLotController extends Controller
         }
 
         if ($this->hasReceiptHashDuplicateRecorded($lot, $senderSide, $tagType, $hashes)) {
-            return [
-                'deal_tag' => $dealTagData,
-                'error' => [
-                    'message' => 'This bank receipt was already sent for this deal. Re-sending identical receipt is blocked.',
-                    'error_code' => 'duplicate_receipt_checksum',
-                    'status' => 422,
-                ],
-            ];
+            $dealState = DealChatTagSequenceValidator::computeStateForLot($lot);
+            $allowIdenticalResubmit =
+                ($tagType === 'receipt_confirmation' && $senderSide === 'buyer'
+                    && $dealState === DealChatTagSequenceValidator::STATE_WAIT_SELLER_CONFIRM)
+                || ($tagType === 'seller_transfer_tx' && $senderSide === 'seller'
+                    && $dealState === DealChatTagSequenceValidator::STATE_WAIT_BUYER_COMPLETE);
+            if (! $allowIdenticalResubmit) {
+                return [
+                    'deal_tag' => $dealTagData,
+                    'error' => [
+                        'message' => 'This bank receipt was already sent for this deal. Re-sending identical receipt is blocked.',
+                        'error_code' => 'duplicate_receipt_checksum',
+                        'status' => 422,
+                    ],
+                ];
+            }
         }
 
         return ['deal_tag' => $dealTagData, 'error' => null];
@@ -6183,7 +6191,16 @@ class ExchangeLotController extends Controller
             return ['deal_tag' => $dealTagData, 'error' => null];
         }
 
-        $txRef = trim((string) ($dealTagData['tx_ref'] ?? $dealTagData['transaction_id'] ?? ''));
+        // Bank / PDF second leg (crypto→fiat): seller_transfer_tx carries receipt_links only — no on-chain id for Core.
+        if ($tagType === 'seller_transfer_tx') {
+            $receiptLinks = $dealTagData['receipt_links'] ?? null;
+            if (is_array($receiptLinks) && count($receiptLinks) > 0) {
+                return ['deal_tag' => $dealTagData, 'error' => null];
+            }
+        }
+
+        // seller_transfer_tx from the app uses tx_number; buyer_crypto_tx uses tx_ref / transaction_id.
+        $txRef = trim((string) ($dealTagData['tx_ref'] ?? $dealTagData['transaction_id'] ?? $dealTagData['tx_number'] ?? ''));
         if ($txRef === '') {
             return [
                 'deal_tag' => $dealTagData,

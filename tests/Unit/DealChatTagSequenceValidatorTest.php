@@ -139,4 +139,84 @@ class DealChatTagSequenceValidatorTest extends TestCase
         $this->assertNotNull($err);
         $this->assertSame('dispute_not_allowed_before_buyer_payment_proof', $err['error_code']);
     }
+
+    public function test_buyer_receipt_confirmation_allowed_while_waiting_for_seller_confirm(): void
+    {
+        $this->assertNull(DealChatTagSequenceValidator::validateBuyerTagForState(
+            DealChatTagSequenceValidator::STATE_WAIT_SELLER_CONFIRM,
+            'receipt_confirmation'
+        ));
+    }
+
+    public function test_buyer_receipt_confirmation_rejected_after_seller_confirmed_funds(): void
+    {
+        $err = DealChatTagSequenceValidator::validateBuyerTagForState(
+            DealChatTagSequenceValidator::STATE_WAIT_BUYER_DEST,
+            'receipt_confirmation'
+        );
+        $this->assertNotNull($err);
+        $this->assertSame('deal_tag_out_of_sequence', $err['error_code']);
+    }
+
+    public function test_seller_transfer_tx_allowed_while_waiting_for_buyer_completion(): void
+    {
+        $this->assertNull(DealChatTagSequenceValidator::validateSellerTagForState(
+            DealChatTagSequenceValidator::STATE_WAIT_BUYER_COMPLETE,
+            'seller_transfer_tx'
+        ));
+    }
+
+    public function test_seller_transfer_tx_rejected_while_waiting_for_seller_confirm(): void
+    {
+        $err = DealChatTagSequenceValidator::validateSellerTagForState(
+            DealChatTagSequenceValidator::STATE_WAIT_SELLER_CONFIRM,
+            'seller_transfer_tx'
+        );
+        $this->assertNotNull($err);
+        $this->assertSame('deal_tag_out_of_sequence', $err['error_code']);
+    }
+
+    public function test_buyer_message_allowed_in_completed_state(): void
+    {
+        $this->assertNull(DealChatTagSequenceValidator::validateBuyerTagForState(
+            DealChatTagSequenceValidator::STATE_COMPLETED,
+            'buyer_message'
+        ));
+    }
+
+    public function test_buyer_message_allowed_mid_flow(): void
+    {
+        $this->assertNull(DealChatTagSequenceValidator::validateBuyerTagForState(
+            DealChatTagSequenceValidator::STATE_WAIT_SELLER_CONFIRM,
+            'buyer_message'
+        ));
+    }
+
+    public function test_buyer_message_rejected_after_buyer_exited(): void
+    {
+        $err = DealChatTagSequenceValidator::validateBuyerTagForState(
+            DealChatTagSequenceValidator::STATE_BUYER_EXITED,
+            'buyer_message'
+        );
+        $this->assertNotNull($err);
+        $this->assertSame('deal_tag_out_of_sequence', $err['error_code']);
+    }
+
+    public function test_seller_message_allowed_in_completed_state(): void
+    {
+        $this->assertNull(DealChatTagSequenceValidator::validateSellerTagForState(
+            DealChatTagSequenceValidator::STATE_COMPLETED,
+            'seller_message'
+        ));
+    }
+
+    public function test_seller_message_rejected_after_seller_exited(): void
+    {
+        $err = DealChatTagSequenceValidator::validateSellerTagForState(
+            DealChatTagSequenceValidator::STATE_SELLER_EXITED,
+            'seller_message'
+        );
+        $this->assertNotNull($err);
+        $this->assertSame('deal_tag_out_of_sequence', $err['error_code']);
+    }
 }
