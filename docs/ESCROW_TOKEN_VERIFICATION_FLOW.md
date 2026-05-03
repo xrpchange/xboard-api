@@ -159,9 +159,23 @@
    - Экран создания токена: добавить шаг «Отправить код» и блок «Проверяем почту» с возможностью ручного ввода кода и кнопкой «Создать токен».
 
 5. **Шаблон письма**  
-   - HTML в стилистике deal notification (`mailbox_verification_code_layout.blade.php`) + plain text (`mailbox_verification_code_plain.blade.php`). Числовой код на своей строке для парсинга в клиенте.---
+   - HTML в стилистике deal notification (`mailbox_verification_code_layout.blade.php`) + plain text (`mailbox_verification_code_plain.blade.php`). Числовой код на своей строке для парсинга в клиенте.
 
-## 6. Итоговая схема потока
+---
+
+## 6. Laravel host и поле `core_base_url`
+
+Код подтверждения живёт в кэше **конкретного** экземпляра Laravel. Поэтому **и** `POST …/request-verification-code`, **и** `POST …/escrow-tokens/create` с тем же `verification_code` должны попадать **в тот же** нормализованный базис **`…/api/v1`** этого инстанса. Поле тела **`core_base_url`** при create проверяется по allowlist из **`nodes.endpoints` (`core_*`, `core_api`) активных узлов этой же БД** (`App\Services\EscrowTokenService`): значение должно канонически совпасть с одним из них.
+
+Клиент (**xboard-client**), подробнее: `docs/ESCROW_TOKEN_SYSTEM.md` (*Laravel `/api/v1` minting URL vs Core base*).
+
+- **Пакет**: один общий Laravel-базис; Core отдельно на каждый узел из строки узла (`NodeEscrowEndpoints`).
+- **Один токен при фильтре по домену стороннего узла** (`escrow_node_domain_filter_*`): Laravel как у потока с «базового» ref приложения (**`normalize(refDataBaseUrl)`**); Core из **`core_*`** выбранного узла.
+- Экран узла (**`EscrowTokensSection`**): отправка кода и create через тот же **нормализованный ref** базис приложения (`escrowMintingApiV1Base`).
+
+---
+
+## 7. Итоговая схема потока
 
 ```
 [Пользователь] → Выбор параметров токена, email = первый из настроенных
