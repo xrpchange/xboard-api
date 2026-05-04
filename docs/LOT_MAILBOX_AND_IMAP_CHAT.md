@@ -170,6 +170,9 @@
 
 - Миграция `lot_mailboxes` — таблица учёток для Dovecot
 - `LotMailboxService::ensureMailbox()` — создание/получение ящика по wallet_address, token_hash, currency
+- **Префикс валюты** для `local_part` должен совпадать с `crypto_currencies.code` (например `usdt_tron`). При создании лота и при `start_deal` код берётся из JSON публичной части токена (`coreCryptoTypeFromEscrowTokenJson`), затем из связи лота — чтобы не плодить разные `local_part` для одного и того же кошелька из‑за поля `currency` в теле запроса.
+- **Гонка при INSERT:** два параллельных `ensureMailbox` с одним `local_part` могли давать duplicate key на уникальном `local_part`; второй запрос теперь подхватывает уже созданную строку вместо падения.
+- При **`start_deal`** (`send-message` с `message_type=start_deal`): перед фиксацией сделки повторно вызывается `ensureMailbox` для продавца (по `wallet_address` + `wallet_hash` + нормализованный код валюты из токена), при необходимости обновляется `exchange_lots.seller_lot_email`; затем проверяется, что для адресов продавца и покупателя есть строки в `lot_mailboxes` — иначе ответ **503** с `seller_mailbox_not_provisioned` / `buyer_mailbox_not_provisioned` (блокировка покупателя откатывается).
 - При создании лота вызывается сервис; в ответ добавляется `mailbox`: `{email, imap_host, imap_port, imap_ssl, password}`
 - Конфиг: `LOT_MAILBOX_DOMAIN`, `LOT_MAILBOX_IMAP_HOST`, `LOT_MAILBOX_IMAP_PORT`, `LOT_MAILBOX_IMAP_SSL`, `LOT_MAILBOX_MAILDIR_BASE`
 

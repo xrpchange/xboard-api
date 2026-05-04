@@ -935,12 +935,13 @@ class ExchangeLotController extends Controller
             'wallet_hash_preview' => substr($validated['wallet_hash'] ?? '', 0, 16).'...',
         ]);
         try {
-            $currency = $lot->cryptoCurrency?->code ?? $decoded['currency'] ?? 'crypto';
-            Log::info('[exchange-lots] Calling ensureMailbox', ['lot_id' => $lot->id, 'currency' => $currency]);
+            $currencyForMailbox = self::coreCryptoTypeFromEscrowTokenJson($validated['wallet_address'])
+                ?? ($lot->cryptoCurrency?->code ?? preg_replace('/[^a-z0-9_]/', '', strtolower((string) ($decoded['currency'] ?? 'crypto'))) ?: 'crypto');
+            Log::info('[exchange-lots] Calling ensureMailbox', ['lot_id' => $lot->id, 'currency' => $currencyForMailbox]);
             $mailbox = $this->lotMailboxService->ensureMailbox(
                 $validated['wallet_address'],
                 $validated['wallet_hash'],
-                $currency
+                $currencyForMailbox
             );
             if ($mailbox) {
                 Log::info('[exchange-lots] Lot mailbox created/retrieved', [
@@ -1218,11 +1219,12 @@ class ExchangeLotController extends Controller
         Log::info('[exchange-lots] update done', ['lot_id' => $lot->id, 'lot_aml_after' => $lot->fresh()->aml]);
 
         try {
-            $currency = $lot->cryptoCurrency?->code ?? $decoded['currency'] ?? 'crypto';
+            $currencyForMailbox = self::coreCryptoTypeFromEscrowTokenJson($validated['wallet_address'])
+                ?? ($lot->cryptoCurrency?->code ?? 'crypto');
             $mailbox = $this->lotMailboxService->ensureMailbox(
                 $validated['wallet_address'],
                 $incomingHash,
-                $currency
+                $currencyForMailbox
             );
             $sellerEmail = $mailbox['email'] ?? null;
             if (! empty($sellerEmail)) {
@@ -1361,6 +1363,8 @@ class ExchangeLotController extends Controller
             ], 422);
         }
 
+        $messageType = $request->input('message_type');
+
         $lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency', 'banks']);
         $currency = self::sellerMailboxCryptoCode($lot);
         $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', $currency);
@@ -1371,6 +1375,48 @@ class ExchangeLotController extends Controller
                 'lot_id' => $lot->id,
                 'seller_lot_email' => $sellerEmail,
             ]);
+        }
+
+        if ($messageType === 'start_deal') {
+            $wa = (string) ($lot->wallet_address ?? '');
+            $sellerMailboxCurrency = self::coreCryptoTypeFromEscrowTokenJson($wa) ?? $currency;
+            $sellerHash = strtolower(trim((string) ($lot->wallet_hash ?? '')));
+            if ($sellerHash !== '' && $wa !== '') {
+                try {
+                    $sellerEnsured = $this->lotMailboxService->ensureMailbox($wa, $sellerHash, $sellerMailboxCurrency);
+                    if (is_array($sellerEnsured) && ! empty($sellerEnsured['email'])) {
+                        $sellerEmail = $sellerEnsured['email'];
+                        $se = trim((string) $sellerEmail);
+                        if ($se !== '') {
+                            $lotSellerStored = trim((string) ($lot->seller_lot_email ?? ''));
+                            if ($lotSellerStored === '' || strcasecmp($lotSellerStored, $se) !== 0) {
+                                $lot->update(['seller_lot_email' => $se]);
+                                $lot->seller_lot_email = $se;
+                            }
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('[exchange-lots] sendMessageToSeller: start_deal seller mailbox re-verify failed', [
+                        'lot_id' => $lot->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+            if ($sellerEmail === null || trim((string) $sellerEmail) === '') {
+                $sellerEmail = $this->lotMailboxService->getMailboxEmailForAddress($wa, $sellerMailboxCurrency)
+                    ?: $this->lotMailboxService->getMailboxEmailForAddress($wa, $currency);
+            }
+            if (($sellerEmail === null || trim((string) $sellerEmail) === '') && ! empty($lot->seller_lot_email)) {
+                $sellerEmail = (string) $lot->seller_lot_email;
+            }
+            $sellerEmailTrimmed = trim((string) ($sellerEmail ?? ''));
+            if ($sellerEmailTrimmed !== '' && ! $this->lotMailboxService->hasMailboxRowForEmail($sellerEmailTrimmed)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot start deal: seller mailbox is not provisioned in the mail system.',
+                    'error_code' => 'seller_mailbox_not_provisioned',
+                ], 503);
+            }
         }
 
         Log::info('[exchange-lots] sendMessageToSeller: attempt', [
@@ -1400,16 +1446,21 @@ class ExchangeLotController extends Controller
         $requesterTokenHash = '';
         $requesterPublicPart = $request->header('X-Escrow-Token') ?? $request->input('escrow_token');
         $requesterMailboxEmail = null;
+        $requesterCurrencyForMailbox = 'crypto';
         if (is_array($tokenData)) {
             $requesterWallet = $tokenData['wallet_address'] ?? '';
             $requesterCurrency = $tokenData['currency'] ?? '';
             $requesterTokenHash = trim((string) ($tokenData['token_hash'] ?? ''));
-            if ($requesterWallet !== '' && $requesterCurrency !== '' && ! empty($requesterPublicPart) && $requesterTokenHash !== '') {
+            $requesterCurrencyForMailbox = (is_string($requesterPublicPart) && $requesterPublicPart !== '')
+                ? (self::coreCryptoTypeFromEscrowTokenJson($requesterPublicPart)
+                    ?? (preg_replace('/[^a-z0-9_]/', '', strtolower($requesterCurrency)) ?: 'crypto'))
+                : (preg_replace('/[^a-z0-9_]/', '', strtolower($requesterCurrency)) ?: 'crypto');
+            if ($requesterWallet !== '' && $requesterCurrencyForMailbox !== '' && ! empty($requesterPublicPart) && $requesterTokenHash !== '') {
                 try {
                     $requesterMailboxConfig = $this->lotMailboxService->ensureMailbox(
                         (string) $requesterPublicPart,
                         $requesterTokenHash,
-                        $requesterCurrency
+                        $requesterCurrencyForMailbox
                     );
                     if (is_array($requesterMailboxConfig)) {
                         $requesterMailboxEmail = (string) ($requesterMailboxConfig['email'] ?? '');
@@ -1421,8 +1472,8 @@ class ExchangeLotController extends Controller
                     ]);
                 }
             }
-            if (($requesterMailboxEmail === null || $requesterMailboxEmail === '') && $requesterWallet !== '' && $requesterCurrency !== '') {
-                $requesterMailboxEmail = $this->lotMailboxService->getMailboxEmailForAddress($requesterWallet, $requesterCurrency);
+            if (($requesterMailboxEmail === null || $requesterMailboxEmail === '') && $requesterWallet !== '' && $requesterCurrencyForMailbox !== '') {
+                $requesterMailboxEmail = $this->lotMailboxService->getMailboxEmailForAddress($requesterWallet, $requesterCurrencyForMailbox);
                 if ($requesterMailboxEmail !== null && strcasecmp($requesterMailboxEmail, $sellerEmail) === 0) {
                     return response()->json([
                         'success' => false,
@@ -1433,7 +1484,6 @@ class ExchangeLotController extends Controller
             }
         }
 
-        $messageType = $request->input('message_type');
         if ($messageType === 'start_deal') {
             Log::info('[exchange-lots] sendMessageToSeller: start_deal request context', [
                 'lot_id' => $lot->id,
@@ -1601,7 +1651,7 @@ class ExchangeLotController extends Controller
             }
             if (! empty($requesterPublicPart) && is_string($requesterPublicPart) && $tokenHash !== '') {
                 try {
-                    $buyerMailboxConfig = $this->lotMailboxService->ensureMailbox($requesterPublicPart, $tokenHash, $requesterCurrency);
+                    $buyerMailboxConfig = $this->lotMailboxService->ensureMailbox($requesterPublicPart, $tokenHash, $requesterCurrencyForMailbox);
                 } catch (\Throwable $e) {
                     Log::warning('[exchange-lots] sendMessageToSeller: ensureMailbox for buyer failed (non-blocking)', [
                         'lot_id' => $lot->id,
@@ -1609,6 +1659,16 @@ class ExchangeLotController extends Controller
                         'error' => $e->getMessage(),
                     ]);
                 }
+            }
+            $buyerEmailTrimmed = trim((string) $requesterMailboxEmail);
+            if ($buyerEmailTrimmed !== '' && ! $this->lotMailboxService->hasMailboxRowForEmail($buyerEmailTrimmed)) {
+                $rollbackStartDealLock('buyer_mailbox_row_missing_after_ensure');
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot start deal: buyer mailbox is not provisioned in the mail system.',
+                    'error_code' => 'buyer_mailbox_not_provisioned',
+                ], 503);
             }
             Log::info('[exchange-lots] sendMessageToSeller: buyer_lot_email set', ['lot_id' => $lot->id, 'buyer_lot_email' => $requesterMailboxEmail]);
         } elseif ($messageType === 'start_deal') {
