@@ -90,6 +90,10 @@ php artisan key:generate
   - **Default value:** `sandbox` (configured in `config/app.php`) - for initial testing phase
   - **Migration path:** After testing phase, change to `production` in `.env` or `config/app.php` - users who haven't configured settings will automatically switch to Production
 
+**Seller IP lookup (optional partner URL):**
+- `IP_LOOKUP_URL_TEMPLATE` — HTTPS URL template with `{ip}` placeholder; returned in `GET /api/v1/nodes` → `meta.ip_lookup_url_template` for the client’s “lookup ISP / network” action when the buyer opted in to share their IP.
+- See [docs/IP_LOOKUP_URL_TEMPLATE.md](docs/IP_LOOKUP_URL_TEMPLATE.md).
+
 **Email service configuration:**
 - Email sending uses API token-based services (Postmark/Resend/Mailgun), not SMTP with password
 - Configure `MAIL_MAILER` in `.env` (e.g., `MAIL_MAILER=postmark`)
