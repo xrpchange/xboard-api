@@ -49,6 +49,8 @@ return [
     |--------------------------------------------------------------------------
     | Limits password authorization attempts to enable Administrator mode.
     | Applies per device_id (or IP fallback) in a daily window.
+    | This limits exposure of admin_email / client unlock only; mutating Core
+    | settings still require email verification + admin_password — see docs/ADMIN_MODE_SECURITY.md.
     */
     'admin_mode_enable' => [
         'attempts_per_day' => (int) env('RATE_LIMIT_ADMIN_MODE_ATTEMPTS_PER_DAY', 10),
