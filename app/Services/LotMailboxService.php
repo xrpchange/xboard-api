@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\LotMailbox;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -29,6 +30,14 @@ class LotMailboxService
      */
     public function ensureMailbox(string $walletAddress, string $tokenHash, string $currency): ?array
     {
+        // Must match client: DealMailboxFromEscrowToken uses token_hash trimmed + lowercase for IMAP password.
+        $tokenHash = strtolower(trim($tokenHash));
+        if ($tokenHash === '') {
+            Log::warning('[lot-mailbox] ensureMailbox aborted: empty token_hash');
+
+            return null;
+        }
+
         Log::info('[lot-mailbox] ensureMailbox start', [
             'currency' => $currency,
             'wallet_preview' => substr($walletAddress, 0, 80) . (strlen($walletAddress) > 80 ? '...' : ''),
@@ -45,26 +54,53 @@ class LotMailboxService
 
         $localPart = $this->buildLocalPart($currency, $normalizedAddress);
 
-        $mailbox = LotMailbox::where('local_part', $localPart)->first();
+        $mailbox = LotMailbox::where('local_part', $localPart)->where('domain', $this->domain)->first();
         $isNew = false;
 
         if (!$mailbox) {
-            $mailbox = LotMailbox::create([
-                'local_part' => $localPart,
-                'domain' => $this->domain,
-                'password_hash' => password_hash($tokenHash, PASSWORD_BCRYPT),
-                'currency' => $currency,
-                'is_test' => !app()->environment('production'),
-            ]);
-            $isNew = true;
-            Log::info('[lot-mailbox] Created new mailbox (DB record)', [
-                'local_part' => $localPart,
-                'domain' => $this->domain,
-                'mailbox_id' => $mailbox->id,
-            ]);
-            $this->createMaildirIfNeeded($localPart);
+            try {
+                $mailbox = LotMailbox::create([
+                    'local_part' => $localPart,
+                    'domain' => $this->domain,
+                    'password_hash' => password_hash($tokenHash, PASSWORD_BCRYPT),
+                    'currency' => $currency,
+                    'is_test' => ! app()->environment('production'),
+                ]);
+                $isNew = true;
+                Log::info('[lot-mailbox] Created new mailbox (DB record)', [
+                    'local_part' => $localPart,
+                    'domain' => $this->domain,
+                    'mailbox_id' => $mailbox->id,
+                ]);
+                $this->createMaildirIfNeeded($localPart);
+            } catch (QueryException $e) {
+                if (! $this->isUniqueConstraintViolation($e)) {
+                    throw $e;
+                }
+                $mailbox = LotMailbox::where('local_part', $localPart)->where('domain', $this->domain)->first();
+                if ($mailbox === null) {
+                    throw $e;
+                }
+                Log::info('[lot-mailbox] ensureMailbox: duplicate key after concurrent insert; using existing row', [
+                    'local_part' => $localPart,
+                    'domain' => $this->domain,
+                    'mailbox_id' => $mailbox->id,
+                ]);
+            }
         } else {
             Log::info('[lot-mailbox] Found existing mailbox (DB)', ['local_part' => $localPart, 'mailbox_id' => $mailbox->id]);
+        }
+
+        // Self-heal: legacy rows may have bcrypt(token_hash) built from mixed-case hash, or stale hash after token rotation.
+        // IMAP clients always send lowercase token_hash; Dovecot verifies against this column.
+        if (! password_verify($tokenHash, $mailbox->password_hash)) {
+            $mailbox->password_hash = password_hash($tokenHash, PASSWORD_BCRYPT);
+            $mailbox->save();
+            Log::info('[lot-mailbox] Refreshed mailbox password_hash (token_hash did not verify against stored hash)', [
+                'local_part' => $mailbox->local_part,
+                'domain' => $mailbox->domain,
+                'mailbox_id' => $mailbox->id,
+            ]);
         }
 
         $imapHost = config('services.lot_mailbox.imap_host', 'mail.' . $this->domain);
@@ -232,21 +268,39 @@ class LotMailboxService
     public function getMaildirPathByEmail(string $email): ?string
     {
         $email = trim($email);
-        if ($email === '' || !str_contains($email, '@')) {
+        if ($email === '' || ! str_contains($email, '@')) {
             return null;
         }
         $parts = explode('@', $email, 2);
         $localPart = $parts[0];
         $domainPart = $parts[1] ?? $this->domain;
         $mailbox = LotMailbox::where('local_part', $localPart)->where('domain', $domainPart)->first();
-        if (!$mailbox) {
+        if (! $mailbox) {
             return null;
         }
         $base = $this->maildirBase ?? config('services.lot_mailbox.maildir_base');
         if (empty($base)) {
             return null;
         }
+
         return rtrim($base, '/') . '/' . $domainPart . '/' . $localPart;
+    }
+
+    /**
+     * True if a row exists in lot_mailboxes for this full address (IMAP login).
+     * Used at start_deal to confirm seller/buyer mailboxes were provisioned.
+     */
+    public function hasMailboxRowForEmail(string $email): bool
+    {
+        $email = trim($email);
+        if ($email === '' || ! str_contains($email, '@')) {
+            return false;
+        }
+        $parts = explode('@', $email, 2);
+        $localPart = $parts[0];
+        $domainPart = $parts[1] ?? $this->domain;
+
+        return LotMailbox::where('local_part', $localPart)->where('domain', $domainPart)->exists();
     }
 
     /**
@@ -576,5 +630,23 @@ class LotMailboxService
         @mkdir($trashPath . '/cur', 0750, true);
         @mkdir($trashPath . '/new', 0750, true);
         @mkdir($trashPath . '/tmp', 0750, true);
+    }
+
+    /**
+     * MySQL 1062 / SQLSTATE 23000 — two concurrent ensureMailbox calls can both miss the row and INSERT.
+     */
+    private function isUniqueConstraintViolation(QueryException $e): bool
+    {
+        $code = (string) $e->getCode();
+        if ($code === '23000') {
+            return true;
+        }
+        $info = $e->errorInfo;
+        if (isset($info[1]) && (int) $info[1] === 1062) {
+            return true;
+        }
+        $msg = $e->getMessage();
+
+        return str_contains($msg, 'Duplicate entry') || str_contains($msg, 'unique constraint');
     }
 }
