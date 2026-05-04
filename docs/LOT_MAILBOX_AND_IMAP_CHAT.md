@@ -561,6 +561,22 @@ sudo postmap /etc/postfix/exempt_senders
 
 ---
 
+## Возможные проблемы (ящики лотов, IMAP, клиент)
+
+### IMAP: аутентификация не проходит (`AuthenticationFailed`), хотя токен «тот же»
+
+**Частая причина:** в MySQL в `lot_mailboxes.password_hash` лежит bcrypt от **другой строки**, чем клиент подставляет в IMAP-пароль. Клиент использует **`token_hash` в нижнем регистре** (после `trim`). Если запись создавалась со смешанным регистром или после переноса БД строка разошлась, Dovecot отклоняет логин.
+
+**Что сделано в API:** `LotMailboxService::ensureMailbox` приводит `token_hash` к каноническому виду и при неуспешном `password_verify` **пересчитывает и сохраняет** `password_hash`, чтобы соответствовать текущему паролю клиента. После деплоя нужен повторный проход ensure (размещение лота, `start_deal`, и т.п. — как у вас вызывается сервис).
+
+Подробнее про поведение клиента и зависания UI при IDLE — **`xboard-client/docs/LOT_CHAT_AND_MAILBOX.md`**, раздел *Possible problems (Android)*.
+
+### Клиент «висит» при входе в сделку / переключении экранов
+
+Это **клиентская** проблема (главный поток + JavaMail): см. тот же раздел в `LOT_CHAT_AND_MAILBOX.md` — остановка IDLE только с фонового потока, стабильные ключи `DisposableEffect`, чтение кэша ящиков в IO.
+
+---
+
 ## Кодирование тела писем (deal messages)
 
 Письма по сделкам (sendMessageToSeller, sendMessageToBuyer) отправляются через `Mail::raw($body, ...)`. Тело — UTF-8 (в т.ч. кириллица, локализованные строки).
@@ -579,3 +595,4 @@ sudo postmap /etc/postfix/exempt_senders
 - `docs/IMAP_MONITORING_SETUP.md` — IMAP для верификации платежей
 - **`docs/NOREPLY_MAILBOX_SETUP.md`** — технический рассыльщик noreply@xdexboard.com: настройки только в .env, в lot_mailboxes не добавляется
 - **`docs/DEAL_CHAT_TABLE_AND_SOFT_DELETE.md`** — таблица чата сделки, запись при отправке писем, мягкое удаление при очистке почты
+- **`xboard-client/docs/LOT_CHAT_AND_MAILBOX.md`** — клиент: глобальный IMAP IDLE, раздел *Possible problems (Android)*
