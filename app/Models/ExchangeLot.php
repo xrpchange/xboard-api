@@ -49,6 +49,8 @@ class ExchangeLot extends Model
         'note',
         'seller_locale',
         'buyer_lot_email',
+        'buyer_seen_ip',
+        'buyer_ip_share_with_seller',
         'buyer_escrow_token_hash',
         'buyer_selected_amount',
         'seller_lot_email',
@@ -77,6 +79,15 @@ class ExchangeLot extends Model
         'arbiter_ai_invocations' => 'integer',
         'expires_at' => 'datetime',
         'escrow_multisig_2_of_3_required' => 'boolean',
+        'buyer_ip_share_with_seller' => 'boolean',
+    ];
+
+    /**
+     * Do not leak buyer IP / consent in generic model serialization; ExchangeLotResource exposes them for sellers only.
+     */
+    protected $hidden = [
+        'buyer_seen_ip',
+        'buyer_ip_share_with_seller',
     ];
 
     /**

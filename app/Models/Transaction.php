@@ -41,6 +41,16 @@ class Transaction extends Model
         'status',
         'is_test',
         'test_group',
+        'buyer_seen_ip',
+        'buyer_ip_share_with_seller',
+    ];
+
+    /**
+     * Never expose buyer IP / consent on generic transaction JSON; deal UI uses lot resource or controlled fields.
+     */
+    protected $hidden = [
+        'buyer_seen_ip',
+        'buyer_ip_share_with_seller',
     ];
 
     /**
@@ -64,6 +74,7 @@ class Transaction extends Model
         'receipt_links_json' => 'array',
         'aml_check_json' => 'array',
         'is_test' => 'boolean',
+        'buyer_ip_share_with_seller' => 'boolean',
     ];
 
     /**

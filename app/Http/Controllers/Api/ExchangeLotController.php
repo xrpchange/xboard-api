@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\ExchangeLotResource;
 use App\Mail\HighDeliveryPriority;
 use App\Models\Bank;
 use App\Models\Country;
@@ -44,6 +45,38 @@ class ExchangeLotController extends Controller
         private \App\Services\LotMailboxService $lotMailboxService,
         private ArbiterService $arbiterService
     ) {}
+
+    /**
+     * IPv4/IPv6 from trusted proxy-aware request (TrustedProxies / X-Forwarded-For). Stored for seller anti-abuse only.
+     */
+    private static function normalizeBuyerRequestIp(Request $request): ?string
+    {
+        $raw = trim((string) ($request->ip() ?? ''));
+        if ($raw === '' || $raw === '0.0.0.0') {
+            return null;
+        }
+        $sanitized = preg_replace('/[^0-9a-fA-F:.\[\]%]/', '', $raw) ?? '';
+        $sanitized = trim((string) $sanitized);
+        if ($sanitized === '') {
+            return null;
+        }
+        $len = strlen($sanitized);
+
+        return $len > 45 ? substr($sanitized, 0, 45) : $sanitized;
+    }
+
+    /**
+     * Temporary buyer connection info on the lot until send_payment_details copies it onto the sale transaction.
+     */
+    private static function syncBuyerIpOnExchangeLot(int $lotId, Request $request): void
+    {
+        $share = $request->boolean('share_buyer_ip_with_seller');
+        $ip = $share ? self::normalizeBuyerRequestIp($request) : null;
+        DB::table('exchange_lots')->where('id', $lotId)->update([
+            'buyer_seen_ip' => $ip,
+            'buyer_ip_share_with_seller' => $share,
+        ]);
+    }
 
     private static function sellerEscrowCryptoCurrency(ExchangeLot $lot): ?CryptoCurrency
     {
@@ -672,9 +705,11 @@ class ExchangeLotController extends Controller
      */
     public function show(ExchangeLot $lot): JsonResponse
     {
+        $lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']);
+
         return response()->json([
             'success' => true,
-            'data' => $lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']),
+            'data' => (new ExchangeLotResource($lot))->toArray(request()),
         ]);
     }
 
@@ -1354,6 +1389,7 @@ class ExchangeLotController extends Controller
             'selected_amount' => 'nullable|numeric|min:0',
             'message_type' => 'nullable|string|in:start_deal,buyer_exited',
             'deal_tag' => 'nullable|string|max:20000',
+            'share_buyer_ip_with_seller' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -1586,6 +1622,8 @@ class ExchangeLotController extends Controller
                     'buyer_escrow_token_hash' => null,
                     'buyer_selected_amount' => null,
                     'buyer_notification_email' => null,
+                    'buyer_seen_ip' => null,
+                    'buyer_ip_share_with_seller' => false,
                 ]);
             $startDealLockAcquired = false;
             Log::warning('[exchange-lots] sendMessageToSeller: rolled back buyer lock after start_deal failure', [
@@ -1599,7 +1637,9 @@ class ExchangeLotController extends Controller
         // Also ensure buyer's mailbox exists; return mailbox config so client can read messages via IMAP
         $buyerMailboxConfig = null;
         if ($messageType === 'start_deal' && $requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
-            $updateData = ['buyer_lot_email' => $requesterMailboxEmail];
+            $updateData = [
+                'buyer_lot_email' => $requesterMailboxEmail,
+            ];
             $buyerNotificationEmail = $request->input('buyer_notification_email');
             if (is_string($buyerNotificationEmail)) {
                 $buyerNotificationEmail = trim($buyerNotificationEmail);
@@ -1670,6 +1710,7 @@ class ExchangeLotController extends Controller
                     'error_code' => 'buyer_mailbox_not_provisioned',
                 ], 503);
             }
+            self::syncBuyerIpOnExchangeLot((int) $lot->id, $request);
             Log::info('[exchange-lots] sendMessageToSeller: buyer_lot_email set', ['lot_id' => $lot->id, 'buyer_lot_email' => $requesterMailboxEmail]);
         } elseif ($messageType === 'start_deal') {
             Log::warning('[exchange-lots] sendMessageToSeller: cannot lock lot, requester mailbox missing', [
@@ -1748,7 +1789,12 @@ class ExchangeLotController extends Controller
             DB::table('exchange_lots')
                 ->where('id', $lot->id)
                 ->where('buyer_lot_email', $buyerExitedEmailToClear)
-                ->update(['buyer_lot_email' => null, 'buyer_escrow_token_hash' => null]);
+                ->update([
+                    'buyer_lot_email' => null,
+                    'buyer_escrow_token_hash' => null,
+                    'buyer_seen_ip' => null,
+                    'buyer_ip_share_with_seller' => false,
+                ]);
             $this->closeOpenDisputesForLot(
                 lot: $lot,
                 resolvedBy: 'system',
@@ -2407,7 +2453,11 @@ class ExchangeLotController extends Controller
             }
             DB::table('exchange_lots')
                 ->where('id', $lot->id)
-                ->update(['buyer_lot_email' => null]);
+                ->update([
+                    'buyer_lot_email' => null,
+                    'buyer_seen_ip' => null,
+                    'buyer_ip_share_with_seller' => false,
+                ]);
             $this->closeOpenDisputesForLot(
                 lot: $lot,
                 resolvedBy: 'system',
@@ -2872,7 +2922,11 @@ class ExchangeLotController extends Controller
         }
 
         Transaction::where('exchange_lot_id', $lot->id)->where('buyer_lot_email', $lot->buyer_lot_email)->delete();
-        DB::table('exchange_lots')->where('id', $lot->id)->update(['buyer_lot_email' => null]);
+        DB::table('exchange_lots')->where('id', $lot->id)->update([
+            'buyer_lot_email' => null,
+            'buyer_seen_ip' => null,
+            'buyer_ip_share_with_seller' => false,
+        ]);
         $this->closeOpenDisputesForLot(
             lot: $lot,
             resolvedBy: 'system',
@@ -3998,6 +4052,10 @@ class ExchangeLotController extends Controller
         $bankDetails = $paymentType === 'bank' ? trim((string) $request->input('bank_data', '')) : null;
         $cryptoAddress = $paymentType === 'crypto' ? trim((string) $request->input('address', '')) : null;
 
+        $lot->refresh();
+        $buyerSeenIpForSale = $lot->buyer_seen_ip;
+        $buyerIpShareForSale = (bool) ($lot->buyer_ip_share_with_seller ?? false);
+
         $transaction = Transaction::create([
             'tx_hash' => $txHash,
             'tx_type' => 'sale',
@@ -4006,6 +4064,8 @@ class ExchangeLotController extends Controller
             'amount' => $amount,
             'exchange_lot_id' => $lot->id,
             'buyer_lot_email' => $buyerEmail,
+            'buyer_seen_ip' => $buyerSeenIpForSale,
+            'buyer_ip_share_with_seller' => $buyerIpShareForSale,
             'bank_id' => $bankId,
             'bank_details' => $bankDetails,
             'crypto_address' => $cryptoAddress,
@@ -4014,6 +4074,11 @@ class ExchangeLotController extends Controller
             'status' => 'pending',
             'is_test' => (bool) $lot->is_test,
             'test_group' => $lot->test_group,
+        ]);
+
+        DB::table('exchange_lots')->where('id', $lot->id)->update([
+            'buyer_seen_ip' => null,
+            'buyer_ip_share_with_seller' => false,
         ]);
 
         if (! empty($sellerEscrowToken) && is_string($sellerEscrowToken)) {
@@ -4773,6 +4838,8 @@ class ExchangeLotController extends Controller
                 ExchangeLot::query()->where('id', $lot->id)->update([
                     'buyer_lot_email' => null,
                     'buyer_selected_amount' => null,
+                    'buyer_seen_ip' => null,
+                    'buyer_ip_share_with_seller' => false,
                 ]);
             });
         } catch (\Throwable $e) {

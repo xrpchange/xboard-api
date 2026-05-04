@@ -2,9 +2,11 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Transaction;
 use App\Services\SandboxVirtualBankService;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class ExchangeLotResource extends JsonResource
@@ -25,7 +27,7 @@ class ExchangeLotResource extends JsonResource
             $status = 'expired';
         }
 
-        return [
+        $out = [
             'id' => (string) $this->id,
             'node_id' => $this->node_id ? (string) $this->node_id : null,
             'node_domain' => $this->relationLoaded('node') ? ($this->node?->domain ?? null) : null,
@@ -71,6 +73,93 @@ class ExchangeLotResource extends JsonResource
             'created_at' => self::toUtcIso8601($this->created_at) ?? Carbon::now('UTC')->toIso8601String(),
             'expires_at' => self::toUtcIso8601($this->expires_at) ?? '',
         ];
+
+        if (self::shouldExposeBuyerLastSeenIpForSeller($request, $this->resource)) {
+            [$share, $ip] = self::buyerConnectionInfoForSeller($this->resource);
+            $out['buyer_ip_share_with_seller'] = $share;
+            $out['buyer_last_seen_ip'] = ($share && $ip !== null && $ip !== '') ? (string) $ip : null;
+        }
+
+        return $out;
+    }
+
+    /**
+     * After payment_details, IP lives on the latest sale row for this buyer; before that, on exchange_lots.
+     *
+     * @return array{0:bool,1:?string} [share, ip or null]
+     */
+    private static function buyerConnectionInfoForSeller($lot): array
+    {
+        $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($buyerEmail === '' || $lot->id === null) {
+            return [false, null];
+        }
+        $saleTx = Transaction::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->whereRaw('LOWER(TRIM(buyer_lot_email)) = ?', [strtolower($buyerEmail)])
+            ->where('tx_type', 'sale')
+            ->orderByDesc('id')
+            ->first();
+        if ($saleTx !== null) {
+            $share = (bool) ($saleTx->buyer_ip_share_with_seller ?? false);
+            $ip = $share ? ($saleTx->buyer_seen_ip ?? null) : null;
+
+            return [$share, is_string($ip) ? $ip : null];
+        }
+        $share = (bool) ($lot->buyer_ip_share_with_seller ?? false);
+        $ip = $share ? ($lot->buyer_seen_ip ?? null) : null;
+
+        return [$share, is_string($ip) ? $ip : null];
+    }
+
+    /**
+     * Seller-only: exposes whether the buyer opted in to share connection IP and the address when true
+     * (from exchange_lots before payment_details, then from the sale transaction).
+     * Never for public or buyer tokens.
+     */
+    private static function shouldExposeBuyerLastSeenIpForSeller(?Request $request, $lot): bool
+    {
+        if ($request === null) {
+            return false;
+        }
+        if (self::requestIsSellerPlacedLotsQuery($request)) {
+            return true;
+        }
+        $token = $request->header('X-Escrow-Token') ?? $request->input('escrow_token');
+        if (! is_string($token) || $token === '') {
+            return false;
+        }
+        $decoded = json_decode($token, true);
+        if (! is_array($decoded)) {
+            return false;
+        }
+        $hash = isset($decoded['token_hash']) ? strtolower(trim((string) $decoded['token_hash'])) : '';
+        if ($hash === '') {
+            return false;
+        }
+        $lotWalletHash = strtolower(trim((string) ($lot->wallet_hash ?? '')));
+
+        return $lotWalletHash !== '' && hash_equals($lotWalletHash, $hash);
+    }
+
+    private static function requestIsSellerPlacedLotsQuery(Request $request): bool
+    {
+        $wa = $request->input('wallet_address') ?? $request->input('wallet_address[]');
+        if (empty($wa)) {
+            return false;
+        }
+        $addresses = is_array($wa) ? $wa : [$wa];
+        foreach ($addresses as $a) {
+            if (! is_string($a)) {
+                continue;
+            }
+            $decoded = json_decode(trim($a), true);
+            if (is_array($decoded) && ! empty($decoded['token_hash'])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** API lot timestamps in UTC regardless of APP_TIMEZONE / DB session. */
