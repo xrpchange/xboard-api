@@ -187,6 +187,8 @@ After starting the server, documentation is available at:
 - `POST /api/v1/escrow-tokens/get-crypto-fee-params` - Read Core merged fee scalars for a `crypto_key` (rates, min/max fees, AML reserve); body: `admin_mode_password`, `crypto_key`; header `X-Escrow-Token`
 - `POST /api/v1/escrow-tokens/set-crypto-fee-params` - Update those scalars in Core INI after the same mailbox verification flow as fee wallet; body: `email`, `verification_code`, `admin_password`, `crypto_key`, `params` (map of allowed suffixes → numbers)
 
+**Administrator mode (client Developer settings):** `admin_mode_password` (Core) unlocks the client and gates disclosure such as **`admin_email`**; it does **not** replace **email verification code + `admin_password`** for mutating Core settings. See **`docs/ADMIN_MODE_SECURITY.md`**.
+
 ### Fee Wallet Admin Flow (clean / dirty)
 
 This flow allows updating Core fee wallet destination parameters from the client without direct server file access.
