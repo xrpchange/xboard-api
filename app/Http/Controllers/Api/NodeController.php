@@ -68,9 +68,11 @@ class NodeController extends BaseApiController
             // Если сервер возвращает sandbox в default_environment - в приложении автоматически включается Developer Mode
             // default_environment читается из конфигурации
             $defaultEnvironment = config('app.default_environment', 'production');
-            
+            $ipLookupTpl = (string) config('xboard.ip_lookup_url_template', 'https://ipinfo.io/{ip}');
+
             return $this->successResponse($nodes, null, 200, [
-                'default_environment' => $defaultEnvironment // TODO: Remove in future versions
+                'default_environment' => $defaultEnvironment, // TODO: Remove in future versions
+                'ip_lookup_url_template' => $ipLookupTpl,
             ]);
         } catch (\Throwable $e) {
             \Log::error('Failed to load nodes', [
@@ -118,7 +120,9 @@ class NodeController extends BaseApiController
             return $nodeArray;
         });
         
-        return $this->successResponse($filteredNodes);
+        return $this->successResponse($filteredNodes, null, 200, [
+            'ip_lookup_url_template' => (string) config('xboard.ip_lookup_url_template', 'https://ipinfo.io/{ip}'),
+        ]);
     }
 
 

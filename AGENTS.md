@@ -17,6 +17,7 @@ Key points:
 - **Ecosystem UTC:** The same rule applies across sibling repos: **xboard-core** sets `date_default_timezone_set('UTC')` at `public/api.php` bootstrap; **xboard-monero-balance** sets `time.Local = time.UTC` in service CLIs; **xboard-client** treats API datetimes as instants (ISO-8601 UTC) and aligns deal timers to server time from chat responses.
 - **NO fallback by host on server:** For `.env.xrpchange` (api.xrpchange.site), `APP_ENV` MUST be set explicitly via Apache `SetEnv` (or equivalent). Do NOT add fallback detection by `HTTP_HOST` or any other implicit method on production.
 - `nodes` table — source of available nodes for clients; keep migrations and schema up to date (including `weight`, `max_connections` if applicable).
+- **Partner IP lookup URL:** `IP_LOOKUP_URL_TEMPLATE` in `.env` (HTTPS template with `{ip}`) is exposed to clients in `GET /api/v1/nodes` and `GET /api/v1/nodes/required` response `meta.ip_lookup_url_template`. See `docs/IP_LOOKUP_URL_TEMPLATE.md`.
 
 ## Терминология для партнёров и документации (Business terminology)
 
