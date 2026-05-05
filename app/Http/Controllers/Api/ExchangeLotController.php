@@ -5107,12 +5107,18 @@ class ExchangeLotController extends Controller
 
         foreach ($recipients as $to) {
             try {
-                Mail::raw($body, function ($message) use ($to, $subject): void {
-                    $message->to($to);
-                    $message->subject($subject);
-                    $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
-                    HighDeliveryPriority::apply($message);
-                });
+                $fromAddress = config('mail.from.address', 'noreply@xdexboard.com');
+                $fromName = config('mail.from.name', 'XBoard');
+                $htmlBody = $this->buildSellerExternalNotificationHtml($body, null, null);
+                $this->sendDealEmailHtmlMultipart(
+                    to: $to,
+                    subject: $subject,
+                    fromAddress: $fromAddress,
+                    fromName: $fromName,
+                    plainBody: $body,
+                    htmlBody: $htmlBody,
+                    tagJson: null
+                );
                 $notifiedRecipients[] = $to;
             } catch (\Throwable $e) {
                 Log::warning('[exchange-lots] purgeCompletedDealData: notification mail failed', [
