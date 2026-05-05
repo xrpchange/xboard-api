@@ -1400,6 +1400,38 @@ class ExchangeLotController extends Controller
         }
 
         $messageType = $request->input('message_type');
+        $rawDealTagForMessageType = $request->input('deal_tag');
+        $inferredMessageType = null;
+        if ((! is_string($messageType) || trim($messageType) === '') && is_string($rawDealTagForMessageType) && trim($rawDealTagForMessageType) !== '') {
+            $rawTagData = $this->decodeDealTagFromRaw($rawDealTagForMessageType);
+            $rawTagType = is_array($rawTagData) ? trim((string) ($rawTagData['t'] ?? '')) : '';
+            if (in_array($rawTagType, ['start_deal', 'buyer_exited'], true)) {
+                $inferredMessageType = $rawTagType;
+            }
+        }
+        if ($inferredMessageType !== null) {
+            $messageType = $inferredMessageType;
+            Log::info('[exchange-lots] sendMessageToSeller: message_type inferred from deal_tag', [
+                'lot_id' => $lot->id ?? null,
+                'message_type' => $messageType,
+            ]);
+        }
+
+        $buyerEmailOnLot = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($buyerEmailOnLot === '' && $messageType !== 'start_deal') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot start deal: message_type must be start_deal for a new buyer session.',
+                'error_code' => 'start_deal_required',
+            ], 422);
+        }
+        if ($buyerEmailOnLot === '' && ! $lot->is_active) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This lot is not active. The seller may have disabled or removed it.',
+                'error_code' => 'lot_inactive',
+            ], 409);
+        }
 
         $lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency', 'banks']);
         $currency = self::sellerMailboxCryptoCode($lot);
@@ -1521,6 +1553,16 @@ class ExchangeLotController extends Controller
         }
 
         if ($messageType === 'start_deal') {
+            $freshLotForStartDeal = ExchangeLot::query()->find($lot->id);
+            if ($freshLotForStartDeal === null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This lot is no longer available.',
+                    'error_code' => 'lot_not_found',
+                ], 404);
+            }
+            $lot = $freshLotForStartDeal;
+            $lot->load(['cryptoCurrency', 'node', 'bank', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency', 'banks']);
             Log::info('[exchange-lots] sendMessageToSeller: start_deal request context', [
                 'lot_id' => $lot->id,
                 'seller_mailbox_email' => $sellerEmail,
@@ -1637,6 +1679,24 @@ class ExchangeLotController extends Controller
         // Also ensure buyer's mailbox exists; return mailbox config so client can read messages via IMAP
         $buyerMailboxConfig = null;
         if ($messageType === 'start_deal' && $requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
+            $freshLotState = ExchangeLot::query()
+                ->select(['id', 'is_active', 'buyer_lot_email'])
+                ->find($lot->id);
+            if ($freshLotState === null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This lot is no longer available.',
+                    'error_code' => 'lot_not_found',
+                ], 404);
+            }
+            if (! (bool) $freshLotState->is_active) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This lot is not active. The seller may have disabled or removed it.',
+                    'error_code' => 'lot_inactive',
+                ], 409);
+            }
+
             $updateData = [
                 'buyer_lot_email' => $requesterMailboxEmail,
             ];
@@ -1658,6 +1718,7 @@ class ExchangeLotController extends Controller
             }
             $updated = DB::table('exchange_lots')
                 ->where('id', $lot->id)
+                ->where('is_active', true)
                 ->where(function ($q) {
                     $q->whereNull('buyer_lot_email')->orWhere('buyer_lot_email', '');
                 })
@@ -1666,6 +1727,23 @@ class ExchangeLotController extends Controller
                 $startDealLockAcquired = true;
             }
             if ($updated === 0) {
+                $freshAfterFailedLock = ExchangeLot::query()
+                    ->select(['id', 'is_active', 'buyer_lot_email'])
+                    ->find($lot->id);
+                if ($freshAfterFailedLock === null) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This lot is no longer available.',
+                        'error_code' => 'lot_not_found',
+                    ], 404);
+                }
+                if (! (bool) $freshAfterFailedLock->is_active) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This lot is not active. The seller may have disabled or removed it.',
+                        'error_code' => 'lot_inactive',
+                    ], 409);
+                }
                 // Idempotent resume for same buyer mailbox: refresh selected amount/hash on existing deal.
                 $sameBuyer = ExchangeLot::query()
                     ->where('id', $lot->id)
@@ -2975,6 +3053,154 @@ class ExchangeLotController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Deal cancelled. Transactions and reservations have been removed.',
+        ]);
+    }
+
+    /**
+     * Backward-compatible buyer cancel endpoint for clients that always send lot_id in URL.
+     * If lot is already removed, fallback to token-based forced cleanup.
+     */
+    public function buyerCancelDealCompat(Request $request, int $lotId): JsonResponse
+    {
+        $lot = ExchangeLot::query()->find($lotId);
+        if ($lot === null) {
+            Log::warning('[exchange-lots] buyerCancelDealCompat: lot not found, fallback by token', [
+                'lot_id' => $lotId,
+            ]);
+
+            return $this->buyerCancelDealByToken($request);
+        }
+
+        return $this->buyerCancelDeal($request, $lot);
+    }
+
+    /**
+     * Buyer cancel fallback without lot_id.
+     * Useful when client holds a stale/removed lot reference but still needs to leave current deal state.
+     */
+    public function buyerCancelDealByToken(Request $request): JsonResponse
+    {
+        $tokenData = $request->input('escrow_token_data', []);
+        $requestTokenHash = is_array($tokenData) ? strtolower(trim((string) ($tokenData['token_hash'] ?? ''))) : '';
+        if ($requestTokenHash === '' || strlen($requestTokenHash) > 64) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid escrow token data.',
+                'error_code' => 'invalid_token_data',
+            ], 401);
+        }
+
+        $lots = ExchangeLot::query()
+            ->whereNotNull('buyer_escrow_token_hash')
+            ->whereRaw('LOWER(TRIM(buyer_escrow_token_hash)) = ?', [$requestTokenHash])
+            ->orderByDesc('id')
+            ->get();
+
+        if ($lots->isEmpty()) {
+            Log::info('[exchange-lots] buyerCancelDealByToken: no linked lot found, already cleared', [
+                'token_hash_prefix' => substr($requestTokenHash, 0, 8),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Deal already cleared on the server; nothing to cancel.',
+                'already_cleared' => true,
+            ]);
+        }
+
+        $escrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+        if (! is_string($escrowToken) || trim($escrowToken) === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'escrow_token is required (buyer\'s full token).',
+                'error_code' => 'validation_error',
+            ], 422);
+        }
+        [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($escrowToken);
+        $timeout = (int) config('services.core.timeout', 10);
+        $releasedLotIds = [];
+        $deletedTransactions = 0;
+        $clearedLots = 0;
+
+        foreach ($lots as $lot) {
+            /** @var ExchangeLot $lot */
+            try {
+                $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($escrowToken)
+                    ?? self::coreCryptoTypeForBuyerEscrow($lot);
+            } catch (\Throwable) {
+                $cryptoType = strtolower((string) ($lot->cryptoCurrency?->code ?? 'xmr'));
+            }
+
+            // Best-effort: release reservation in Core. Even if it fails, proceed with server-side cleanup.
+            try {
+                $req = Http::timeout($timeout);
+                if ($coreKey !== '') {
+                    $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+                }
+                $resp = $req->post(rtrim($coreUrl, '/').'/api/delete-reservation-by-buyer', [
+                    'exchange_lot_id' => (string) $lot->id,
+                    'escrow_token' => $escrowToken,
+                    'crypto_type' => $cryptoType,
+                ]);
+                if ($resp->successful()) {
+                    $releasedLotIds[] = (int) $lot->id;
+                } else {
+                    Log::warning('[exchange-lots] buyerCancelDealByToken: Core delete-reservation-by-buyer failed', [
+                        'lot_id' => $lot->id,
+                        'status' => $resp->status(),
+                        'body' => $resp->body(),
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('[exchange-lots] buyerCancelDealByToken: Core delete-reservation-by-buyer exception', [
+                    'lot_id' => $lot->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
+            if ($buyerEmail !== '') {
+                $deletedTransactions += (int) Transaction::query()
+                    ->where('exchange_lot_id', $lot->id)
+                    ->where('buyer_lot_email', $buyerEmail)
+                    ->delete();
+            } else {
+                $deletedTransactions += (int) Transaction::query()
+                    ->where('exchange_lot_id', $lot->id)
+                    ->where('tx_type', 'sale')
+                    ->where('status', 'pending')
+                    ->delete();
+            }
+
+            $updated = ExchangeLot::query()
+                ->where('id', $lot->id)
+                ->update([
+                    'buyer_lot_email' => null,
+                    'buyer_selected_amount' => null,
+                    'buyer_escrow_token_hash' => null,
+                    'buyer_seen_ip' => null,
+                    'buyer_ip_share_with_seller' => false,
+                ]);
+            if ($updated > 0) {
+                $clearedLots += 1;
+            }
+        }
+
+        Log::info('[exchange-lots] buyerCancelDealByToken: forced buyer cleanup completed', [
+            'token_hash_prefix' => substr($requestTokenHash, 0, 8),
+            'lots_found' => $lots->count(),
+            'lots_cleared' => $clearedLots,
+            'transactions_deleted' => $deletedTransactions,
+            'core_released_lot_ids' => $releasedLotIds,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Buyer deal state cleared by token.',
+            'lots_found' => $lots->count(),
+            'lots_cleared' => $clearedLots,
+            'transactions_deleted' => $deletedTransactions,
+            'core_released_lot_ids' => $releasedLotIds,
         ]);
     }
 
@@ -4760,8 +4986,8 @@ class ExchangeLotController extends Controller
 
     /**
      * Remove PII-heavy server-side artifacts for a successfully completed deal.
-     * Seller or buyer (escrow token) may call. Deletes deal chat rows, receipt files (and clears receipt JSON on transactions),
-     * clears lot mailboxes; keeps transaction rows for lot balance / partial-sale accounting.
+     * Seller or buyer (escrow token) may call. Deletes deal chat rows, transaction rows, linked receipt files,
+     * and clears lot mailboxes.
      * Clears buyer_lot_email and buyer_selected_amount; buyer_escrow_token_hash is retained so chat-messages can still authorize the same token and return [].
      */
     public function purgeCompletedDealData(Request $request, ExchangeLot $lot): JsonResponse
@@ -4803,14 +5029,16 @@ class ExchangeLotController extends Controller
                 $lot->refresh();
 
                 $transactions = Transaction::query()->where('exchange_lot_id', $lot->id)->get();
+                $deletedTransactions = 0;
                 foreach ($transactions as $tx) {
-                    $links = $tx->receipt_links_json;
-                    if (is_array($links) && count($links) > 0) {
-                        ReceiptAttachmentStorage::deleteFilesFromReceiptLinks($links);
+                    if ($tx->delete()) {
+                        $deletedTransactions++;
                     }
                 }
-
-                Transaction::query()->where('exchange_lot_id', $lot->id)->update(['receipt_links_json' => null]);
+                Log::info('[exchange-lots] purgeCompletedDealData: transactions deleted', [
+                    'lot_id' => $lot->id,
+                    'deleted' => $deletedTransactions,
+                ]);
 
                 DealChatMessage::query()->where('exchange_lot_id', $lot->id)->delete();
 
@@ -4871,7 +5099,7 @@ class ExchangeLotController extends Controller
             $body = sprintf(
                 "Automated notice from XBoard.\n\n".
                 "Exchange lot #%s: a participant removed deal artifacts from the exchange server.\n".
-                "Cleared where applicable: deal chat messages in the database, receipt PDF files linked to transactions (transaction rows are kept for accounting), and message files in the lot mailboxes on the mail server.\n\n".
+                "Cleared where applicable: deal chat messages in the database, transactions and linked receipt PDF files, and message files in the lot mailboxes on the mail server.\n\n".
                 "This email was sent because this address is stored as a notification email for this lot.\n",
                 (string) $lot->id
             );
