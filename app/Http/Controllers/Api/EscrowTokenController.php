@@ -380,9 +380,22 @@ class EscrowTokenController extends BaseApiController
                     'error_code' => 'param_not_allowed',
                 ], 422);
             }
-            if ($value === null || $value === '' || ! is_numeric($value)) {
+            if (! is_string($value)) {
                 return response()->json([
-                    'message' => 'All params must be numeric.',
+                    'message' => 'Each param value must be a string (same literal form as in Core INI).',
+                    'error_code' => 'validation_failed',
+                ], 422);
+            }
+            $trimmed = trim($value);
+            if ($trimmed === '' || str_contains($trimmed, 'e') || str_contains($trimmed, 'E')) {
+                return response()->json([
+                    'message' => 'Each param must be a decimal literal as in INI (no scientific notation).',
+                    'error_code' => 'validation_failed',
+                ], 422);
+            }
+            if (! is_numeric($trimmed)) {
+                return response()->json([
+                    'message' => 'Each param must be numeric (INI scalar).',
                     'error_code' => 'validation_failed',
                 ], 422);
             }
