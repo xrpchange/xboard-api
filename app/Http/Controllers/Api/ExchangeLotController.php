@@ -12,6 +12,7 @@ use App\Models\DealChatMessage;
 use App\Models\DealDispute;
 use App\Models\ExchangeLot;
 use App\Models\FiatCurrency;
+use App\Models\Node;
 use App\Models\Transaction;
 use App\Services\Arbiter\ArbiterService;
 use App\Services\EscrowTokenValidationService;
@@ -768,7 +769,7 @@ class ExchangeLotController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'node_id' => 'required|exists:nodes,id',
+            'node_id' => 'required|integer|min:1',
             'from_currency' => 'required|string|max:20',
             'to_currency' => 'required|string|max:20',
             'sell_amount' => 'required|numeric|min:0',
@@ -899,6 +900,56 @@ class ExchangeLotController extends Controller
             ], 422);
         }
         $validated['wallet_hash'] = strtolower(trim($decoded['token_hash']));
+
+        // node_id in client catalogs can differ from local DB IDs on partner API.
+        // Resolve node by token node_domain first (authoritative for multi-site),
+        // fallback to provided node_id only when token domain is missing/unresolvable.
+        $requestedNodeId = (int) ($validated['node_id'] ?? 0);
+        $resolvedNode = null;
+        $tokenNodeDomainRaw = isset($decoded['node_domain']) ? trim((string) $decoded['node_domain']) : '';
+        if ($tokenNodeDomainRaw !== '') {
+            $normalizeDomain = static function (string $domain): string {
+                $v = strtolower(trim($domain));
+                $v = preg_replace('#^https?://#', '', $v) ?? $v;
+                $v = rtrim($v, '/');
+                $v = str_replace('_', '.', $v);
+                $v = preg_replace('/^(dev\.api\.|sandbox\.api\.|api\.)/i', '', $v) ?? $v;
+                return trim((string) $v);
+            };
+
+            $tokenDomain = $normalizeDomain($tokenNodeDomainRaw);
+            $resolvedNode = Node::query()
+                ->where('is_active', true)
+                ->get(['id', 'domain'])
+                ->first(function (Node $node) use ($normalizeDomain, $tokenDomain): bool {
+                    $nodeDomain = $normalizeDomain((string) ($node->domain ?? ''));
+                    if ($nodeDomain === '' || $tokenDomain === '') {
+                        return false;
+                    }
+                    return $nodeDomain === $tokenDomain
+                        || str_ends_with($nodeDomain, '.'.$tokenDomain)
+                        || str_ends_with($tokenDomain, '.'.$nodeDomain);
+                });
+        }
+
+        if ($resolvedNode === null && $requestedNodeId > 0) {
+            $resolvedNode = Node::query()->find($requestedNodeId);
+        }
+
+        if ($resolvedNode === null) {
+            return response()->json([
+                'success' => false,
+                'errors' => ['node_id' => ['The selected node id is invalid.']],
+            ], 422);
+        }
+        if ((int) $resolvedNode->id !== $requestedNodeId) {
+            Log::warning('[exchange-lots] store node_id remapped by token domain', [
+                'requested_node_id' => $requestedNodeId,
+                'resolved_node_id' => (int) $resolvedNode->id,
+                'token_node_domain' => $tokenNodeDomainRaw,
+            ]);
+        }
+        $validated['node_id'] = (int) $resolvedNode->id;
 
         // Validate escrow token via Core before publishing lot (protection against fake tokens)
         $validation = $this->escrowTokenValidation->validateToken($validated['wallet_address']);
