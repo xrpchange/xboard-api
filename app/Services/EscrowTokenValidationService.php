@@ -3,11 +3,154 @@
 namespace App\Services;
 
 use App\Models\EscrowTokenCache;
+use App\Models\Node;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 
 class EscrowTokenValidationService
 {
+    private function normalizeEnvironment(string $environment): string
+    {
+        $v = strtolower(trim($environment));
+        if ($v === 'prod') {
+            return 'production';
+        }
+        if ($v === 'development' || $v === 'dev') {
+            return 'sandbox';
+        }
+        return $v !== '' ? $v : 'sandbox';
+    }
+
+    private function normalizeDomain(string $domain): string
+    {
+        $v = strtolower(trim($domain));
+        $v = preg_replace('#^https?://#', '', $v) ?? $v;
+        return rtrim($v, '/');
+    }
+
+    private function domainsMatch(string $a, string $b): bool
+    {
+        $left = $this->normalizeDomain($a);
+        $right = $this->normalizeDomain($b);
+        if ($left === '' || $right === '') {
+            return false;
+        }
+        return $left === $right || str_ends_with($left, '.'.$right) || str_ends_with($right, '.'.$left);
+    }
+
+    private function endpointUrl(array $endpoints, string $key): ?string
+    {
+        $value = $endpoints[$key] ?? null;
+        if (is_string($value) && trim($value) !== '') {
+            return rtrim(trim($value), '/');
+        }
+        if (is_array($value)) {
+            $url = $value['url'] ?? null;
+            if (is_string($url) && trim($url) !== '') {
+                return rtrim(trim($url), '/');
+            }
+        }
+        return null;
+    }
+
+    private function deriveCoreUrlsFromTokenNodeDomain(string $tokenNodeDomain, bool $isProduction): array
+    {
+        $domain = $this->normalizeDomain($tokenNodeDomain);
+        if ($domain === '') {
+            return [];
+        }
+
+        // token node_domain can be "xrpchange.site", "api.xrpchange.site", "sandbox.api.xrpchange.site", etc.
+        $base = preg_replace('/^(dev\.api\.|sandbox\.api\.|api\.)/i', '', $domain) ?: $domain;
+        $base = trim((string) $base);
+        if ($base === '') {
+            return [];
+        }
+
+        $candidates = $isProduction
+            ? [
+                'https://api.core.' . $base,
+                'https://core.' . $base,
+            ]
+            : [
+                'https://sandbox.api.core.' . $base,
+                'https://dev.api.core.' . $base,
+                'https://core.' . $base,
+            ];
+
+        $urls = [];
+        foreach ($candidates as $url) {
+            $normalized = rtrim(trim($url), '/');
+            if ($normalized !== '' && !in_array($normalized, $urls, true)) {
+                $urls[] = $normalized;
+            }
+        }
+
+        return $urls;
+    }
+
+    private function coreUrlCandidatesForToken(array $tokenData, bool $isProduction): array
+    {
+        $tokenNodeDomain = isset($tokenData['node_domain']) ? trim((string) $tokenData['node_domain']) : '';
+        $urls = [];
+        $appendUrl = static function (?string $url) use (&$urls): void {
+            if (!is_string($url) || trim($url) === '') {
+                return;
+            }
+            $normalized = rtrim(trim($url), '/');
+            if ($normalized !== '' && !in_array($normalized, $urls, true)) {
+                $urls[] = $normalized;
+            }
+        };
+
+        $endpointCandidates = $isProduction
+            ? ['core_production', 'core_api', 'core']
+            : ['core_sandbox', 'core_dev', 'core_api', 'core'];
+
+        if ($tokenNodeDomain !== '') {
+            foreach ($this->deriveCoreUrlsFromTokenNodeDomain($tokenNodeDomain, $isProduction) as $derivedUrl) {
+                $appendUrl($derivedUrl);
+            }
+
+            $normalizedTokenDomain = $this->normalizeDomain($tokenNodeDomain);
+            $nodes = Node::query()->where('is_active', true)->get(['domain', 'endpoints']);
+            $exactMatches = [];
+            $fuzzyMatches = [];
+            foreach ($nodes as $node) {
+                $nodeDomain = (string) ($node->domain ?? '');
+                if ($nodeDomain === '') {
+                    continue;
+                }
+                $normalizedNodeDomain = $this->normalizeDomain($nodeDomain);
+                if ($normalizedNodeDomain === $normalizedTokenDomain) {
+                    $exactMatches[] = $node;
+                    continue;
+                }
+                if ($this->domainsMatch($tokenNodeDomain, $nodeDomain)) {
+                    $fuzzyMatches[] = $node;
+                }
+            }
+
+            foreach (array_merge($exactMatches, $fuzzyMatches) as $node) {
+                $endpoints = is_array($node->endpoints) ? $node->endpoints : [];
+                foreach ($endpointCandidates as $candidate) {
+                    $appendUrl($this->endpointUrl($endpoints, $candidate));
+                }
+            }
+        }
+
+        $appendUrl($isProduction ? config('services.core_production.url') : config('services.core.url'));
+        $appendUrl($isProduction ? 'https://api.core.xdexboard.com' : 'https://sandbox.api.core.xdexboard.com');
+
+        return $urls;
+    }
+
+    private function resolveCoreUrlForToken(array $tokenData, bool $isProduction): ?string
+    {
+        $candidates = $this->coreUrlCandidatesForToken($tokenData, $isProduction);
+        return $candidates[0] ?? null;
+    }
+
     /**
      * Validate escrow token (publicPart)
      * 
@@ -143,16 +286,16 @@ class EscrowTokenValidationService
     public function getCoreUrlAndKeyForToken(string $escrowToken): array
     {
         $tokenData = json_decode($escrowToken, true);
-        $environment = (is_array($tokenData) && isset($tokenData['environment']))
+        $environment = $this->normalizeEnvironment((string) ((is_array($tokenData) && isset($tokenData['environment']))
             ? $tokenData['environment']
-            : 'sandbox';
-        if (strtolower((string) $environment) === 'prod') {
-            $environment = 'production';
-        }
+            : 'sandbox'));
         $isProduction = ($environment === 'production');
-        $coreUrl = $isProduction
-            ? config('services.core_production.url')
-            : config('services.core.url');
+        $coreUrl = is_array($tokenData) ? $this->resolveCoreUrlForToken($tokenData, $isProduction) : null;
+        if (empty($coreUrl)) {
+            $coreUrl = $isProduction
+                ? config('services.core_production.url')
+                : config('services.core.url');
+        }
         if (empty($coreUrl)) {
             $coreUrl = $isProduction ? 'https://api.core.xdexboard.com' : 'https://sandbox.api.core.xdexboard.com';
         }
@@ -192,73 +335,89 @@ class EscrowTokenValidationService
 
             $tokenHash = strtolower(trim($tokenData['token_hash']));
 
-            [$coreUrl, ] = $this->getCoreUrlAndKeyForToken($publicPart);
-            $environment = $tokenData['environment'] ?? 'sandbox';
-            if (strtolower((string) $environment) === 'prod') {
-                $environment = 'production';
+            $environment = $this->normalizeEnvironment((string) ($tokenData['environment'] ?? 'sandbox'));
+            $isProduction = ($environment === 'production');
+            $coreUrls = $this->coreUrlCandidatesForToken($tokenData, $isProduction);
+            if (empty($coreUrls)) {
+                [$fallbackCoreUrl, ] = $this->getCoreUrlAndKeyForToken($publicPart);
+                $coreUrls = [rtrim((string) $fallbackCoreUrl, '/')];
             }
 
-            $validateUrl = "$coreUrl/api/escrow-tokens/validate";
-            // Core API теперь принимает открытую часть токена (escrow_token), а не token_hash
+            // Compatibility payload:
+            // - newer Core validates by escrow_token (public JSON)
+            // - some deployments still expect token_hash
             $requestBody = [
-                'escrow_token' => $publicPart
+                'escrow_token' => $publicPart,
+                'token_hash' => $tokenHash,
             ];
 
             Log::info('Validating token via Core API', [
                 'token_hash' => substr($tokenHash, 0, 16) . '...',
-                'environment' => $environment, // From token (normalized: 'prod' -> 'production'), not from HTTP_HOST
-                'environment_raw' => $tokenData['environment'] ?? 'missing', // Original value from token
-                'core_url' => $coreUrl,
-                'validate_url' => $validateUrl,
+                'environment' => $environment,
+                'environment_raw' => $tokenData['environment'] ?? 'missing',
+                'core_urls' => $coreUrls,
                 'currency_from_token' => $tokenData['currency'] ?? 'unknown',
                 'public_part_preview' => substr($publicPart, 0, 200) . '...'
             ]);
-            
-            // Call Core API to validate token - Core expects token_hash, not escrow_token
-            $response = Http::timeout(10)->post($validateUrl, $requestBody);
-            
-            $responseBody = $response->body();
-            Log::debug('Core API validation response', [
-                'status' => $response->status(),
-                'headers' => $response->headers(),
-                'body' => $responseBody
-            ]);
-            
-            if (!$response->successful()) {
-                Log::error('Core API validation failed', [
+
+            $lastError = null;
+            foreach ($coreUrls as $coreUrl) {
+                $validateUrl = rtrim($coreUrl, '/') . '/api/escrow-tokens/validate';
+                $response = Http::timeout(10)->post($validateUrl, $requestBody);
+                $responseBody = $response->body();
+
+                Log::debug('Core API validation response', [
                     'status' => $response->status(),
-                    'token_hash' => substr($tokenHash, 0, 16) . '...',
-                    'environment' => $environment,
-                    'core_url' => $coreUrl,
-                    'validate_url' => $validateUrl,
-                    'response_body' => $responseBody,
-                    'currency_from_token' => $tokenData['currency'] ?? 'unknown',
-                    'public_part_preview' => substr($publicPart, 0, 200) . '...'
+                    'headers' => $response->headers(),
+                    'body' => $responseBody,
+                    'core_url' => $coreUrl
                 ]);
-                
+
+                if (!$response->successful()) {
+                    $responseJson = $response->json();
+                    $coreMessage = is_array($responseJson)
+                        ? (($responseJson['message'] ?? $responseJson['error'] ?? null))
+                        : null;
+                    $coreMessage = is_string($coreMessage) ? trim($coreMessage) : null;
+                    $lastError = $coreMessage
+                        ? ('Core API validation failed: HTTP ' . $response->status() . ' - ' . $coreMessage)
+                        : ('Core API validation failed: HTTP ' . $response->status());
+                    Log::warning('Core API validation attempt failed', [
+                        'status' => $response->status(),
+                        'token_hash' => substr($tokenHash, 0, 16) . '...',
+                        'environment' => $environment,
+                        'core_url' => $coreUrl,
+                        'validate_url' => $validateUrl,
+                        'response_body' => $responseBody,
+                        'core_message' => $coreMessage
+                    ]);
+                    continue;
+                }
+
+                $data = $response->json();
+                if (!isset($data['valid']) || !$data['valid']) {
+                    $lastError = $data['error'] ?? 'Token validation failed';
+                    Log::warning('Core API returned valid=false', [
+                        'token_hash' => substr($tokenHash, 0, 16) . '...',
+                        'core_url' => $coreUrl,
+                        'error' => $lastError
+                    ]);
+                    continue;
+                }
+
                 return [
-                    'valid' => false,
-                    'error' => 'Core API validation failed: HTTP ' . $response->status(),
-                    'token_data' => null
+                    'valid' => true,
+                    'token_data' => $data['token_data'] ?? null,
+                    'error' => null
                 ];
             }
-            
-            $data = $response->json();
-            
-            if (!isset($data['valid']) || !$data['valid']) {
-                return [
-                    'valid' => false,
-                    'error' => $data['error'] ?? 'Token validation failed',
-                    'token_data' => null
-                ];
-            }
-            
+
             return [
-                'valid' => true,
-                'token_data' => $data['token_data'] ?? null,
-                'error' => null
+                'valid' => false,
+                'error' => $lastError ?? 'Core API validation failed on all configured endpoints',
+                'token_data' => null
             ];
-            
+
         } catch (\Exception $e) {
             Log::error('Core API validation error', [
                 'error' => $e->getMessage()
