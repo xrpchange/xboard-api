@@ -13,6 +13,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Laravel registers HandleCors globally (uses vendor config/cors.php, paths api/*).
+        // We emit CORS only at Apache/Nginx — duplicate Allow-Origin breaks browsers (e.g. "*, *, *").
+        $middleware->remove(\Illuminate\Http\Middleware\HandleCors::class);
+
         $middleware->alias([
             'admin' => \App\Http\Middleware\AdminAccess::class,
         ]);

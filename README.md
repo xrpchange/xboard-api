@@ -71,6 +71,8 @@ php artisan key:generate
 - **Optional (sandbox virtual receipt bank):** `SANDBOX_VIRTUAL_BANK_WEBSITE`, `SANDBOX_VIRTUAL_BANK_COUNTRY_CODE`, `SANDBOX_VIRTUAL_BANK_ID` — documented in [docs/SANDBOX_VIRTUAL_BANK.md](docs/SANDBOX_VIRTUAL_BANK.md); commented examples in `.env.example`.
 - **Core API key** — `CORE_KEY` (sandbox) and `CORE_PRODUCTION_KEY` (production). Required for API-only Core endpoints (token creation, delete reservation). Must match Core config `[api] CORE_API_KEY`. See [docs/CORE_API_KEY_AND_API_ONLY_ENDPOINTS.md](docs/CORE_API_KEY_AND_API_ONLY_ENDPOINTS.md).
 
+**Web client (browser) CORS:** Laravel’s default global `HandleCors` is **removed** in `bootstrap/app.php` (deleting `config/cors.php` alone does not disable it). Set `Access-Control-*` on Apache (see `docs/CORS_WEB_CLIENT.md` and local `httpd-vhosts`) or on Nginx — **one layer only**; duplicate `Access-Control-Allow-Origin` breaks the browser. Sample Nginx: `nginx-xboard.conf`, `nginx-dev.conf`.
+
 **Client mode configuration:**
 - `APP_DEFAULT_ENVIRONMENT` - Default environment mode suggested to client applications (default: `sandbox`)
   - Values: `production` or `sandbox`
