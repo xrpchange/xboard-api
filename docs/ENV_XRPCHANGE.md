@@ -56,6 +56,12 @@ API поддерживает отдельную конфигурацию для 
 </VirtualHost>
 ```
 
+## CORS (веб-клиент)
+
+Заголовки `Access-Control-*` для API — **только в Apache** (`Header always set` в vhost, см. `httpd-vhosts.conf`). Laravel `HandleCors` отключён.
+
+На HTTPS перед Apache часто стоит **Nginx**: там **нельзя** дублировать `add_header Access-Control-*` в `location /api/` — браузер увидит `*, *` и заблокирует запрос. См. **`docs/CORS_XRPCHANGE_PRODUCTION.md`**.
+
 ## Важно
 
 **Fallback по хосту на сервере запрещён.** Переменная `APP_ENV` должна быть задана явно через Apache `SetEnv`. Не добавлять детекцию по `HTTP_HOST` или другие неявные методы на production.
