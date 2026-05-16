@@ -29,3 +29,7 @@ If the browser reports multiple values (e.g. `*, *` or `*, *, *`), more than one
 ## Client symptom
 
 `Failed to fetch` / `Load failed` on cross-origin API calls: check DevTools → Network → failed request → Headers, and verify only one source adds CORS.
+
+## `*.xrpchange.site` (HTTPS production)
+
+If the browser reports **`Allow-Origin` contains multiple values `*, *`** for `https://sandbox.api.xrpchange.site` (or `api.xrpchange.site`), Nginx in front of Apache still has legacy `add_header Access-Control-*` in `location /api/`. Fixing only local `httpd-vhosts.conf` does not help until production Nginx is updated. See **`docs/CORS_XRPCHANGE_PRODUCTION.md`** and sample **`nginx-xrpchange-api.conf`**.
