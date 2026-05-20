@@ -12,6 +12,7 @@ Set the same secret in the API as in Core:
 
 - **CORE_KEY** — used when calling **sandbox** Core (e.g. `CORE_URL` / sandbox.api.core.*). Must match Core `[api] CORE_API_KEY` in sandbox config.
 - **CORE_PRODUCTION_KEY** — used when calling **production** Core (e.g. `CORE_PRODUCTION_URL`). Must match Core `[api] CORE_API_KEY` in production config.
+- **CORE_CREATE_TIMEOUT** (default **120** seconds) — HTTP timeout for `POST /api/escrow-tokens/create`. The default **CORE_TIMEOUT** (10s) is too short when Core pre-funds Stellar testnet wallets (friendbot + trustline). Use **CORE_PRODUCTION_CREATE_TIMEOUT** for production if needed.
 
 The same key value can be used for both sandbox and production if both Core configs use the same `CORE_API_KEY`. Generate a secure value, for example:
 

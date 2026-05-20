@@ -140,6 +140,21 @@ class EscrowTokenService
         return [$normalized, $defaultKey];
     }
 
+    private function useProductionCoreConfig(Request $request): bool
+    {
+        return ! preg_match('/^(sandbox\.|dev\.)/', $request->getHost());
+    }
+
+    /**
+     * Token creation on Core can exceed the default Core HTTP timeout (Stellar friendbot/trustline, slow RPC).
+     */
+    private function coreCreateTimeoutSeconds(Request $request): int
+    {
+        $prefix = $this->useProductionCoreConfig($request) ? 'services.core_production' : 'services.core';
+
+        return max(10, (int) config("{$prefix}.create_timeout", 120));
+    }
+
     /**
      * Create escrow token through core API
      * Stage 1: Get open part of token
@@ -158,7 +173,7 @@ class EscrowTokenService
     ): array {
         [$coreUrl, $coreKey] = $this->resolveCoreUrlAndKey($request, $coreBaseUrlFromClient);
 
-        $timeout = config('services.core.timeout', 10);
+        $timeout = $this->coreCreateTimeoutSeconds($request);
 
         try {
             $http = Http::timeout($timeout);
