@@ -1,0 +1,24 @@
+---
+description: Never edit the OS hosts file — XBoard uses real HTTPS domains via DNS
+alwaysApply: true
+---
+
+# Never modify the system hosts file
+
+## Hard rule
+
+- **Do not read, edit, append to, or delete lines in the machine’s hosts file** (Windows: `C:\Windows\System32\drivers\etc\hosts`; Linux/macOS: `/etc/hosts`).
+- **Do not run shell commands** that change hosts (`Add-Content`, `Set-Content`, `echo >>`, `sudo tee`, etc.), even to “fix” DNS, timeouts, or local dev.
+- **Do not ask the agent to do it on the user’s behalf** without explicit user request — default is **never**.
+
+## Why (XBoard)
+
+Public dev/prod URLs are **real HTTPS hostnames** (e.g. `https://dev.xdexboard.com/`, `sandbox.api.xdexboard.com`, `sandbox.api.core.xdexboard.com`) resolved by **DNS** to the server (e.g. `195.46.191.38`). Redirecting those names to `127.0.0.1` breaks the site (`ERR_CONNECTION_REFUSED`) when nothing listens locally on 80/443.
+
+Local Apache/XAMPP paths in docs are **deploy/build output**, not a substitute for editing hosts.
+
+## If something does not resolve or connect
+
+- Check DNS, firewall, Apache/nginx, TLS, and service status — **explain to the user** what to verify.
+- Fix **project** config (`.env`, vhosts, `CORE_*` URLs) — not OS hosts.
+- Optional: `ipconfig /flushdns` **only** after the user (not the agent) fixed hosts/DNS externally — do not combine with hosts edits.
