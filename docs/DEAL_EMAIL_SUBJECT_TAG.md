@@ -101,13 +101,17 @@ Buyer pays crypto first and receives crypto second.
 
 ## Seller external mailbox (`seller_notification_email`)
 
-When `start_deal` is sent and `seller_notification_email` differs from the seller’s lot mailbox, the API sends a **second** copy to that address. The body is the same as the buyer’s localized message **plus one technical line** (English) with an **app deep link** so the seller can tap to open the deal in the Android app:
+When `start_deal` is sent and `seller_notification_email` differs from the seller’s lot mailbox, the API sends a **second** copy to that address. The body is the same as the buyer’s localized message **plus technical lines** (English) with **open-deal links** so the seller can tap to open the deal on another device or in the browser:
 
-- **Primary link (HTTPS):** same **scheme and host as the API request** that triggered `start_deal`, path `/open-deal?lot_id=<id>&node_key=<node_domain>`. No `APP_URL` or other env base — the public landing is on the same host the client called. **Gmail makes HTTPS links tappable; they often strip `xboard://` from `href`.**
-- **Secondary:** fixed app deep link `xboard://deal/open?...` (plain + HTML fallback), defined in code (`App\Support\DealSellerOpenLinks`).
-- The notification is sent as **multipart** (`text/plain` + `text/html`) with `<a href="https://...">` as the main button text when HTTPS is present.
+- **Web client (HTTPS):** `{client_web_origin}/open-deal?lot_id=<id>&node_key=<node_domain>`. Pattern: **`https://{domain}`** (production web) and **`https://dev.{domain}`** (dev web) for **any** project domain (`xdexboard.com`, `xrpchange.site`, …). **No** `sandbox.{domain}` web — sandbox API emails use production web. Rules: **`docs/WEB_CLIENT_ORIGINS.md`**.
+- The origin is sent as optional JSON **`client_web_origin`** (HTTPS, host only). On **web**, the client uses `window.location.origin`. On **Android**, it derives from API endpoint + optional **`experimentalProjectDomain`** (`PRODUCTION` and `SANDBOX` → production web; `DEV` → `dev.{domain}`).
+- If the client omits it, the API falls back: `dev.api.{domain}` → `https://dev.{domain}`; `sandbox.api.{domain}` and `api.{domain}` → `https://{domain}`.
+- **App landing (HTTPS):** same **scheme and host as the API request** that triggered `start_deal`, path `/open-deal?lot_id=…&node_key=…`. No `APP_URL` — redirects toward the installed app. **Gmail makes HTTPS links tappable; they often strip `xboard://` from `href`.**
+- **App deep link:** fixed `xboard://deal/open?…` (plain + HTML fallback), defined in code (`App\Support\DealSellerOpenLinks`).
+- The notification is sent as **multipart** (`text/plain` + `text/html`) with separate buttons for web browser and app when links are available.
 - `node_key` is the node’s `domain` from the database, lowercased, with a leading `api.` removed (same normalization idea as the client).
-- The lot mailbox email and in-app chat copy **do not** include this line (only the external notification).
+- The lot mailbox email and in-app chat copy **do not** include these lines (only the external notification).
+- **`send-test-notification-email`** (with `{lot}` or standalone) accepts the same optional **`client_web_origin`** and appends the same link set. Standalone (draft lot before save) also accepts **`open_deal_lot_id`** / **`open_deal_node_key`** from the client (typically `test` + node domain) so the HTML/plain layout matches real notifications.
 
 ## External emergency notifications (not the main deal transport)
 
@@ -122,7 +126,7 @@ Rules:
 Current target policy:
 
 - `start_deal`: server may additionally send an external notification to the seller using `exchange_lots.seller_notification_email`.
-- Manual emergency escalation from the client chat may trigger an external email when the sender believes the recipient did not notice the in-system IMAP/chat message.
+- Manual emergency escalation from the client chat may trigger an external email when the sender believes the recipient did not notice the in-system IMAP/chat message. Uses **`POST …/{lot}/send-test-notification-email`** (same multipart + links as above).
 - Seller-side external escalation should use `seller_notification_email`.
 - Buyer-side external escalation is optional and secondary; buyer attention should primarily be handled in the client UI, not by assuming external email is reliable on the first deal.
 
