@@ -66,5 +66,6 @@ class Kernel extends HttpKernel
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
         'escrow.token' => \App\Http\Middleware\ValidateEscrowToken::class,
         'admin' => \App\Http\Middleware\AdminAccess::class,
+        'core.key' => \App\Http\Middleware\VerifyCoreApiKey::class,
     ];
 } 

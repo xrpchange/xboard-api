@@ -31,6 +31,12 @@ php artisan test --group spec-ARB-004
 | LOT-005 | `POST …/send-message` with `message_type=start_deal` | Reject when `exchange_lots.is_active` is false (`error_code=lot_inactive`, HTTP 409), so a seller-disabled listing cannot start a new deal. | — | `ExchangeLotController::sendMessageToSeller`. Add HTTP feature test when escrow-token + lot seed harness exists. |
 | LOT-006 | `POST …/send-message` (`start_deal`), `POST …/send-test-notification-email` + optional `client_web_origin` | Web `/open-deal` on `https://{domain}` or `https://dev.{domain}` (any project domain; sandbox API → prod web). Plus API app-landing and `xboard://`. | `tests/Unit/ClientWebOriginTest.php` | `App\Support\ClientWebOrigin`; `docs/WEB_CLIENT_ORIGINS.md`. |
 
+## Deal AML
+
+| ID | Document / route | Behavior (short) | Test(s) | Notes |
+|----|------------------|------------------|---------|--------|
+| AML-001 | `docs/AML_DEAL_PERSISTENCE.md`, `GET /api/v1/internal/aml/outstanding-charges` | AML state only on `transactions.aml_check_json` (pending sale); `AML_CHECK_FAILED` → user-fault `token_charges`; `AML_PROVIDER_UNAVAILABLE` → no charge + operator email (`AML_ADMIN_ALERT_EMAIL` or Core `admin_email`); outstanding = sum of `token_charges` for token hash. | `tests/Unit/DealAmlPersistenceServiceTest.php` | No `deal_aml_*` tables; Core `POST /api/internal/notification-admin-email` for default inbox. |
+
 ## General API
 
 | ID | Document / route | Behavior (short) | Test(s) | Notes |

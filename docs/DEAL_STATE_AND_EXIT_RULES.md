@@ -40,7 +40,10 @@ So deal lock is still **per buyer** and now also **per transaction time window**
   - seller crypto-second leg: `POST /exchange-lots/{lot}/seller-crypto-payout-to-buyer` -> Core `POST /api/deal-payout-to-buyer-address`
 - **Stage preservation:** buyer crypto-first server payout does **not** skip seller confirmation. After successful Core transfer, API stores `transactions.buyer_crypto_payout_tx_hash` and inserts deal tag `buyer_crypto_tx` with the real blockchain tx id. Seller still confirms `seller_received_funds` in the normal staged flow.
 - **Seller completion leg:** seller crypto payout still completes the transaction server-side, stores `transactions.seller_crypto_payout_tx_hash`, marks the pending sale `completed`, inserts `deal_completed_seller`, and calls Core completion best-effort so reservation hold is released and the stored service fee is sent to the project wallet.
-- **AML failure behavior:** when Core returns `AML_CHECK_FAILED`, API relays the message/error to the client and leaves the deal in its current stage. Core is responsible for persisting AML checks and reserve charges.
+- **AML failure behavior (two classes only):** Core performs screening only; API merges snapshots into `transactions.aml_check_json` (`DealAmlPersistenceService`) and leaves the deal stage unchanged.
+  - **`AML_CHECK_FAILED` (422):** user did not pass clean-wallet rules → API may append **`token_charges`** on the pending sale row (screening cost withheld from that side’s token via outstanding `aml_fee`).
+  - **`AML_PROVIDER_UNAVAILABLE` (503):** provider/server error → **no** `token_charges`; API emails the operator (default: Core `[admin] admin_email`, same inbox as verification codes; optional override **`AML_ADMIN_ALERT_EMAIL`**; full Core JSON in the mail body).
+  - Client: localized copy for each class (`deal.amlProviderUnavailable` states no charge). See `docs/AML_DEAL_PERSISTENCE.md` and `xboard-core/docs/AML_DEAL_FLOW.md`.
 
 See also client doc: `xboard-client/docs/DEAL_IN_PROGRESS_SCREENS.md` (§ 5).
 

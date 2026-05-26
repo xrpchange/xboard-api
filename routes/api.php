@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\ExchangeLotController;
 use App\Http\Controllers\Api\BuyTriggerController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\NodeController;
+use App\Http\Controllers\Api\DealAmlInternalController;
 use App\Http\Controllers\Api\EscrowTokenController;
 use App\Http\Controllers\Api\LotMailboxController;
 use App\Http\Controllers\Api\Admin\NodeAdminController;
@@ -53,6 +54,11 @@ Route::prefix('v1/email-providers')->group(function () {
 // Authentication (without middleware)
 Route::prefix('v1/auth')->group(function () {
     Route::post('/validate-token', [AuthController::class, 'validateToken']);
+});
+
+// Core → API internal (X-Core-Key, same secret as Core [api] CORE_API_KEY)
+Route::prefix('v1/internal')->middleware('core.key')->group(function () {
+    Route::get('/aml/outstanding-charges', [DealAmlInternalController::class, 'outstandingCharges']);
 });
 
 // Reference data (without authentication)

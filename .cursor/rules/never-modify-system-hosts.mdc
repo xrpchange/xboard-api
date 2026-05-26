@@ -13,7 +13,7 @@ alwaysApply: true
 
 ## Why (XBoard)
 
-Public dev/prod URLs are **real HTTPS hostnames** (e.g. `https://dev.xdexboard.com/`, `sandbox.api.xdexboard.com`, `sandbox.api.core.xdexboard.com`) resolved by **DNS** to the server (e.g. `195.46.191.38`). Redirecting those names to `127.0.0.1` breaks the site (`ERR_CONNECTION_REFUSED`) when nothing listens locally on 80/443.
+Public URLs are **real HTTPS hostnames** (e.g. `https://xdexboard.com/`, `sandbox.api.xdexboard.com`, `sandbox.api.core.xdexboard.com`) resolved by **DNS** to the server (e.g. nginx on `khasanov@xrp`). Redirecting those names to `127.0.0.1` breaks the site (`ERR_CONNECTION_REFUSED`) when nothing listens locally on 80/443.
 
 Local Apache/XAMPP paths in docs are **deploy/build output**, not a substitute for editing hosts.
 

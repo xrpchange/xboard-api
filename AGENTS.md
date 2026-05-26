@@ -30,6 +30,7 @@ Key points:
 Подробнее: `docs/TERMINOLOGY.md`.
 - Integrations:
   - XBoard Core — business operations for tokens/escrow
+  - **Deal AML:** Core screens only; API persists `transactions.aml_check_json`; provider failures → `AML_ADMIN_ALERT_EMAIL` or Core `admin_email` — **`docs/AML_DEAL_PERSISTENCE.md`**
   - Monero Balance Service — proxy for XMR balance checks (no "fake" data)
   - `smalot/pdfparser` (LGPL-3.0) — server-side extraction of plain text from bank receipt PDFs for the AI arbiter prompt (`docs/AI_ARBITER_SERVER.md`).
 - Logs — no secrets.

@@ -1,6 +1,6 @@
 # CORS for the web client (browser)
 
-The Compose web app calls this API from **another origin** (e.g. `https://dev.xdexboard.com` → `https://dev.api.xdexboard.com`). Browsers require a valid CORS policy on API responses.
+The Compose web app calls this API from **another origin** (e.g. `https://xdexboard.com` → `https://api.xdexboard.com`). Browsers require a valid CORS policy on API responses.
 
 ## Laravel (this repo)
 

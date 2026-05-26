@@ -42,6 +42,11 @@ return [
         ],
     ],
 
+    'aml' => [
+        // Optional override. Default: Core [admin] admin_email via /api/internal/notification-admin-email (same inbox as verification codes).
+        'admin_alert_email' => env('AML_ADMIN_ALERT_EMAIL', ''),
+    ],
+
     'core' => [
         'url' => env('CORE_URL'),  // REQUIRED: Must be set in .env (sandbox Core URL)
         'key' => env('CORE_KEY', ''),
