@@ -195,6 +195,8 @@ After starting the server, documentation is available at:
 
 **Administrator mode (client Developer settings):** `admin_mode_password` (Core) unlocks the client and gates disclosure such as **`admin_email`**; it does **not** replace **email verification code + `admin_password`** for mutating Core settings. See **`docs/ADMIN_MODE_SECURITY.md`**.
 
+**Deal AML (crypto payout):** screening in Core; state and user-fault charges on `transactions.aml_check_json` only. Provider failures → operator email (`AML_ADMIN_ALERT_EMAIL` or Core `admin_email`). See **`docs/AML_DEAL_PERSISTENCE.md`** and **`xboard-core/docs/AML_DEAL_FLOW.md`**.
+
 ### Fee Wallet Admin Flow (clean / dirty)
 
 This flow allows updating Core fee wallet destination parameters from the client without direct server file access.

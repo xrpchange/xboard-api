@@ -2,7 +2,7 @@
 
 ## Symptom
 
-From `https://dev.xdexboard.com` (or another web origin):
+From `https://xdexboard.com` (or another web origin):
 
 ```text
 Access-Control-Allow-Origin header contains multiple values '*, *', but only one is allowed.
@@ -23,7 +23,7 @@ Local XAMPP `httpd-vhosts.conf` alone is not enough if public HTTPS goes through
 
 ```bash
 curl -sI "https://sandbox.api.xrpchange.site/api/v1/countries" \
-  -H "Origin: https://dev.xdexboard.com" | grep -i access-control
+  -H "Origin: https://xdexboard.com" | grep -i access-control
 ```
 
 **Bad** (duplicate):
