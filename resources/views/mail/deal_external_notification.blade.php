@@ -1,9 +1,11 @@
 @php
     /** @var string $body */
-    /** @var string|null $webUrl API HTTPS landing (/open-deal → app) */
+    /** @var string|null $webUrl API HTTPS landing (/open-deal) — green button (Gmail blocks xboard:// in HTML) */
     /** @var string|null $clientWebUrl Web client origin + /open-deal */
-    /** @var string|null $appUrl xboard:// deep link */
-    $hasLinks = $clientWebUrl || $webUrl || $appUrl;
+    /** @var string|null $appUrl xboard:// copy fallback */
+    /** @var string|null $appIntentUrl intent:// for landing page only */
+    $greenHref = $webUrl;
+    $hasLinks = $greenHref || $clientWebUrl || $appUrl;
 @endphp
 
 <!doctype html>
@@ -28,7 +30,6 @@
                 </tr>
                 <tr>
                     <td style="padding:14px 20px 12px 20px;text-align:left;">
-                        {{-- No whitespace inside pre-wrap block: indentation in Blade would become visible indent. --}}
                         <div style="white-space:pre-wrap;margin:0;padding:0;text-indent:0;">{!! nl2br(e($body), false) !!}</div>
                     </td>
                 </tr>
@@ -38,43 +39,39 @@
                         <td style="padding:12px 14px;border-top:1px solid #e2e2e2;text-align:left;">
                             <div style="font-weight:500;margin-bottom:10px;text-align:center;">Open this deal</div>
 
+                            @if ($greenHref)
+                                <div style="margin:0 0 12px 0;padding:10px;background:#fff;border:1px solid #ddd;border-radius:4px;">
+                                    <a href="{{ $greenHref }}"
+                                       target="_blank" rel="noopener noreferrer"
+                                       style="display:inline-block;margin-bottom:6px;padding:8px 14px;border-radius:4px;
+                                       background-color:#2d6a4f;color:#ffffff;text-decoration:none;font-size:13px;font-weight:500;">
+                                        Open in XBoard app
+                                    </a>
+                                    <div style="font-size:11px;color:#666;word-break:break-all;">{{ $greenHref }}</div>
+                                </div>
+                            @endif
+
                             @if ($clientWebUrl)
                                 <div style="margin:0 0 12px 0;padding:10px;background:#fff;border:1px solid #ddd;border-radius:4px;">
                                     <a href="{{ $clientWebUrl }}"
+                                       target="_blank" rel="noopener noreferrer"
                                        style="display:inline-block;margin-bottom:6px;padding:8px 14px;border-radius:4px;
-                                       background-color:#2d6a4f;color:#ffffff;text-decoration:none;font-size:13px;font-weight:500;">
+                                       background-color:#4a4a4a;color:#ffffff;text-decoration:none;font-size:13px;font-weight:500;">
                                         Open in web browser
                                     </a>
                                     <div style="font-size:11px;color:#666;word-break:break-all;">{{ $clientWebUrl }}</div>
                                 </div>
                             @endif
 
-                            @if ($webUrl)
-                                <div style="margin:0 0 12px 0;padding:10px;background:#fff;border:1px solid #ddd;border-radius:4px;">
-                                    <a href="{{ $webUrl }}"
-                                       style="display:inline-block;margin-bottom:6px;padding:8px 14px;border-radius:4px;
-                                       background-color:#4a4a4a;color:#ffffff;text-decoration:none;font-size:13px;font-weight:500;">
-                                        Open in XBoard app (HTTPS)
-                                    </a>
-                                    <div style="font-size:11px;color:#666;word-break:break-all;">{{ $webUrl }}</div>
-                                </div>
-                            @endif
-
-                            @if ($appUrl)
+                            @if ($appUrl && $appUrl !== $greenHref)
                                 <div style="margin:0;padding:10px;background:#fff;border:1px solid #ddd;border-radius:4px;">
-                                    <div style="font-size:13px;font-weight:500;margin-bottom:6px;">App link (copy if needed)</div>
-                                    <div style="font-size:11px;color:#444;word-break:break-all;font-family:monospace;">{{ $appUrl }}</div>
+                                    <div style="font-size:12px;color:#555;margin-bottom:4px;">App link (if the green button does not open the app):</div>
+                                    <div style="font-size:11px;color:#666;word-break:break-all;">{{ $appUrl }}</div>
                                 </div>
                             @endif
                         </td>
                     </tr>
                 @endif
-
-                <tr>
-                    <td style="padding:10px 14px;border-top:1px solid #e5e5e5;color:#888;font-size:11px;">
-                        Three ways to open: web client, HTTPS app landing, or the app link above. If a button does not work, copy the URL from this section or from the plain-text part of the email.
-                    </td>
-                </tr>
             </table>
         </td>
     </tr>
