@@ -106,8 +106,9 @@ When `start_deal` is sent and `seller_notification_email` differs from the selle
 - **Web client (HTTPS):** `{client_web_origin}/open-deal?lot_id=<id>&node_key=<node_domain>`. Pattern: **`https://{domain}`** (production web) and **`https://dev.{domain}`** (dev web) for **any** project domain (`xdexboard.com`, `xrpchange.site`, …). **No** `sandbox.{domain}` web — sandbox API emails use production web. Rules: **`docs/WEB_CLIENT_ORIGINS.md`**.
 - The origin is sent as optional JSON **`client_web_origin`** (HTTPS, host only). On **web**, the client uses `window.location.origin`. On **Android**, it derives from API endpoint + optional **`experimentalProjectDomain`** (`PRODUCTION` and `SANDBOX` → production web; `DEV` → `dev.{domain}`).
 - If the client omits it, the API falls back: `dev.api.{domain}` → `https://dev.{domain}`; `sandbox.api.{domain}` and `api.{domain}` → `https://{domain}`.
-- **App landing (HTTPS):** same **scheme and host as the API request** that triggered `start_deal`, path `/open-deal?lot_id=…&node_key=…`. No `APP_URL` — redirects toward the installed app. **Gmail makes HTTPS links tappable; they often strip `xboard://` from `href`.**
-- **App deep link:** fixed `xboard://deal/open?…` (plain + HTML fallback), defined in code (`App\Support\DealSellerOpenLinks`).
+- **App (primary on Android):** `xboard://deal/open?…` on the green button (`DealSellerOpenLinks::appDeepLink`). Do **not** use `intent://` in email — Gmail ignores it; `browser_fallback_url` opens HTTPS inside the mail WebView.
+- **App landing (HTTPS):** same **scheme and host as the API request**, path `/open-deal?lot_id=…&node_key=…` — landing redirects to `xboard://` / `intent://` if opened in a browser.
+- **App deep link:** `xboard://deal/open?…` (copy fallback), `DealSellerOpenLinks::APP_DEEP_LINK_BASE`.
 - The notification is sent as **multipart** (`text/plain` + `text/html`) with separate buttons for web browser and app when links are available.
 - `node_key` is the node’s `domain` from the database, lowercased, with a leading `api.` removed (same normalization idea as the client).
 - The lot mailbox email and in-app chat copy **do not** include these lines (only the external notification).

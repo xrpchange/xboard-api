@@ -2082,11 +2082,12 @@ class ExchangeLotController extends Controller
                 $links = $this->buildOpenDealEmailLinks($clientWebOriginRaw, $this->sellerOpenDealQueryParams($lot));
                 $clientWebUrl = $links['clientWebUrl'];
                 $webUrl = $links['appLandingUrl'];
+                $appIntentUrl = $links['appIntentUrl'];
                 $appUrl = $links['appUrl'];
                 try {
                     if ($webUrl !== null || $appUrl !== null || $clientWebUrl !== null) {
-                        $plainForExternal = $this->appendOpenDealPlainTextLinks($body, $clientWebUrl, $webUrl, $appUrl);
-                        $htmlForExternal = $this->buildSellerExternalNotificationHtml($body, $webUrl, $clientWebUrl, $appUrl);
+                        $plainForExternal = $this->appendOpenDealPlainTextLinks($body, $clientWebUrl, $appIntentUrl, $webUrl, $appUrl);
+                        $htmlForExternal = $this->buildSellerExternalNotificationHtml($body, $webUrl, $clientWebUrl, $appIntentUrl, $appUrl);
                         $this->sendDealEmailHtmlMultipart(
                             to: $sellerNotificationEmail,
                             subject: $subject,
@@ -2145,14 +2146,15 @@ class ExchangeLotController extends Controller
                         $links = $this->buildOpenDealEmailLinks($clientWebOriginRaw, $this->sellerOpenDealQueryParams($lot));
                         $clientWebUrl = $links['clientWebUrl'];
                         $webUrl = $links['appLandingUrl'];
+                        $appIntentUrl = $links['appIntentUrl'];
                         $appUrl = $links['appUrl'];
                         try {
                             if ($webUrl !== null || $appUrl !== null || $clientWebUrl !== null) {
                                 $buyerPlain = is_string($buyerExternalBody) && trim($buyerExternalBody) !== ''
                                     ? trim($buyerExternalBody)
                                     : 'You have opened the deal window for this lot. The seller has been notified about your entry.';
-                                $buyerPlainWithLinks = $this->appendOpenDealPlainTextLinks($buyerPlain, $clientWebUrl, $webUrl, $appUrl);
-                                $buyerHtml = $this->buildSellerExternalNotificationHtml($buyerPlain, $webUrl, $clientWebUrl, $appUrl);
+                                $buyerPlainWithLinks = $this->appendOpenDealPlainTextLinks($buyerPlain, $clientWebUrl, $appIntentUrl, $webUrl, $appUrl);
+                                $buyerHtml = $this->buildSellerExternalNotificationHtml($buyerPlain, $webUrl, $clientWebUrl, $appIntentUrl, $appUrl);
                                 $this->sendDealEmailHtmlMultipart(
                                     to: $buyerExternalEmail,
                                     subject: is_string($buyerExternalSubject) && trim($buyerExternalSubject) !== ''
@@ -2317,9 +2319,8 @@ class ExchangeLotController extends Controller
         $subject = $request->input('subject');
         $subject = is_string($subject) && trim($subject) !== '' ? trim($subject) : sprintf('Deal message — Lot #%s', (string) $lot->id);
 
-        // Deep links (web client + HTTPS app landing + app) — same helpers as start_deal external notification.
         $clientWebOriginRaw = $request->input('client_web_origin');
-        $links = ['clientWebUrl' => null, 'appLandingUrl' => null, 'appUrl' => null];
+        $links = ['clientWebUrl' => null, 'appLandingUrl' => null, 'appIntentUrl' => null, 'appUrl' => null];
         try {
             $links = $this->buildOpenDealEmailLinks($clientWebOriginRaw, $this->sellerOpenDealQueryParams($lot));
         } catch (\Throwable $e) {
@@ -2330,6 +2331,7 @@ class ExchangeLotController extends Controller
         }
         $clientWebUrl = $links['clientWebUrl'];
         $webUrl = $links['appLandingUrl'];
+        $appIntentUrl = $links['appIntentUrl'];
         $appLink = $links['appUrl'];
 
         $fromAddress = config('mail.from.address', 'noreply@xdexboard.com');
@@ -2337,9 +2339,9 @@ class ExchangeLotController extends Controller
         $tagJson = json_encode(['t' => 'start_deal', 'lot_id' => $lot->id]);
 
         $plainBody = ($webUrl !== null || $appLink !== null || $clientWebUrl !== null)
-            ? $this->appendOpenDealPlainTextLinks($body, $clientWebUrl, $webUrl, $appLink)
+            ? $this->appendOpenDealPlainTextLinks($body, $clientWebUrl, $appIntentUrl, $webUrl, $appLink)
             : $body;
-        $htmlBody = $this->buildSellerExternalNotificationHtml($body, $webUrl, $clientWebUrl, $appLink);
+        $htmlBody = $this->buildSellerExternalNotificationHtml($body, $webUrl, $clientWebUrl, $appIntentUrl, $appLink);
 
         try {
             $this->sendDealEmailHtmlMultipart(
@@ -2421,6 +2423,7 @@ class ExchangeLotController extends Controller
         );
         $clientWebUrl = $links['clientWebUrl'];
         $webUrl = $links['appLandingUrl'];
+        $appIntentUrl = $links['appIntentUrl'];
         $appLink = $links['appUrl'];
 
         $fromAddress = config('mail.from.address', 'noreply@xdexboard.com');
@@ -2428,9 +2431,9 @@ class ExchangeLotController extends Controller
         $tagJson = json_encode(['t' => 'start_deal', 'lot_id' => 'test']);
 
         $plainBody = ($webUrl !== null || $appLink !== null || $clientWebUrl !== null)
-            ? $this->appendOpenDealPlainTextLinks($body, $clientWebUrl, $webUrl, $appLink)
+            ? $this->appendOpenDealPlainTextLinks($body, $clientWebUrl, $appIntentUrl, $webUrl, $appLink)
             : $body;
-        $htmlBody = $this->buildSellerExternalNotificationHtml($body, $webUrl, $clientWebUrl, $appLink);
+        $htmlBody = $this->buildSellerExternalNotificationHtml($body, $webUrl, $clientWebUrl, $appIntentUrl, $appLink);
 
         try {
             $this->sendDealEmailHtmlMultipart(
@@ -5263,7 +5266,7 @@ class ExchangeLotController extends Controller
             try {
                 $fromAddress = config('mail.from.address', 'noreply@xdexboard.com');
                 $fromName = config('mail.from.name', 'XBoard');
-                $htmlBody = $this->buildSellerExternalNotificationHtml($body, null, null, null);
+                $htmlBody = $this->buildSellerExternalNotificationHtml($body, null, null, null, null);
                 $this->sendDealEmailHtmlMultipart(
                     to: $to,
                     subject: $subject,
@@ -5949,11 +5952,16 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * @return array{clientWebUrl: ?string, appLandingUrl: ?string, appUrl: ?string}
+     * @return array{clientWebUrl: ?string, appLandingUrl: ?string, appIntentUrl: ?string, appUrl: ?string}
      */
     private function buildOpenDealEmailLinks(?string $clientWebOrigin, ?array $params): array
     {
-        $empty = ['clientWebUrl' => null, 'appLandingUrl' => null, 'appUrl' => null];
+        $empty = [
+            'clientWebUrl' => null,
+            'appLandingUrl' => null,
+            'appIntentUrl' => null,
+            'appUrl' => null,
+        ];
         if ($params === null) {
             return $empty;
         }
@@ -5974,13 +5982,13 @@ class ExchangeLotController extends Controller
                 $appLandingUrl = $base.'/open-deal?'.$query;
             }
         }
-        $appBase = rtrim(DealSellerOpenLinks::APP_DEEP_LINK_BASE, '?&');
-        $sep = str_contains($appBase, '?') ? '&' : '?';
-        $appUrl = $appBase.$sep.$query;
+        $appUrl = DealSellerOpenLinks::appDeepLink($params);
+        $appIntentUrl = DealSellerOpenLinks::androidIntentUri($params);
 
         return [
             'clientWebUrl' => $clientWebUrl,
             'appLandingUrl' => $appLandingUrl,
+            'appIntentUrl' => $appIntentUrl,
             'appUrl' => $appUrl,
         ];
     }
@@ -5996,17 +6004,18 @@ class ExchangeLotController extends Controller
     private function appendOpenDealPlainTextLinks(
         string $body,
         ?string $clientWebUrl,
+        ?string $appIntentUrl,
         ?string $appLandingUrl,
         ?string $appUrl
     ): string {
+        if ($appLandingUrl !== null) {
+            $body .= "\n\nOpen in XBoard app: ".$appLandingUrl;
+        }
         if ($clientWebUrl !== null) {
             $body .= "\n\nOpen in web browser: ".$clientWebUrl;
         }
-        if ($appLandingUrl !== null) {
-            $body .= "\n\nOpen in XBoard app (HTTPS): ".$appLandingUrl;
-        }
         if ($appUrl !== null) {
-            $body .= "\n\nOpen in XBoard app (app link): ".$appUrl;
+            $body .= "\n\nApp link (copy if needed): ".$appUrl;
         }
 
         return $body;
@@ -6036,12 +6045,14 @@ class ExchangeLotController extends Controller
         string $messageBody,
         ?string $webUrl,
         ?string $clientWebUrl,
+        ?string $appIntentUrl,
         ?string $appUrl
     ): string {
         return view('mail.deal_external_notification', [
             'body' => $messageBody,
             'webUrl' => $webUrl,
             'clientWebUrl' => $clientWebUrl,
+            'appIntentUrl' => $appIntentUrl,
             'appUrl' => $appUrl,
         ])->render();
     }
