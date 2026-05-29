@@ -1,0 +1,20 @@
+# ~/.ssh/config on server@xrpchange.site (user: server)
+# One deploy key per private repo (GitHub allows a key on only one repository).
+
+Host github-xboard-api-readonly
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519_xboard_readonly
+    IdentitiesOnly yes
+
+Host github-xboard-core-readonly
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519_xboard_core_readonly
+    IdentitiesOnly yes
+
+Host github-xboard-client-readonly
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519_xboard_client_readonly
+    IdentitiesOnly yes
