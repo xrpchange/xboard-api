@@ -1,2 +1,3 @@
+# API is not for search indexing.
 User-agent: *
-Disallow:
+Disallow: /
