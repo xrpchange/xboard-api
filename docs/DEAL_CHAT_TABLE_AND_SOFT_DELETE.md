@@ -50,10 +50,10 @@ Email-based inserts use the same `body`, `deal_tag`, and sender/recipient as the
 
 ## Per-side soft delete (clearing mailbox)
 
-- **Behaviour:** When the user clears the deal mailbox in the client, the client calls **`POST /v1/exchange-lots/{lot}/mark-chat-cleared`**. The API sets **`deleted_by_seller_at`** (if requester is seller) or **`deleted_by_buyer_at`** (if buyer) on all messages for that lot. The other side's view is unchanged.
+- **Behaviour:** When the user clears the deal mailbox in the client, the client calls **`POST /v1/exchange-lots/{lot}/mark-chat-cleared`**. The API sets **`deleted_by_seller_at`** / **`deleted_by_buyer_at`** only on rows **without** a `deal_tag` (plain chat / notifications). Rows with **`deal_tag`** (deal progress: `start_deal`, `payment_details`, …) stay visible for that side so **«Этапы сделки»** do not reset. The other side's view is unchanged.
 - **Auth:** Requester must be seller or buyer for this lot (validated via escrow token: `wallet_address` for seller, `token_hash` vs `buyer_escrow_token_hash` for buyer). Returns 403 if not authorized.
 - **Response:** `{ "success": true, "message": "Chat marked as cleared.", "count": N }` where `N` is the number of rows updated.
-- **Reading chat:** `GET /v1/exchange-lots/{lot}/chat-messages` returns only rows where **`deleted_by_seller_at` IS NULL** (seller) or **`deleted_by_buyer_at` IS NULL** (buyer) (Laravel’s default scope for soft-deleted models). So after “clear mailbox”, the chat list is empty for that lot until new messages are sent.
+- **Reading chat:** `GET /v1/exchange-lots/{lot}/chat-messages` returns only rows where **`deleted_by_seller_at` IS NULL** (seller) or **`deleted_by_buyer_at` IS NULL** (buyer). After “clear mailbox”, plain chat lines disappear; **`deal_tag`** rows were not cleared, so deal steps stay correct.
 
 ---
 
