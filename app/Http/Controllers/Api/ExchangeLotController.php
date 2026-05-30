@@ -15,6 +15,7 @@ use App\Models\FiatCurrency;
 use App\Models\Node;
 use App\Models\Transaction;
 use App\Services\Arbiter\ArbiterService;
+use App\Services\Deal\DealWebPushNotifier;
 use App\Services\DealAmlAdminAlertService;
 use App\Services\DealAmlPersistenceService;
 use App\Services\EscrowTokenValidationService;
@@ -50,6 +51,7 @@ class ExchangeLotController extends Controller
         private ArbiterService $arbiterService,
         private DealAmlPersistenceService $dealAmlPersistence,
         private DealAmlAdminAlertService $dealAmlAdminAlert,
+        private DealWebPushNotifier $dealWebPushNotifier,
     ) {}
 
     /**
@@ -5885,6 +5887,8 @@ class ExchangeLotController extends Controller
                     }
                 }
             }
+
+            $this->dealWebPushNotifier->notifyDealChatRecipient($lot, $senderSide);
         } catch (\Throwable $e) {
             Log::warning('[exchange-lots] insertDealChatMessage failed', [
                 'lot_id' => $lot->id,

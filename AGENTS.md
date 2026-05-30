@@ -4,6 +4,8 @@ XBoard API (PHP/Laravel).
 
 **IMPORTANT: Read this file first if you have memory issues or are unsure about the project structure!**
 
+**`xrpchange.site` is out of scope** unless the user explicitly asks in the current chat — see `.cursor/rules/xrpchange-out-of-scope.mdc`. Default API hosts: **`*.xdexboard.com`** with **`.env`** on this PC.
+
 Start by reading:
 
 - README.md — service purpose, local setup, deployment
