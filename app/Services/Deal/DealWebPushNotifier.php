@@ -7,6 +7,7 @@ namespace App\Services\Deal;
 use App\Models\ExchangeLot;
 use App\Models\WebPushSubscription;
 use App\Support\ClientWebOrigin;
+use App\Support\OpenSslWindowsConfig;
 use App\Support\WebPushVapid;
 use Illuminate\Support\Facades\Log;
 use Minishlink\WebPush\Subscription;
@@ -56,8 +57,23 @@ final class DealWebPushNotifier
             ->get();
 
         if ($rows->isEmpty()) {
+            $totalForLot = WebPushSubscription::query()->where('exchange_lot_id', $lot->id)->count();
+            Log::info('[deal-web-push] skip: no matching subscriptions', [
+                'lot_id' => $lot->id,
+                'recipient_roles' => $roles,
+                'sender_side' => $senderSide,
+                'subscriptions_on_lot' => $totalForLot,
+            ]);
+
             return;
         }
+
+        Log::info('[deal-web-push] sending', [
+            'lot_id' => $lot->id,
+            'sender_side' => $senderSide,
+            'recipient_roles' => $roles,
+            'targets' => $rows->count(),
+        ]);
 
         $openUrl = $this->openDealUrl($nodeKey, (string) $lot->id);
         $payload = json_encode([
@@ -73,6 +89,16 @@ final class DealWebPushNotifier
         }
 
         try {
+            $opensslCnf = OpenSslWindowsConfig::applyIfNeeded();
+            if (PHP_OS_FAMILY === 'Windows' && ! OpenSslWindowsConfig::ecKeyWorks()) {
+                Log::warning('[deal-web-push] openssl ec unavailable', [
+                    'lot_id' => $lot->id,
+                    'openssl_conf' => $opensslCnf ?? getenv('OPENSSL_CONF') ?: null,
+                    'apache_bin_cnf_exists' => is_file('C:/xampp/apache/bin/openssl.cnf'),
+                ]);
+
+                return;
+            }
             $webPush = new WebPush([
                 'VAPID' => [
                     'subject' => (string) config('web_push.vapid.subject'),
@@ -95,6 +121,8 @@ final class DealWebPushNotifier
 
             foreach ($webPush->flush() as $report) {
                 if ($report->isSuccess()) {
+                    Log::info('[deal-web-push] sent', ['lot_id' => $lot->id]);
+
                     continue;
                 }
                 $endpoint = $report->getEndpoint();

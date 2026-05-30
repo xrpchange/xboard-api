@@ -6,6 +6,15 @@ use Illuminate\Http\Request;
 
 define('LARAVEL_START', microtime(true));
 
+// Windows XAMPP: Apache SetEnv points OPENSSL_CONF at missing apache/bin/openssl.cnf → Web Push EC keys fail.
+if (PHP_OS_FAMILY === 'Windows') {
+    $phpCnf = 'C:/xampp/php/extras/ssl/openssl.cnf';
+    $apacheBinCnf = 'C:/xampp/apache/bin/openssl.cnf';
+    if (! is_file($apacheBinCnf) && is_file($phpCnf)) {
+        @copy($phpCnf, $apacheBinCnf);
+    }
+}
+
 // Determine APP_ENV early (Apache: SetEnv APP_ENV xrpchange, or REDIRECT_APP_ENV with mod_rewrite)
 $appEnv = $_SERVER['APP_ENV'] ?? $_SERVER['REDIRECT_APP_ENV'] ?? $_ENV['APP_ENV'] ?? getenv('APP_ENV');
 if (empty($appEnv) && function_exists('apache_getenv')) {

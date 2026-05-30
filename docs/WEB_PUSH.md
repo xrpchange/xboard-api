@@ -4,6 +4,27 @@ Browser **Web Push** complements **IMAP IDLE** (active tab). The API sends push 
 
 ## Server setup
 
+### Windows XAMPP (local API on this PC)
+
+If Laravel log shows `[deal-web-push] batch failed` with **`Unable to create the local key`**, the cause is almost always **XAMPP Apache**, not the client:
+
+- `C:\xampp\apache\conf\extra\httpd-xampp.conf` sets  
+  `SetEnv OPENSSL_CONF "C:/xampp/apache/bin/openssl.cnf"`.
+- On a default install that file is **missing** under `apache\bin\`. CLI PHP uses `php\extras\ssl\openssl.cnf` and works; **Apache** does not.
+- `putenv()` from Laravel **cannot** override Apache `SetEnv` on Windows — fix XAMPP, then restart Apache.
+
+**XAMPP `SetEnv OPENSSL_CONF` is not enough on Windows:** under `apache2handler`, `openssl_pkey_new()` often **ignores** the environment variable (`EC default env=fail` in diagnostics) while the same path with explicit `'config' => …` works (`EC with config …=ok`).
+
+**Do both:**
+
+1. **XAMPP:** keep a valid cnf (e.g. `SetEnv OPENSSL_CONF "C:/xampp/php/extras/ssl/openssl.cnf"` in `httpd-xampp.conf` and/or copy into `apache\bin\openssl.cnf`).
+2. **API:** after `composer install`, `scripts/patch-web-push-openssl-config.php` patches `vendor/minishlink/web-push` so encryption passes `'config'` (runs on `post-autoload-dump`). Re-run if vendor was updated:  
+   `php scripts/patch-web-push-openssl-config.php`
+
+**Verify:** `https://sandbox.api.xdexboard.com/openssl-diag.php` — expect `OpenSslWindowsConfig::ecKeyWorks()=ok` and `web-push Encryption patched=yes`. Then send deal chat; log must show `[deal-web-push] sent`, not `batch failed`.
+
+Push is **not** triggered by IMAP email arrival alone — only after deal chat is persisted via API. Recipient role: buyer message → push to **seller** subscriptions on that lot.
+
 ```bash
 php artisan web-push:generate-vapid
 # Add WEB_PUSH_VAPID_PUBLIC_KEY / WEB_PUSH_VAPID_PRIVATE_KEY to .env

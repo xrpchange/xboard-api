@@ -63,9 +63,10 @@ final class WebPushController extends Controller
         $endpoint = trim((string) $sub['endpoint']);
         $p256dh = trim((string) $sub['keys']['p256dh']);
         $auth = trim((string) $sub['keys']['auth']);
-        $encoding = trim((string) ($sub['contentEncoding'] ?? 'aesgcm'));
+        $encoding = trim((string) ($sub['contentEncoding'] ?? $sub['encoding'] ?? ''));
         if ($encoding === '') {
-            $encoding = 'aesgcm';
+            // Chromium / Edge Push subscriptions use aes128gcm; legacy default was aesgcm.
+            $encoding = 'aes128gcm';
         }
 
         $tokenHash = null;
