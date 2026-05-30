@@ -8,6 +8,7 @@ use App\Services\Arbiter\DeepSeekArbiterProvider;
 use App\Services\Arbiter\GigaChatArbiterProvider;
 use App\Services\Arbiter\OpenAiArbiterProvider;
 use App\Services\Arbiter\StubArbiterProvider;
+use App\Support\OpenSslWindowsConfig;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -76,6 +77,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        OpenSslWindowsConfig::applyIfNeeded();
         // Create necessary cache directories on first startup
         $this->ensureCacheDirectoriesExist();
     }
