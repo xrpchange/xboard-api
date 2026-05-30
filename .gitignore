@@ -84,8 +84,11 @@ jspm_packages/
 .env
 .env.test
 .env.production
+# Local dev only: second virtual exchange (api.xrpchange.site), never commit secrets
 .env.xrpchange
+.env.web-push.local
 !.env.example
+!.env.xrpchange.example
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache

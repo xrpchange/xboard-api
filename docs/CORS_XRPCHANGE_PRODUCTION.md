@@ -1,4 +1,6 @@
-# CORS: `*.xrpchange.site` API (production)
+# CORS: `*.xrpchange.site` API (local / TLS front only)
+
+> **Scope:** отладка CORS для **локальных** vhost `*.xrpchange.site` на XAMPP (имитация второго узла). **Не** документация боевого продукта xrpchange; production API — **`*.xdexboard.com`** (`docs/CORS_WEB_CLIENT.md`).
 
 ## Symptom
 
