@@ -10,7 +10,8 @@ Unless the user **explicitly** names **xrpchange** / **xrpchange.site** in the *
 ## Do not (without explicit user direction)
 
 - Configure, debug, deploy, test, or document **`*.xrpchange.site`** API/Core.
-- Edit **`.env.xrpchange`**, **`docs/ENV_XRPCHANGE.md`**, or xrpchange-only vhost/CORS docs.
+- Commit or deploy **`.env.xrpchange`** (gitignored; local second-server sim only — use **`.env.xrpchange.example`** in repo).
+- Edit **`docs/ENV_XRPCHANGE.md`** or xrpchange-only vhost/CORS unless the user explicitly asks about local dual-exchange dev.
 - Assume local Apache serves `sandbox.api.xrpchange.site` for the user’s current task.
 - Curl or migrate against xrpchange DB/env “by default”.
 

@@ -1,44 +1,33 @@
-# Настройка окружения XRPChange (.env.xrpchange)
+# Локальная имитация второго обменника (`.env.xrpchange`)
 
-API поддерживает отдельную конфигурацию для домена `api.xrpchange.site` через файл `.env.xrpchange`.
+**Не боевой стек.** `*.xrpchange.site` на этой машине — только **разработка**: второй виртуальный API/узел рядом с **xdexboard** (`api.xdexboard.com` + `.env`). На production-серверах xrpchange **не** целевой продукт.
 
-## Как это работает
+Файл **`.env.xrpchange` в git не коммитится** (см. `.gitignore`). Шаблон без секретов: **`.env.xrpchange.example`** → скопировать в `.env.xrpchange` и заполнить локально.
 
-1. **Apache:** VirtualHost для `api.xrpchange.site` содержит `SetEnv APP_ENV xrpchange`.
-2. **index.php:** Перед bootstrap Laravel проверяет `APP_ENV` (из Apache, `REDIRECT_APP_ENV` при mod_rewrite) и при значении `xrpchange` загружает `.env.xrpchange` вместо `.env`.
-3. **PHP-FPM:** Воркеры переиспользуют `$_ENV` между запросами. Dotenv по умолчанию не перезаписывает уже установленные переменные. Поэтому перед `LoadEnvironmentVariables` переменные БД очищаются — иначе после запроса к xdexboard `DB_DATABASE` остаётся `xboard` и .env.xrpchange не может установить `xboard2`.
-4. Все запросы к `api.xrpchange.site`, `sandbox.api.xrpchange.site` и т.п. используют конфигурацию из `.env.xrpchange`.
+## Как это работает (только local XAMPP)
 
-## Создание .env.xrpchange
+1. **Apache:** VirtualHost для `api.xrpchange.site` с `SetEnv APP_ENV xrpchange`.
+2. **`public/index.php`:** при `APP_ENV=xrpchange` загружается `.env.xrpchange` вместо `.env`.
+3. **PHP-FPM:** перед `LoadEnvironmentVariables` сбрасываются переменные БД, иначе после запроса к xdexboard остаётся `DB_DATABASE=xboard` и второй env не применится.
+4. Запросы к `api.xrpchange.site`, `sandbox.api.xrpchange.site` и т.п. на **этом ПК** читают `.env.xrpchange`.
 
-1. Скопируйте `.env` в `.env.xrpchange`:
-   ```bash
-   cp .env .env.xrpchange
-   ```
+## Создание `.env.xrpchange`
 
-2. Измените переменные, которые должны отличаться для XRPChange (БД, Core URL и т.д.):
+```bash
+cp .env.xrpchange.example .env.xrpchange
+# отредактировать: отдельная БД (напр. xboard2), CORE_* для *.xrpchange.site
+```
 
-   | Переменная | Описание |
-   |------------|----------|
-   | `APP_ENV` | Должно быть `xrpchange` |
-   | `APP_NAME` | Напр. `XBoard API (XRPChange)` |
-   | `APP_URL` | `https://api.xrpchange.site` |
-   | `DB_DATABASE` | База данных для XRPChange (может отличаться) |
-   | `DB_USERNAME` | Пользователь БД |
-   | `DB_PASSWORD` | Пароль БД |
-   | `CORE_URL` | URL Core API для sandbox (напр. `https://sandbox.api.core.xrpchange.site`). Используется, когда в токене `environment` = sandbox. |
-   | `CORE_KEY` | API-ключ Core (sandbox) |
-   | `CORE_PRODUCTION_URL` | URL Core API для production. Используется, когда в токене `environment` = production/prod. |
-   | `CORE_PRODUCTION_KEY` | API-ключ Core (production) |
+| Переменная | Назначение |
+|------------|------------|
+| `APP_ENV` | `xrpchange` |
+| `APP_URL` | `https://api.xrpchange.site` (локальный vhost) |
+| `DB_DATABASE` | Отдельная схема для «второго» узла (напр. `xboard2`) |
+| `CORE_URL` / `CORE_PRODUCTION_URL` | Core для sandbox/prod на xrpchange-хостах |
 
-   Выбор URL по полю `environment` токена описан в `docs/ESCROW_TOKEN_AUTHENTICATION.md` (§ Calling Core API: URL by token environment).
-   | `SANDBOX_VIRTUAL_BANK_WEBSITE` | (Необязательно) Hostname синтетического банка для песочницы; см. `docs/SANDBOX_VIRTUAL_BANK.md` |
-   | `SANDBOX_VIRTUAL_BANK_COUNTRY_CODE` | (Необязательно) Код страны в `countries.code` для песочного банка (например `RUS`); по умолчанию `RUS` |
-   | `SANDBOX_VIRTUAL_BANK_ID` | (Необязательно) Числовой id виртуального банка в JSON; по умолчанию `900000001` |
+Остальные ключи — по необходимости, как в основном `.env`. Выбор Core URL по `environment` токена: `docs/ESCROW_TOKEN_AUTHENTICATION.md`.
 
-3. Файл `.env.xrpchange` не должен попадать в git (добавьте в `.gitignore` при необходимости).
-
-## Apache VirtualHost (пример)
+## Apache (пример, local)
 
 ```apache
 <VirtualHost *:80>
@@ -46,22 +35,18 @@ API поддерживает отдельную конфигурацию для 
     ServerName api.xrpchange.site
     ServerAlias dev.api.xrpchange.site sandbox.api.xrpchange.site
     SetEnv APP_ENV xrpchange
-    
-    <Directory "C:/xampp/htdocs/Projects/xboard-api/public">
-        Options Indexes FollowSymLinks
-        AllowOverride All
-        Require all granted
-    </Directory>
     ...
 </VirtualHost>
 ```
 
-## CORS (веб-клиент)
+См. также `nginx-xrpchange-api.conf` (справочный сниппет), **не** production-деплой.
 
-Заголовки `Access-Control-*` для API — **только в Apache** (`Header always set` в vhost, см. `httpd-vhosts.conf`). Laravel `HandleCors` отключён.
+## CORS
 
-На HTTPS перед Apache часто стоит **Nginx**: там **нельзя** дублировать `add_header Access-Control-*` в `location /api/` — браузер увидит `*, *` и заблокирует запрос. См. **`docs/CORS_XRPCHANGE_PRODUCTION.md`**.
+Только **один** слой `Access-Control-*` (Apache vhost или Nginx, не оба). Для локальной отладки дублирования: `docs/CORS_XRPCHANGE_PRODUCTION.md` (историческое имя; относится к связке vhost + TLS, не к «боевому xrpchange» как продукту).
 
 ## Важно
 
-**Fallback по хосту на сервере запрещён.** Переменная `APP_ENV` должна быть задана явно через Apache `SetEnv`. Не добавлять детекцию по `HTTP_HOST` или другие неявные методы на production.
+- **Не коммитить** `.env.xrpchange` (пароли, ключи).
+- **Не** подразумевать `server@xrpchange.site` / supersrv как цель фич — рабочий API: **`*.xdexboard.com`** + `.env`.
+- **Без fallback по `HTTP_HOST`:** `APP_ENV` только через `SetEnv` в vhost.
