@@ -10,6 +10,7 @@
         "darkaonline/l5-swagger": "^9.0",
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",
+        "minishlink/web-push": "9.0",
         "phpmailer/dkimvalidator": "^0.3.1",
         "smalot/pdfparser": "^2.0",
         "webklex/php-imap": "^6.2"

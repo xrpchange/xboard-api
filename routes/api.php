@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\NodeController;
 use App\Http\Controllers\Api\DealAmlInternalController;
 use App\Http\Controllers\Api\EscrowTokenController;
 use App\Http\Controllers\Api\LotMailboxController;
+use App\Http\Controllers\Api\WebPushController;
 use App\Http\Controllers\Api\Admin\NodeAdminController;
 
 /*
@@ -146,6 +147,10 @@ Route::prefix('v1')->group(function () {
     Route::prefix('escrow-tokens')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)->group(function () {
         Route::post('/validate-cache', [EscrowTokenController::class, 'validateCache']);
     });
+
+    Route::prefix('web-push')->group(function () {
+        Route::get('/vapid-public-key', [WebPushController::class, 'vapidPublicKey']);
+    });
 });
 
 // Test-only: send to buyer (APP_ENV != production).
@@ -160,6 +165,11 @@ if (!app()->environment('production')) {
 
 // Protected routes (with escrow token authentication)
 Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)->group(function () {
+    Route::prefix('web-push')->group(function () {
+        Route::post('/subscribe', [WebPushController::class, 'subscribe']);
+        Route::post('/unsubscribe', [WebPushController::class, 'unsubscribe']);
+    });
+
     // Exchange board
     Route::post('/lot-mailbox/delete', [LotMailboxController::class, 'delete']);
 

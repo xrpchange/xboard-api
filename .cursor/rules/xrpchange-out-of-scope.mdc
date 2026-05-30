@@ -1,0 +1,20 @@
+---
+description: xrpchange.site is out of scope unless the user explicitly asks
+alwaysApply: true
+---
+
+# xrpchange.site — out of scope by default
+
+Unless the user **explicitly** names **xrpchange** / **xrpchange.site** in the **current** request, treat that stack as **not part of this work**.
+
+## Do not (without explicit user direction)
+
+- Configure, debug, deploy, test, or document **`*.xrpchange.site`** API/Core.
+- Edit **`.env.xrpchange`**, **`docs/ENV_XRPCHANGE.md`**, or xrpchange-only vhost/CORS docs.
+- Assume local Apache serves `sandbox.api.xrpchange.site` for the user’s current task.
+- Curl or migrate against xrpchange DB/env “by default”.
+
+## Default API on this project
+
+- **`api.xdexboard.com`**, **`sandbox.api.xdexboard.com`**, **`dev.api.xdexboard.com`** → **`.env`** (VAPID, DB, Core URLs the user maintains there).
+- Cross-repo docs and client calls should match **xdexboard** hostnames unless the user says otherwise.
