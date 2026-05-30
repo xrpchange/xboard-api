@@ -2843,6 +2843,20 @@ class ExchangeLotController extends Controller
             ->where('status', 'pending')
             ->exists();
         if (! $pendingExists) {
+            $completedExists = Transaction::query()
+                ->where('exchange_lot_id', $lot->id)
+                ->where('buyer_lot_email', $buyerEmail)
+                ->where('tx_type', 'sale')
+                ->where('status', 'completed')
+                ->exists();
+            if ($completedExists) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This deal is already marked completed on the server.',
+                    'error_code' => 'seller_completion_sale_already_completed',
+                ], 403);
+            }
+
             return response()->json([
                 'success' => false,
                 'message' => 'No pending sale transaction to complete.',
@@ -5136,8 +5150,9 @@ class ExchangeLotController extends Controller
         if (! $isSeller && ! $isBuyer) {
             return response()->json(['success' => false, 'message' => 'Not authorized to clear this chat.'], 403);
         }
-        $column = $isSeller ? 'deleted_by_seller_at' : 'deleted_by_buyer_at';
-        $count = DealChatMessage::where('exchange_lot_id', $lot->id)->whereNull($column)->update([$column => now()]);
+        $clearQuery = DealChatMessage::where('exchange_lot_id', $lot->id);
+        \App\Support\DealChatMessageVisibility::applyClearableByRequester($clearQuery, $isSeller);
+        $count = $clearQuery->update([$isSeller ? 'deleted_by_seller_at' : 'deleted_by_buyer_at' => now()]);
         Log::info('[exchange-lots] markChatCleared', ['lot_id' => $lot->id, 'by' => $isSeller ? 'seller' : 'buyer', 'count' => $count]);
 
         return response()->json(['success' => true, 'message' => 'Chat marked as cleared.', 'count' => $count]);
