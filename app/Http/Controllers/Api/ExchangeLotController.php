@@ -279,6 +279,14 @@ class ExchangeLotController extends Controller
 
             return;
         }
+        $this->postCoreCompleteReservationSeller($lot, $sellerEscrowToken, $reason);
+    }
+
+    /**
+     * Best-effort Core seller-side reservation release (complete-reservation).
+     */
+    private function postCoreCompleteReservationSeller(ExchangeLot $lot, string $sellerEscrowToken, string $reason): void
+    {
         $lot->loadMissing(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
         try {
             [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
@@ -5176,6 +5184,7 @@ class ExchangeLotController extends Controller
      * Seller or buyer (escrow token) may call. Deletes deal chat rows, transaction rows, linked receipt files,
      * and clears lot mailboxes.
      * Clears buyer_lot_email and buyer_selected_amount; buyer_escrow_token_hash is retained so chat-messages can still authorize the same token and return [].
+     * Best-effort: also calls Core complete-reservation / complete-reservation-by-buyer so escrow reservations are not left orphaned.
      */
     public function purgeCompletedDealData(Request $request, ExchangeLot $lot): JsonResponse
     {
@@ -5192,7 +5201,8 @@ class ExchangeLotController extends Controller
             return response()->json(['success' => false, 'message' => 'Not authorized to purge this deal.'], 403);
         }
 
-        if (! $this->exchangeLotHasCompletedDealTagInChat($lot)) {
+        if (! $this->exchangeLotHasCompletedDealTagInChat($lot)
+            && ! $this->exchangeLotBuyerBindingAlreadyReleased($lot)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Deal is not in a removable state (no terminal tag in chat history).',
@@ -5277,6 +5287,8 @@ class ExchangeLotController extends Controller
             ], 500);
         }
 
+        $this->tryReleaseCoreReservationsOnPurge($lot, $request, $isBuyer, $isSeller);
+
         $recipients = [];
         if ($sellerNotify !== '') {
             $recipients[strtolower($sellerNotify)] = $sellerNotify;
@@ -5328,6 +5340,34 @@ class ExchangeLotController extends Controller
             'notified_addresses' => $notifiedRecipients,
             'transactions_deleted' => $deleteTransactions,
         ]);
+    }
+
+    /**
+     * After completion or a prior purge, buyer_lot_email is cleared while buyer_escrow_token_hash stays for chat auth.
+     */
+    private function exchangeLotBuyerBindingAlreadyReleased(ExchangeLot $lot): bool
+    {
+        $hadBuyer = trim((string) ($lot->buyer_escrow_token_hash ?? '')) !== '';
+
+        return $hadBuyer && trim((string) ($lot->buyer_lot_email ?? '')) === '';
+    }
+
+    /**
+     * Best-effort Core reservation release when purging API deal artifacts.
+     * Reservations live in Core, not exchange_lots.
+     */
+    private function tryReleaseCoreReservationsOnPurge(ExchangeLot $lot, Request $request, bool $isBuyer, bool $isSeller): void
+    {
+        if ($isBuyer) {
+            $this->tryDeleteCoreReservationAfterBuyerAmicableCompletion($lot, $request, 'purge_completed_deal_data');
+        }
+
+        $lotSellerToken = trim((string) ($lot->wallet_address ?? ''));
+        if ($lotSellerToken !== '' && str_starts_with($lotSellerToken, '{')) {
+            $this->postCoreCompleteReservationSeller($lot, $lotSellerToken, 'purge_completed_deal_data');
+        } elseif ($isSeller) {
+            $this->tryDeleteCoreReservationAfterSellerAmicableCompletion($lot, $request, 'purge_completed_deal_data');
+        }
     }
 
     private function exchangeLotHasCompletedDealTagInChat(ExchangeLot $lot): bool
