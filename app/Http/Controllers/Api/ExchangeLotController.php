@@ -1794,6 +1794,8 @@ class ExchangeLotController extends Controller
                 ->update($updateData);
             if ($updated === 1) {
                 $startDealLockAcquired = true;
+                $this->resetLotDealChatAndMailboxesForNewDeal($lot, $requesterMailboxEmail);
+                $lot->refresh();
             }
             if ($updated === 0) {
                 $freshAfterFailedLock = ExchangeLot::query()
@@ -5979,6 +5981,38 @@ class ExchangeLotController extends Controller
             ]);
 
             return false;
+        }
+    }
+
+    /**
+     * New buyer session on a lot that had no active buyer: wipe prior deal chat and Maildir files
+     * so DealChatTagSequenceValidator / client stage reducer do not see tags from an old deal.
+     */
+    private function resetLotDealChatAndMailboxesForNewDeal(ExchangeLot $lot, ?string $newBuyerMailboxEmail): void
+    {
+        $deletedChat = DealChatMessage::query()->where('exchange_lot_id', $lot->id)->delete();
+        Log::info('[exchange-lots] start_deal: cleared prior deal chat for new session', [
+            'lot_id' => $lot->id,
+            'deleted_rows' => $deletedChat,
+        ]);
+
+        $this->closeOpenDisputesForLot(
+            lot: $lot,
+            resolvedBy: 'system',
+            resolution: 'Superseded by a new buyer deal session.'
+        );
+
+        $currency = self::sellerMailboxCryptoCode($lot);
+        if (! empty($lot->wallet_address)) {
+            $this->lotMailboxService->cleanupMailbox((string) $lot->wallet_address, $currency);
+        }
+        $sellerLotMailbox = trim((string) ($lot->seller_lot_email ?? ''));
+        if ($sellerLotMailbox !== '') {
+            $this->lotMailboxService->cleanupMailboxByEmail($sellerLotMailbox);
+        }
+        $buyerMailbox = trim((string) ($newBuyerMailboxEmail ?? ''));
+        if ($buyerMailbox !== '') {
+            $this->lotMailboxService->cleanupMailboxByEmail($buyerMailbox);
         }
     }
 

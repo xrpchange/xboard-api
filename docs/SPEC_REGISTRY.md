@@ -31,6 +31,7 @@ php artisan test --group spec-ARB-004
 | LOT-005 | `POST …/send-message` with `message_type=start_deal` | Reject when `exchange_lots.is_active` is false (`error_code=lot_inactive`, HTTP 409), so a seller-disabled listing cannot start a new deal. | — | `ExchangeLotController::sendMessageToSeller`. Add HTTP feature test when escrow-token + lot seed harness exists. |
 | LOT-006 | `POST …/send-message` (`start_deal`), `POST …/send-test-notification-email` + optional `client_web_origin` | Web `/open-deal` on `https://{domain}` or `https://dev.{domain}` (any project domain; sandbox API → prod web). Plus API app-landing and `xboard://`. | `tests/Unit/ClientWebOriginTest.php` | `App\Support\ClientWebOrigin`; `docs/WEB_CLIENT_ORIGINS.md`. |
 | LOT-007 | `POST …/mark-chat-cleared` | Clear mailbox soft-deletes only non–`deal_tag` rows per side (`deal_tag` kept for stage replay). | `tests/Unit/DealChatMessageVisibilityTest.php` | `App\Support\DealChatMessageVisibility`; `docs/DEAL_CHAT_TABLE_AND_SOFT_DELETE.md`. |
+| LOT-008 | `POST …/send-message` with `message_type=start_deal` (new buyer lock) | Hard-delete all `deal_chat_messages` for the lot; Maildir cleanup on seller + buyer deal mailboxes; close open disputes. Same-buyer resume does not wipe. | — | `ExchangeLotController::resetLotDealChatAndMailboxesForNewDeal`; `docs/DEAL_STATE_AND_EXIT_RULES.md`. |
 
 ## Deal AML
 

@@ -35,6 +35,14 @@ When the user **clears the mailbox** (deletes all messages in the deal mailbox v
 
 ---
 
+## New deal session (`start_deal`)
+
+When a **new** buyer claims the lot (`message_type=start_deal` and `buyer_lot_email` was empty), the API **hard-deletes** all `deal_chat_messages` for that `exchange_lot_id` and clears Maildir files on the seller and buyer deal mailboxes **before** inserting the new `start_deal` row. **Resume** `start_deal` for the same buyer mailbox does not delete prior rows. See `docs/DEAL_STATE_AND_EXIT_RULES.md` (*Fresh start_deal resets chat and mail*).
+
+Per-side soft delete (`mark-chat-cleared`) is unchanged: it only hides plain chat lines, not `deal_tag` rows — but a new deal session removes old tags entirely.
+
+---
+
 ## When rows are written
 
 The API inserts into `deal_chat_messages` in these cases:
