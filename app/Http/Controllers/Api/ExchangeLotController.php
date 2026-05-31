@@ -24,6 +24,7 @@ use App\Services\SandboxVirtualBankService;
 use App\Support\ArbiterPromptContextAssembler;
 use App\Support\ArbiterReceiptPdfResolver;
 use App\Support\ClientWebOrigin;
+use App\Support\DealBuyerEscrowTokenHash;
 use App\Support\DealChatTagSequenceValidator;
 use App\Support\DealSaleTransactionCompletion;
 use App\Support\DealSellerOpenLinks;
@@ -1487,7 +1488,9 @@ class ExchangeLotController extends Controller
         }
 
         $buyerEmailOnLot = trim((string) ($lot->buyer_lot_email ?? ''));
-        if ($buyerEmailOnLot === '' && $messageType !== 'start_deal') {
+        // buyer_lot_email may be cleared while buyer_escrow_token_hash remains (chat auth after purge step);
+        // bound buyer may still post deal_tag e.g. deal_completed_buyer.
+        if ($buyerEmailOnLot === '' && $messageType !== 'start_deal' && ! $this->requesterIsBuyerForLot($request, $lot)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cannot start deal: message_type must be start_deal for a new buyer session.',
@@ -4779,13 +4782,13 @@ class ExchangeLotController extends Controller
 
     private function requesterIsBuyerForLot(Request $request, ExchangeLot $lot): bool
     {
-        $tokenData = $request->input('escrow_token_data', []);
-        $tokenHash = is_array($tokenData) && isset($tokenData['token_hash'])
-            ? strtolower(trim((string) $tokenData['token_hash']))
-            : '';
         $buyerTokenHash = strtolower(trim((string) ($lot->buyer_escrow_token_hash ?? '')));
+        if ($buyerTokenHash === '') {
+            return false;
+        }
+        $requestTokenHash = DealBuyerEscrowTokenHash::fromRequest($request);
 
-        return $tokenHash !== '' && $buyerTokenHash !== '' && hash_equals($buyerTokenHash, $tokenHash);
+        return $requestTokenHash !== '' && hash_equals($buyerTokenHash, $requestTokenHash);
     }
 
     /**
