@@ -58,7 +58,9 @@ final class DealChatTagSequenceValidator
     public static function computeStateForLot(ExchangeLot $lot): string
     {
         $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
-        $fallbackStarted = $buyerEmail !== '';
+        $buyerTokenHash = trim((string) ($lot->buyer_escrow_token_hash ?? ''));
+        // After amicable completion the API clears buyer_lot_email but keeps buyer_escrow_token_hash for chat auth.
+        $fallbackStarted = $buyerEmail !== '' || $buyerTokenHash !== '';
         $tags = DealChatMessage::query()
             ->where('exchange_lot_id', $lot->id)
             ->orderBy('id')
