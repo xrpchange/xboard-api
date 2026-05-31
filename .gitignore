@@ -36,6 +36,9 @@ yarn-error.log
 *.swo
 *~
 
+# Local scratch scripts (AGENTS.md); never commit experiments here
+/temp/
+
 # Personal documentation files (not for git)
 docs/infomaniak_cloud.md
 
