@@ -1623,6 +1623,25 @@ class ExchangeLotController extends Controller
                 }
             }
         }
+        // Buyer often sends only X-Escrow-Token after lot release cleared buyer_lot_email; resolve mailbox for mail + chat row.
+        if (($requesterMailboxEmail === null || $requesterMailboxEmail === '') && is_string($requesterPublicPart) && trim($requesterPublicPart) !== '') {
+            $hashFromHeader = DealBuyerEscrowTokenHash::fromRequest($request);
+            if ($hashFromHeader !== '') {
+                $currencyForMailbox = self::coreCryptoTypeFromEscrowTokenJson($requesterPublicPart)
+                    ?? self::coreCryptoTypeForBuyerEscrow($lot);
+                try {
+                    $mailboxCfg = $this->lotMailboxService->ensureMailbox($requesterPublicPart, $hashFromHeader, $currencyForMailbox);
+                    if (is_array($mailboxCfg) && ! empty($mailboxCfg['email'])) {
+                        $requesterMailboxEmail = (string) $mailboxCfg['email'];
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('[exchange-lots] sendMessageToSeller: ensureMailbox from header token failed', [
+                        'lot_id' => $lot->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
 
         if ($messageType === 'start_deal') {
             $freshLotForStartDeal = ExchangeLot::query()->find($lot->id);

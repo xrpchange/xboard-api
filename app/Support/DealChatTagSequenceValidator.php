@@ -108,7 +108,57 @@ final class DealChatTagSequenceValidator
             ];
         }
 
+        // Seller crypto payout posts deal_completed_seller (crypto_payout_tx) and waits for buyer confirm.
+        if ($t === 'deal_completed_buyer' && self::lotAwaitingBuyerCompletionConfirm($lot)) {
+            return null;
+        }
+
         return self::validateBuyerTagForState($state, $t);
+    }
+
+    /**
+     * True when seller already posted crypto payout completion but buyer has not confirmed yet.
+     */
+    public static function lotAwaitingBuyerCompletionConfirm(ExchangeLot $lot): bool
+    {
+        $tags = DealChatMessage::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->whereNotNull('deal_tag')
+            ->orderBy('id')
+            ->pluck('deal_tag')
+            ->all();
+
+        return self::tagsIndicateAwaitingBuyerCompletionConfirm($tags, (string) $lot->id);
+    }
+
+    /**
+     * @param  list<string|null>  $orderedDealTagJson
+     */
+    public static function tagsIndicateAwaitingBuyerCompletionConfirm(array $orderedDealTagJson, string $lotIdStr): bool
+    {
+        $sellerCryptoDone = false;
+        $buyerDone = false;
+        foreach ($orderedDealTagJson as $raw) {
+            if (! is_string($raw) || trim($raw) === '') {
+                continue;
+            }
+            $obj = json_decode($raw, true);
+            if (! is_array($obj)) {
+                continue;
+            }
+            if ((string) ($obj['lot_id'] ?? '') !== $lotIdStr) {
+                continue;
+            }
+            $t = trim((string) ($obj['t'] ?? ''));
+            if ($t === 'deal_completed_buyer') {
+                $buyerDone = true;
+            }
+            if ($t === 'deal_completed_seller' && trim((string) ($obj['crypto_payout_tx'] ?? '')) !== '') {
+                $sellerCryptoDone = true;
+            }
+        }
+
+        return $sellerCryptoDone && ! $buyerDone;
     }
 
     /**
