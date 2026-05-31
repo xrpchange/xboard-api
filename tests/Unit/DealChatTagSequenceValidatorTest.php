@@ -103,6 +103,17 @@ class DealChatTagSequenceValidatorTest extends TestCase
         ];
     }
 
+    public function test_tags_indicate_awaiting_buyer_completion_after_seller_crypto_payout(): void
+    {
+        $tags = [
+            json_encode(['t' => 'deal_completed_seller', 'lot_id' => 42, 'crypto_payout_tx' => 'tx1']),
+        ];
+        $this->assertTrue(DealChatTagSequenceValidator::tagsIndicateAwaitingBuyerCompletionConfirm($tags, '42'));
+        $state = DealChatTagSequenceValidator::reduceStateFromOrderedDealTags($tags, true);
+        $this->assertSame(DealChatTagSequenceValidator::STATE_WAIT_BUYER_COMPLETE, $state);
+        $this->assertNull(DealChatTagSequenceValidator::validateBuyerTagForState($state, 'deal_completed_buyer'));
+    }
+
     public function test_dispute_tag_skipped_in_reducer(): void
     {
         $tags = [
