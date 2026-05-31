@@ -27,6 +27,7 @@ use App\Support\ClientWebOrigin;
 use App\Support\DealChatTagSequenceValidator;
 use App\Support\DealSaleTransactionCompletion;
 use App\Support\DealSellerOpenLinks;
+use App\Support\DealTerminalLotClosure;
 use App\Support\PublicHttpsUrl;
 use App\Support\SandboxTestReceiptPdf;
 use Illuminate\Http\JsonResponse;
@@ -818,7 +819,7 @@ class ExchangeLotController extends Controller
             'note' => 'nullable|string|max:65535',
             'seller_locale' => 'required|string|max:10',
             'aml' => 'nullable|boolean',
-            'buyer_payment_timeout_minutes' => 'nullable|integer|in:15,20,30',
+            'buyer_payment_timeout_minutes' => \App\Support\BuyerPaymentTimeoutMinutes::validationRule(),
             'seller_notification_email' => 'nullable|string|email|max:255',
             'buyer_notification_email' => 'nullable|string|email|max:255',
             'expires_at' => 'nullable|date',
@@ -974,12 +975,11 @@ class ExchangeLotController extends Controller
         $validated['main_group'] = ! empty($validated['main_group'])
             ? hash('sha256', trim($validated['main_group']))
             : null;
-        $validated['buyer_payment_timeout_minutes'] = isset($validated['buyer_payment_timeout_minutes'])
-            ? (int) $validated['buyer_payment_timeout_minutes']
-            : 30;
-        if (! in_array($validated['buyer_payment_timeout_minutes'], [15, 20, 30], true)) {
-            $validated['buyer_payment_timeout_minutes'] = 30;
-        }
+        $validated['buyer_payment_timeout_minutes'] = \App\Support\BuyerPaymentTimeoutMinutes::normalize(
+            isset($validated['buyer_payment_timeout_minutes'])
+                ? (int) $validated['buyer_payment_timeout_minutes']
+                : null
+        );
         $validated['seller_notification_email'] = ! empty($validated['seller_notification_email'])
             ? trim($validated['seller_notification_email'])
             : null;
@@ -1138,7 +1138,7 @@ class ExchangeLotController extends Controller
             'note' => 'nullable|string|max:65535',
             'seller_locale' => 'nullable|string|max:10',
             'aml' => 'nullable|boolean',
-            'buyer_payment_timeout_minutes' => 'nullable|integer|in:15,20,30',
+            'buyer_payment_timeout_minutes' => \App\Support\BuyerPaymentTimeoutMinutes::validationRule(),
             'seller_notification_email' => 'nullable|string|email|max:255',
             'escrow_multisig_2_of_3_required' => 'sometimes|boolean',
         ]);
@@ -1271,8 +1271,11 @@ class ExchangeLotController extends Controller
             $updateData['seller_locale'] = $validated['seller_locale'];
         }
         if (array_key_exists('buyer_payment_timeout_minutes', $validated)) {
-            $mins = (int) ($validated['buyer_payment_timeout_minutes'] ?? 30);
-            $updateData['buyer_payment_timeout_minutes'] = in_array($mins, [15, 20, 30], true) ? $mins : 30;
+            $updateData['buyer_payment_timeout_minutes'] = \App\Support\BuyerPaymentTimeoutMinutes::normalize(
+                isset($validated['buyer_payment_timeout_minutes'])
+                    ? (int) $validated['buyer_payment_timeout_minutes']
+                    : null
+            );
         }
         if (array_key_exists('seller_notification_email', $validated)) {
             $updateData['seller_notification_email'] = ! empty(trim($validated['seller_notification_email'] ?? ''))
@@ -2222,6 +2225,7 @@ class ExchangeLotController extends Controller
                     'updated_rows' => $completedCount,
                 ]);
                 $this->tryDeleteCoreReservationAfterBuyerAmicableCompletion($lot, $request, 'deal_completed_buyer');
+                DealTerminalLotClosure::releaseLotBuyerBinding($lot);
             }
             Log::info('[exchange-lots] sendMessageToSeller: mail sent successfully', [
                 'lot_id' => $lot->id,
@@ -2762,6 +2766,7 @@ class ExchangeLotController extends Controller
                     'updated_rows' => $completedCount,
                 ]);
                 $this->tryDeleteCoreReservationAfterSellerAmicableCompletion($lot, $request, 'deal_completed_seller_timeout');
+                DealTerminalLotClosure::releaseLotBuyerBinding($lot);
             }
 
             Log::info('[exchange-lots] sendMessageToBuyer: mail sent', [
@@ -2936,7 +2941,9 @@ class ExchangeLotController extends Controller
             ->first();
         $timeoutMinutes = (int) ($transaction?->transaction_timeout_minutes ?? 0);
         if ($timeoutMinutes <= 0) {
-            $timeoutMinutes = (int) ($lastTimeoutMinutesFromSellerFunds ?? $lot->buyer_payment_timeout_minutes ?? 30);
+            $timeoutMinutes = (int) ($lastTimeoutMinutesFromSellerFunds ?? \App\Support\BuyerPaymentTimeoutMinutes::effectiveForLot(
+                isset($lot->buyer_payment_timeout_minutes) ? (int) $lot->buyer_payment_timeout_minutes : null
+            ));
         }
         if ($timeoutMinutes <= 0) {
             $timeoutMinutes = 30;
@@ -4056,6 +4063,10 @@ class ExchangeLotController extends Controller
             );
             $tagArr = json_decode($tagJson, true);
             $this->syncDisputeStateFromDealTag($lot, 'seller', is_array($tagArr) ? $tagArr : null);
+            if (is_array($tagArr) && ($tagArr['t'] ?? '') === 'deal_completed_seller') {
+                DealSaleTransactionCompletion::markPendingSaleTransactionsCompleted($lot);
+                DealTerminalLotClosure::releaseLotBuyerBinding($lot);
+            }
 
             return response()->json([
                 'success' => true,
@@ -4469,7 +4480,9 @@ class ExchangeLotController extends Controller
             'bank_details' => $bankDetails,
             'crypto_address' => $cryptoAddress,
             'payment_details_set_by' => 'seller',
-            'transaction_timeout_minutes' => (int) ($lot->buyer_payment_timeout_minutes ?? 30),
+            'transaction_timeout_minutes' => \App\Support\BuyerPaymentTimeoutMinutes::effectiveForLot(
+                isset($lot->buyer_payment_timeout_minutes) ? (int) $lot->buyer_payment_timeout_minutes : null
+            ),
             'status' => 'pending',
             'is_test' => (bool) $lot->is_test,
             'test_group' => $lot->test_group,
@@ -5190,7 +5203,11 @@ class ExchangeLotController extends Controller
         $validated = $request->validate([
             'purge_notification_subject' => ['nullable', 'string', 'max:998'],
             'purge_notification_body' => ['nullable', 'string', 'max:16000'],
+            'delete_transactions' => ['sometimes', 'boolean'],
         ]);
+        $deleteTransactions = array_key_exists('delete_transactions', $validated)
+            ? (bool) $validated['delete_transactions']
+            : true;
 
         $sellerNotify = $lot->seller_notification_email ? trim((string) $lot->seller_notification_email) : '';
         $buyerNotifyRaw = $lot->getAttribute('buyer_notification_email');
@@ -5199,19 +5216,22 @@ class ExchangeLotController extends Controller
         $notifiedRecipients = [];
 
         try {
-            DB::transaction(function () use ($lot): void {
+            DB::transaction(function () use ($lot, $deleteTransactions): void {
                 $lot->refresh();
 
-                $transactions = Transaction::query()->where('exchange_lot_id', $lot->id)->get();
                 $deletedTransactions = 0;
-                foreach ($transactions as $tx) {
-                    if ($tx->delete()) {
-                        $deletedTransactions++;
+                if ($deleteTransactions) {
+                    $transactions = Transaction::query()->where('exchange_lot_id', $lot->id)->get();
+                    foreach ($transactions as $tx) {
+                        if ($tx->delete()) {
+                            $deletedTransactions++;
+                        }
                     }
                 }
                 Log::info('[exchange-lots] purgeCompletedDealData: transactions deleted', [
                     'lot_id' => $lot->id,
                     'deleted' => $deletedTransactions,
+                    'delete_transactions' => $deleteTransactions,
                 ]);
 
                 DealChatMessage::query()->where('exchange_lot_id', $lot->id)->delete();
@@ -5306,6 +5326,7 @@ class ExchangeLotController extends Controller
             'success' => true,
             'message' => 'Deal data purged.',
             'notified_addresses' => $notifiedRecipients,
+            'transactions_deleted' => $deleteTransactions,
         ]);
     }
 
@@ -5584,7 +5605,7 @@ class ExchangeLotController extends Controller
      *
      * Timeout is per transaction (not global for whole deal):
      * - if transaction.transaction_timeout_minutes is set, use it;
-     * - otherwise fallback to lot.buyer_payment_timeout_minutes (default 30).
+     * - otherwise fallback to lot.buyer_payment_timeout_minutes (see BuyerPaymentTimeoutMinutes).
      *
      * @return array{transaction_id:int, remaining_seconds:int, release_at:string}|null
      */
@@ -5609,7 +5630,9 @@ class ExchangeLotController extends Controller
 
         $activeLock = null;
         foreach ($transactions as $transaction) {
-            $timeoutMinutes = (int) ($transaction->transaction_timeout_minutes ?? $lot->buyer_payment_timeout_minutes ?? 30);
+            $timeoutMinutes = (int) ($transaction->transaction_timeout_minutes ?? \App\Support\BuyerPaymentTimeoutMinutes::effectiveForLot(
+                isset($lot->buyer_payment_timeout_minutes) ? (int) $lot->buyer_payment_timeout_minutes : null
+            ));
             if ($timeoutMinutes <= 0) {
                 $timeoutMinutes = 30;
             }
