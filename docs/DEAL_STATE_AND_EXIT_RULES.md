@@ -21,7 +21,7 @@ Additionally, deal exit/cancel is protected by a **transaction-level timeout win
 Timeout is checked **per transaction**, not as one common timer for the whole deal:
 
 - For each pending sale transaction, API uses `transactions.transaction_timeout_minutes` if present.
-- Fallback for older rows: `exchange_lots.buyer_payment_timeout_minutes` (default `30`).
+- Fallback for older rows: `exchange_lots.buyer_payment_timeout_minutes` (stored value, including legacy `20`/`30`; new lots use `7`, `10`, or `15`, default `15`).
 - Timer starts from `transactions.created_at`.
 - If any pending transaction still has remaining time, exit/cancel is blocked.
 
