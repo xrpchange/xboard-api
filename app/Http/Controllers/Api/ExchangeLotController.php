@@ -2212,7 +2212,7 @@ class ExchangeLotController extends Controller
             if ($requesterMailboxEmail !== null && $requesterMailboxEmail !== '') {
                 $this->lotMailboxService->writeBuyerSentCopyToMailbox($requesterMailboxEmail, (string) $lot->id, $body);
             }
-            $this->insertDealChatMessage(
+            $chatPersisted = $this->insertDealChatMessage(
                 $lot,
                 'buyer',
                 $requesterMailboxEmail ?? config('mail.from.address'),
@@ -2226,14 +2226,9 @@ class ExchangeLotController extends Controller
                 dealTagData: $customDealTagData,
                 messageType: $messageType
             );
-            if (DealSaleTransactionCompletion::dealTagIsBuyerCompletedForLot($customDealTagData, $lot)) {
-                $completedCount = DealSaleTransactionCompletion::markPendingSaleTransactionsCompleted($lot);
-                Log::info('[exchange-lots] sendMessageToSeller: buyer completed deal — sale transactions marked completed', [
-                    'lot_id' => $lot->id,
-                    'updated_rows' => $completedCount,
-                ]);
-                $this->tryDeleteCoreReservationAfterBuyerAmicableCompletion($lot, $request, 'deal_completed_buyer');
-                DealTerminalLotClosure::releaseLotBuyerBinding($lot);
+            $completionError = $this->finalizeAmicableDealCompletionIfNeeded($lot, $request, $customDealTagData, $chatPersisted);
+            if ($completionError !== null) {
+                return $completionError;
             }
             Log::info('[exchange-lots] sendMessageToSeller: mail sent successfully', [
                 'lot_id' => $lot->id,
@@ -2753,7 +2748,7 @@ class ExchangeLotController extends Controller
                 ], 500);
             }
 
-            $this->insertDealChatMessage(
+            $chatPersisted = $this->insertDealChatMessage(
                 $lot,
                 'seller',
                 $sellerEmail,
@@ -2767,14 +2762,9 @@ class ExchangeLotController extends Controller
                 dealTagData: $customDealTagData,
                 messageType: $messageType
             );
-            if (DealSaleTransactionCompletion::dealTagIsSellerTimeoutCompletionForLot($customDealTagData, $lot)) {
-                $completedCount = DealSaleTransactionCompletion::markPendingSaleTransactionsCompleted($lot);
-                Log::info('[exchange-lots] sendMessageToBuyer: seller timeout deal completion — sale transactions marked completed', [
-                    'lot_id' => $lot->id,
-                    'updated_rows' => $completedCount,
-                ]);
-                $this->tryDeleteCoreReservationAfterSellerAmicableCompletion($lot, $request, 'deal_completed_seller_timeout');
-                DealTerminalLotClosure::releaseLotBuyerBinding($lot);
+            $completionError = $this->finalizeAmicableDealCompletionIfNeeded($lot, $request, $customDealTagData, $chatPersisted);
+            if ($completionError !== null) {
+                return $completionError;
             }
 
             Log::info('[exchange-lots] sendMessageToBuyer: mail sent', [
@@ -4061,7 +4051,7 @@ class ExchangeLotController extends Controller
             }
 
             $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot)) ?? $lot->seller_lot_email;
-            $this->insertDealChatMessage(
+            $chatPersisted = $this->insertDealChatMessage(
                 $lot,
                 'seller',
                 $sellerEmailForChat ?? config('mail.from.address', 'noreply@xdexboard.com'),
@@ -4072,6 +4062,19 @@ class ExchangeLotController extends Controller
             $tagArr = json_decode($tagJson, true);
             $this->syncDisputeStateFromDealTag($lot, 'seller', is_array($tagArr) ? $tagArr : null);
             if (is_array($tagArr) && ($tagArr['t'] ?? '') === 'deal_completed_seller') {
+                $lot->refresh();
+                if (! $chatPersisted || ! $this->exchangeLotHasCompletedDealTagInChat($lot)) {
+                    Log::error('[exchange-lots] seller crypto payout: deal_completed_seller tag not in chat history', [
+                        'lot_id' => $lot->id,
+                        'chat_persisted' => $chatPersisted,
+                    ]);
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Seller payout was sent but completion could not be saved to chat history.',
+                        'error_code' => 'deal_chat_persist_failed',
+                    ], 500);
+                }
                 DealSaleTransactionCompletion::markPendingSaleTransactionsCompleted($lot);
                 DealTerminalLotClosure::releaseLotBuyerBinding($lot);
             }
@@ -5932,7 +5935,7 @@ class ExchangeLotController extends Controller
         ?string $toEmail,
         string $body,
         ?string $dealTag
-    ): void {
+    ): bool {
         try {
             // Enforce max message length on server side.
             $maxLen = (int) config('deal.max_message_length', 1000);
@@ -5967,12 +5970,71 @@ class ExchangeLotController extends Controller
             }
 
             $this->dealWebPushNotifier->notifyDealChatRecipient($lot, $senderSide);
+
+            return true;
         } catch (\Throwable $e) {
             Log::warning('[exchange-lots] insertDealChatMessage failed', [
                 'lot_id' => $lot->id,
                 'error' => $e->getMessage(),
             ]);
+
+            return false;
         }
+    }
+
+    /**
+     * After a terminal completion tag is accepted, mark sales completed, release Core reservations,
+     * and clear buyer_lot_email — only when the tag row is persisted in deal_chat_messages.
+     *
+     * @param  array<string, mixed>|null  $customDealTagData
+     */
+    private function finalizeAmicableDealCompletionIfNeeded(
+        ExchangeLot $lot,
+        Request $request,
+        ?array $customDealTagData,
+        bool $chatPersisted
+    ): ?JsonResponse {
+        if (! is_array($customDealTagData)) {
+            return null;
+        }
+        $isBuyerCompletion = DealSaleTransactionCompletion::dealTagIsBuyerCompletedForLot($customDealTagData, $lot);
+        $isSellerTimeoutCompletion = DealSaleTransactionCompletion::dealTagIsSellerTimeoutCompletionForLot($customDealTagData, $lot);
+        if (! $isBuyerCompletion && ! $isSellerTimeoutCompletion) {
+            return null;
+        }
+
+        $lot->refresh();
+        if (! $chatPersisted || ! $this->exchangeLotHasCompletedDealTagInChat($lot)) {
+            Log::error('[exchange-lots] amicable completion aborted: terminal deal_tag not in chat history', [
+                'lot_id' => $lot->id,
+                'chat_persisted' => $chatPersisted,
+                'tag_type' => $customDealTagData['t'] ?? null,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Deal completion could not be saved to chat history. Reservations were not finalized on the server.',
+                'error_code' => 'deal_chat_persist_failed',
+            ], 500);
+        }
+
+        $completedCount = DealSaleTransactionCompletion::markPendingSaleTransactionsCompleted($lot);
+        if ($isBuyerCompletion) {
+            Log::info('[exchange-lots] buyer completed deal — sale transactions marked completed', [
+                'lot_id' => $lot->id,
+                'updated_rows' => $completedCount,
+            ]);
+            $this->tryDeleteCoreReservationAfterBuyerAmicableCompletion($lot, $request, 'deal_completed_buyer');
+        } else {
+            Log::info('[exchange-lots] seller timeout deal completion — sale transactions marked completed', [
+                'lot_id' => $lot->id,
+                'updated_rows' => $completedCount,
+            ]);
+            $this->tryDeleteCoreReservationAfterSellerAmicableCompletion($lot, $request, 'deal_completed_seller_timeout');
+        }
+        DealTerminalLotClosure::releaseLotBuyerBinding($lot);
+
+        return null;
     }
 
     /**
