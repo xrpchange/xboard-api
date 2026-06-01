@@ -39,10 +39,26 @@ Options:
 
 ### Server setup
 
-Ensure the Laravel scheduler runs every minute (cron), for example:
+The scheduler must run **every minute**. On production (`server@xrpchange.site`, app in `/var/www/xboard-api`) use the **`www-data`** user — same as PHP-FPM (`.env`, `storage/`, uploaded attachments).
+
+One-time install on the server:
 
 ```bash
-* * * * * cd /path-to-xboard-api && php artisan schedule:run >> /dev/null 2>&1
+sudo bash /var/www/xboard-api/scripts/install-laravel-scheduler-cron.sh
+```
+
+Equivalent crontab line (`sudo crontab -u www-data -e`):
+
+```cron
+# xboard-api Laravel schedule:run (see bootstrap/app.php)
+* * * * * cd /var/www/xboard-api && /usr/bin/php artisan schedule:run >> storage/logs/scheduler.log 2>&1
+```
+
+Verify:
+
+```bash
+sudo crontab -u www-data -l
+sudo -u www-data bash -c 'cd /var/www/xboard-api && php artisan schedule:list'
 ```
 
 List scheduled tasks:
