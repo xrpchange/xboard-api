@@ -9,13 +9,27 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Seller correction: undo the last seller-owned deal step via chat tag {@see seller_stage_undo}.
+ * Seller step correction requires buyer consent via two chat tags:
+ * 1. {@see TAG_REQUEST} — seller asks to revert a seller-owned step.
+ * 2. {@see TAG_CONFIRM} — buyer approves; state and DB roll back.
  *
- * @see xboard-client DealChatTagState (seller_stage_undo)
+ * In principle, rollback could be inferred from “request tag then confirm tag” in order alone.
+ * Field `confirm_code` is an extra pair id in X-XBoard-Deal-Tag so multiple open or historical
+ * requests (same or different `step`) do not get matched to the wrong confirm message.
+ * The client never asks the user to type it; it is copied from the parsed request tag into confirm.
+ *
+ * Legacy {@see TAG_LEGACY} is accepted only when replaying old chat history (not for new messages).
+ *
+ * @see xboard-client DealChatTagState
  */
 final class SellerStageUndoSupport
 {
-    public const TAG = 'seller_stage_undo';
+    public const TAG_REQUEST = 'seller_stage_undo_request';
+
+    public const TAG_CONFIRM = 'buyer_stage_undo_confirm';
+
+    /** @deprecated New messages must use request + confirm flow. */
+    public const TAG_LEGACY = 'seller_stage_undo';
 
     public const STEP_PAYMENT_DETAILS = 'payment_details';
 
@@ -23,15 +37,141 @@ final class SellerStageUndoSupport
 
     public const STEP_SELLER_TRANSFER_TX = 'seller_transfer_tx';
 
+    public static function generateConfirmCode(): string
+    {
+        return str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * @return array{step: string, confirm_code: string}|null
+     */
+    public static function findOpenUndoRequestForLot(ExchangeLot $lot): ?array
+    {
+        $tags = DealChatMessage::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->whereNotNull('deal_tag')
+            ->orderBy('id')
+            ->pluck('deal_tag')
+            ->all();
+
+        return self::findOpenUndoRequestFromTags($tags, (string) $lot->id);
+    }
+
+    /**
+     * @param  list<string|null>  $orderedDealTagJson
+     * @return array{step: string, confirm_code: string}|null
+     */
+    public static function findOpenUndoRequestFromTags(array $orderedDealTagJson, string $lotIdStr): ?array
+    {
+        $pending = null;
+        foreach ($orderedDealTagJson as $raw) {
+            if (! is_string($raw) || trim($raw) === '') {
+                continue;
+            }
+            $obj = json_decode($raw, true);
+            if (! is_array($obj) || (string) ($obj['lot_id'] ?? '') !== $lotIdStr) {
+                continue;
+            }
+            $t = trim((string) ($obj['t'] ?? ''));
+            if ($t === self::TAG_REQUEST) {
+                $step = trim((string) ($obj['step'] ?? ''));
+                $code = trim((string) ($obj['confirm_code'] ?? ''));
+                if ($step !== '' && $code !== '') {
+                    $pending = ['step' => $step, 'confirm_code' => $code];
+                }
+
+                continue;
+            }
+            if ($t === self::TAG_CONFIRM) {
+                $step = trim((string) ($obj['step'] ?? ''));
+                $code = trim((string) ($obj['confirm_code'] ?? ''));
+                if ($pending !== null
+                    && $pending['step'] === $step
+                    && $pending['confirm_code'] === $code) {
+                    $pending = null;
+                }
+
+                continue;
+            }
+            if ($t === self::TAG_LEGACY) {
+                $pending = null;
+            }
+        }
+
+        return $pending;
+    }
+
     /**
      * @return array{message: string, error_code: string}|null
      */
-    public static function validateSellerStageUndo(ExchangeLot $lot, array $dealTagData): ?array
+    public static function validateSellerStageUndoRequest(ExchangeLot $lot, array $dealTagData): ?array
+    {
+        if (self::findOpenUndoRequestForLot($lot) !== null) {
+            return [
+                'message' => 'An undo request is already waiting for buyer confirmation.',
+                'error_code' => 'seller_stage_undo_request_pending',
+            ];
+        }
+        if (trim((string) ($dealTagData['confirm_code'] ?? '')) !== '') {
+            return [
+                'message' => 'confirm_code is assigned by the server on seller_stage_undo_request.',
+                'error_code' => 'deal_tag_invalid',
+            ];
+        }
+
+        return self::validateUndoStepAllowed($lot, $dealTagData);
+    }
+
+    /**
+     * @return array{message: string, error_code: string}|null
+     */
+    public static function validateBuyerStageUndoConfirm(ExchangeLot $lot, array $dealTagData): ?array
+    {
+        $step = trim((string) ($dealTagData['step'] ?? ''));
+        $code = trim((string) ($dealTagData['confirm_code'] ?? ''));
+        if ($step === '' || $code === '') {
+            return [
+                'message' => 'buyer_stage_undo_confirm must include non-empty "step" and "confirm_code".',
+                'error_code' => 'deal_tag_invalid',
+            ];
+        }
+        $open = self::findOpenUndoRequestForLot($lot);
+        if ($open === null) {
+            return [
+                'message' => 'No pending seller undo request for this deal.',
+                'error_code' => 'seller_stage_undo_no_pending_request',
+            ];
+        }
+        if ($open['step'] !== $step || $open['confirm_code'] !== $code) {
+            return [
+                'message' => 'confirm_code or step does not match the open undo request.',
+                'error_code' => 'seller_stage_undo_confirm_mismatch',
+            ];
+        }
+
+        return self::validateUndoStepAllowed($lot, $dealTagData);
+    }
+
+    /**
+     * @return array{message: string, error_code: string}|null
+     */
+    public static function rejectLegacyDirectUndo(): array
+    {
+        return [
+            'message' => 'Direct seller_stage_undo is not allowed. Use seller_stage_undo_request and buyer_stage_undo_confirm.',
+            'error_code' => 'seller_stage_undo_requires_buyer_confirm',
+        ];
+    }
+
+    /**
+     * @return array{message: string, error_code: string}|null
+     */
+    private static function validateUndoStepAllowed(ExchangeLot $lot, array $dealTagData): ?array
     {
         $step = trim((string) ($dealTagData['step'] ?? ''));
         if ($step === '') {
             return [
-                'message' => 'seller_stage_undo must include non-empty "step".',
+                'message' => 'Undo tag must include non-empty "step".',
                 'error_code' => 'deal_tag_invalid',
             ];
         }
@@ -41,7 +181,7 @@ final class SellerStageUndoSupport
             self::STEP_SELLER_TRANSFER_TX,
         ], true)) {
             return [
-                'message' => 'Unknown seller_stage_undo step.',
+                'message' => 'Unknown undo step.',
                 'error_code' => 'deal_tag_invalid',
             ];
         }
@@ -53,7 +193,7 @@ final class SellerStageUndoSupport
             self::STEP_SELLER_RECEIVED_FUNDS => self::validateUndoSellerReceivedFunds($state),
             self::STEP_SELLER_TRANSFER_TX => self::validateUndoSellerTransferTx($lot, $state),
             default => [
-                'message' => 'Unexpected seller_stage_undo step.',
+                'message' => 'Unexpected undo step.',
                 'error_code' => 'deal_tag_invalid',
             ],
         };
@@ -153,7 +293,15 @@ final class SellerStageUndoSupport
      */
     public static function applyTagObjectToState(string $state, array $obj): string
     {
+        $t = trim((string) ($obj['t'] ?? ''));
+        if ($t === self::TAG_REQUEST) {
+            return $state;
+        }
+
         $step = trim((string) ($obj['step'] ?? ''));
+        if ($t !== self::TAG_CONFIRM && $t !== self::TAG_LEGACY) {
+            return $state;
+        }
 
         return match ($step) {
             self::STEP_PAYMENT_DETAILS => DealChatTagSequenceValidator::STATE_DEAL_STARTED,

@@ -231,31 +231,44 @@ class DealChatTagSequenceValidatorTest extends TestCase
         $this->assertSame('deal_tag_out_of_sequence', $err['error_code']);
     }
 
-    public function test_seller_stage_undo_payment_details_reverts_to_started(): void
+    public function test_seller_stage_undo_request_does_not_change_state_until_buyer_confirms(): void
     {
         $tags = [
             json_encode(['t' => 'start_deal', 'lot_id' => 1]),
             json_encode(['t' => 'payment_details', 'lot_id' => 1, 'bank_id' => 2]),
-            json_encode(['t' => 'seller_stage_undo', 'lot_id' => 1, 'step' => 'payment_details']),
+            json_encode(['t' => 'seller_stage_undo_request', 'lot_id' => 1, 'step' => 'payment_details', 'confirm_code' => '123456']),
+        ];
+        $state = DealChatTagSequenceValidator::reduceStateFromOrderedDealTags($tags, false);
+        $this->assertSame(DealChatTagSequenceValidator::STATE_WAIT_BUYER_PAY, $state);
+    }
+
+    public function test_buyer_stage_undo_confirm_payment_details_reverts_to_started(): void
+    {
+        $tags = [
+            json_encode(['t' => 'start_deal', 'lot_id' => 1]),
+            json_encode(['t' => 'payment_details', 'lot_id' => 1, 'bank_id' => 2]),
+            json_encode(['t' => 'seller_stage_undo_request', 'lot_id' => 1, 'step' => 'payment_details', 'confirm_code' => '123456']),
+            json_encode(['t' => 'buyer_stage_undo_confirm', 'lot_id' => 1, 'step' => 'payment_details', 'confirm_code' => '123456']),
         ];
         $state = DealChatTagSequenceValidator::reduceStateFromOrderedDealTags($tags, false);
         $this->assertSame(DealChatTagSequenceValidator::STATE_DEAL_STARTED, $state);
     }
 
-    public function test_seller_stage_undo_seller_received_funds_reverts_to_wait_seller_confirm(): void
+    public function test_buyer_stage_undo_confirm_seller_received_funds_reverts_to_wait_seller_confirm(): void
     {
         $tags = [
             json_encode(['t' => 'start_deal', 'lot_id' => 2]),
             json_encode(['t' => 'payment_details', 'lot_id' => 2, 'bank_id' => 1]),
             json_encode(['t' => 'receipt_confirmation', 'lot_id' => 2]),
             json_encode(['t' => 'seller_received_funds', 'lot_id' => 2]),
-            json_encode(['t' => 'seller_stage_undo', 'lot_id' => 2, 'step' => 'seller_received_funds']),
+            json_encode(['t' => 'seller_stage_undo_request', 'lot_id' => 2, 'step' => 'seller_received_funds', 'confirm_code' => '654321']),
+            json_encode(['t' => 'buyer_stage_undo_confirm', 'lot_id' => 2, 'step' => 'seller_received_funds', 'confirm_code' => '654321']),
         ];
         $state = DealChatTagSequenceValidator::reduceStateFromOrderedDealTags($tags, false);
         $this->assertSame(DealChatTagSequenceValidator::STATE_WAIT_SELLER_CONFIRM, $state);
     }
 
-    public function test_seller_stage_undo_seller_transfer_tx_reverts_to_wait_seller_transfer(): void
+    public function test_buyer_stage_undo_confirm_seller_transfer_tx_reverts_to_wait_seller_transfer(): void
     {
         $tags = [
             json_encode(['t' => 'start_deal', 'lot_id' => 3]),
@@ -264,9 +277,21 @@ class DealChatTagSequenceValidatorTest extends TestCase
             json_encode(['t' => 'seller_received_funds', 'lot_id' => 3]),
             json_encode(['t' => 'buyer_destination_details', 'lot_id' => 3, 'address' => 'dest']),
             json_encode(['t' => 'seller_transfer_tx', 'lot_id' => 3, 'tx_number' => 'abc']),
-            json_encode(['t' => 'seller_stage_undo', 'lot_id' => 3, 'step' => 'seller_transfer_tx']),
+            json_encode(['t' => 'seller_stage_undo_request', 'lot_id' => 3, 'step' => 'seller_transfer_tx', 'confirm_code' => '111222']),
+            json_encode(['t' => 'buyer_stage_undo_confirm', 'lot_id' => 3, 'step' => 'seller_transfer_tx', 'confirm_code' => '111222']),
         ];
         $state = DealChatTagSequenceValidator::reduceStateFromOrderedDealTags($tags, false);
         $this->assertSame(DealChatTagSequenceValidator::STATE_WAIT_SELLER_TRANSFER, $state);
+    }
+
+    public function test_legacy_seller_stage_undo_still_reverts_in_reducer(): void
+    {
+        $tags = [
+            json_encode(['t' => 'start_deal', 'lot_id' => 4]),
+            json_encode(['t' => 'payment_details', 'lot_id' => 4, 'bank_id' => 2]),
+            json_encode(['t' => 'seller_stage_undo', 'lot_id' => 4, 'step' => 'payment_details']),
+        ];
+        $state = DealChatTagSequenceValidator::reduceStateFromOrderedDealTags($tags, false);
+        $this->assertSame(DealChatTagSequenceValidator::STATE_DEAL_STARTED, $state);
     }
 }

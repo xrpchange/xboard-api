@@ -2171,6 +2171,15 @@ class ExchangeLotController extends Controller
                         'error_code' => $disputeOpenCheck['error_code'],
                     ], (int) ($disputeOpenCheck['status'] ?? 422));
                 }
+                if (($customDealTagData['t'] ?? '') === \App\Support\SellerStageUndoSupport::TAG_CONFIRM) {
+                    $sellerEscrowForUndo = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+                    \App\Support\SellerStageUndoSupport::applyDatabaseSideEffects(
+                        $lot,
+                        trim((string) ($customDealTagData['step'] ?? '')),
+                        is_string($sellerEscrowForUndo) ? $sellerEscrowForUndo : null,
+                        fn (string $token) => $this->escrowTokenValidation->getCoreUrlAndKeyForToken($token),
+                    );
+                }
                 $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
             $this->sendDealEmail(
@@ -2815,14 +2824,8 @@ class ExchangeLotController extends Controller
                         'error_code' => $disputeOpenCheck['error_code'],
                     ], (int) ($disputeOpenCheck['status'] ?? 422));
                 }
-                if (($customDealTagData['t'] ?? '') === \App\Support\SellerStageUndoSupport::TAG) {
-                    $sellerEscrowForUndo = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
-                    \App\Support\SellerStageUndoSupport::applyDatabaseSideEffects(
-                        $lot,
-                        trim((string) ($customDealTagData['step'] ?? '')),
-                        is_string($sellerEscrowForUndo) ? $sellerEscrowForUndo : null,
-                        fn (string $token) => $this->escrowTokenValidation->getCoreUrlAndKeyForToken($token),
-                    );
+                if (($customDealTagData['t'] ?? '') === \App\Support\SellerStageUndoSupport::TAG_REQUEST) {
+                    $customDealTagData['confirm_code'] = \App\Support\SellerStageUndoSupport::generateConfirmCode();
                 }
                 $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
@@ -2932,10 +2935,16 @@ class ExchangeLotController extends Controller
             }
         }
 
-        return response()->json([
+        $response = [
             'success' => true,
             'message' => 'Message sent to buyer.',
-        ]);
+        ];
+        if (is_array($customDealTagData)
+            && ($customDealTagData['t'] ?? '') === \App\Support\SellerStageUndoSupport::TAG_REQUEST) {
+            $response['undo_confirm_code'] = (string) ($customDealTagData['confirm_code'] ?? '');
+        }
+
+        return response()->json($response);
     }
 
     /**
