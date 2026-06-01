@@ -94,6 +94,9 @@ final class DealChatTagSequenceValidator
         if (self::isDisputeTag($t)) {
             return self::validateBuyerDisputeTagForState($state);
         }
+        if ($t === SellerStageUndoSupport::TAG_CONFIRM) {
+            return SellerStageUndoSupport::validateBuyerStageUndoConfirm($lot, $dealTagData);
+        }
         $allowedBuyer = [
             'buyer_message',
             'receipt_confirmation',
@@ -185,16 +188,18 @@ final class DealChatTagSequenceValidator
         if (self::isDisputeTag($t)) {
             return self::validateSellerDisputeTagForState($state);
         }
+        if ($t === SellerStageUndoSupport::TAG_LEGACY) {
+            return SellerStageUndoSupport::rejectLegacyDirectUndo();
+        }
+        if ($t === SellerStageUndoSupport::TAG_REQUEST) {
+            return SellerStageUndoSupport::validateSellerStageUndoRequest($lot, $dealTagData);
+        }
         $allowedSeller = [
             'seller_message',
             'seller_received_funds',
             'seller_transfer_tx',
             'deal_completed_seller_timeout',
-            SellerStageUndoSupport::TAG,
         ];
-        if ($t === SellerStageUndoSupport::TAG) {
-            return SellerStageUndoSupport::validateSellerStageUndo($lot, $dealTagData);
-        }
         if (! in_array($t, $allowedSeller, true)) {
             return [
                 'message' => 'This deal_tag type is not allowed from the seller on this endpoint.',
@@ -305,7 +310,9 @@ final class DealChatTagSequenceValidator
                 return self::STATE_BUYER_EXITED;
             case 'seller_exited':
                 return self::STATE_SELLER_EXITED;
-            case SellerStageUndoSupport::TAG:
+            case SellerStageUndoSupport::TAG_REQUEST:
+            case SellerStageUndoSupport::TAG_CONFIRM:
+            case SellerStageUndoSupport::TAG_LEGACY:
                 return SellerStageUndoSupport::applyTagObjectToState($state, $obj);
             default:
                 return $state;
