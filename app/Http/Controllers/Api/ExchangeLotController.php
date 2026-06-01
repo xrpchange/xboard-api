@@ -186,6 +186,40 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * Stablecoin payout destinations must match the deal asset network (Stellar G…, Tron T…, Polygon 0x…).
+     *
+     * @return array{message: string, error_code: string}|null
+     */
+    private static function validateStablecoinPayoutDestinationAddress(string $address, string $cryptoType): ?array
+    {
+        $payoutNetwork = self::coreNetworkFromCryptoType($cryptoType);
+        if ($payoutNetwork === null) {
+            return null;
+        }
+        $destNet = self::inferStablecoinNetworkFromBlockchainAddress($address);
+        $hint = match ($payoutNetwork) {
+            'stellar' => 'Stellar account (starts with G, 56 characters)',
+            'tron' => 'Tron address (starts with T)',
+            'polygon' => 'Polygon address (0x + 40 hex)',
+            default => $payoutNetwork,
+        };
+        if ($destNet === null) {
+            return [
+                'message' => 'Invalid payout address for this deal. Expected '.$hint.'.',
+                'error_code' => 'crypto_address_invalid',
+            ];
+        }
+        if ($destNet !== $payoutNetwork) {
+            return [
+                'message' => 'Payout address network ('.$destNet.') does not match deal payment asset ('.$payoutNetwork.'). Expected '.$hint.'.',
+                'error_code' => 'crypto_address_network_mismatch',
+            ];
+        }
+
+        return null;
+    }
+
+    /**
      * Buyer payout must use the deal's payment asset (lot), not a different USDT network from the token JSON alone.
      */
     private static function resolveBuyerDealPayoutCryptoType(ExchangeLot $lot, string $buyerEscrowToken): string
@@ -3433,6 +3467,23 @@ class ExchangeLotController extends Controller
             ], 422);
         }
 
+        if ($paymentType === 'crypto') {
+            try {
+                $lot->loadMissing(['fromCryptoCurrency', 'toCryptoCurrency', 'cryptoCurrency']);
+                $payoutCryptoType = self::coreCryptoTypeForSellerEscrow($lot);
+                $addrError = self::validateStablecoinPayoutDestinationAddress($address, $payoutCryptoType);
+                if ($addrError !== null) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $addrError['message'],
+                        'error_code' => $addrError['error_code'],
+                    ], 422);
+                }
+            } catch (\InvalidArgumentException $e) {
+                return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+            }
+        }
+
         $buyerEmail = (string) ($lot->buyer_lot_email ?? '');
         if ($buyerEmail === '') {
             return response()->json([
@@ -3978,6 +4029,15 @@ class ExchangeLotController extends Controller
                 return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
             }
 
+            $addrError = self::validateStablecoinPayoutDestinationAddress($dest, $cryptoType);
+            if ($addrError !== null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $addrError['message'],
+                    'error_code' => $addrError['error_code'],
+                ], 422);
+            }
+
             [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
             $timeout = (int) config('services.core.payout_timeout', 120);
             $destinationPreview = strlen($dest) > 24 ? (substr($dest, 0, 24).'...') : $dest;
@@ -3991,6 +4051,10 @@ class ExchangeLotController extends Controller
                 'native_amount' => 0.0,
                 'aml_required' => (bool) $lot->aml,
             ];
+            $payoutNetwork = self::coreNetworkFromCryptoType($cryptoType);
+            if ($payoutNetwork !== null) {
+                $payload['network'] = $payoutNetwork;
+            }
 
             $req = Http::timeout($timeout)->asJson();
             if ($coreKey !== '') {
