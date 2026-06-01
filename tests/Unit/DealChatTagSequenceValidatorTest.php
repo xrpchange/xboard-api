@@ -43,6 +43,22 @@ class DealChatTagSequenceValidatorTest extends TestCase
         $this->assertSame(DealChatTagSequenceValidator::STATE_WAIT_BUYER_COMPLETE, $state);
     }
 
+    public function test_reduce_state_buyer_completion_not_regressed_by_later_seller_crypto_tag(): void
+    {
+        $tags = [
+            json_encode(['t' => 'start_deal', 'lot_id' => 5]),
+            json_encode(['t' => 'payment_details', 'lot_id' => 5, 'crypto' => 'xmr', 'address' => 'x']),
+            json_encode(['t' => 'buyer_crypto_tx', 'lot_id' => 5]),
+            json_encode(['t' => 'seller_received_funds', 'lot_id' => 5]),
+            json_encode(['t' => 'buyer_destination_details', 'lot_id' => 5, 'address' => 'dest']),
+            json_encode(['t' => 'deal_completed_seller', 'lot_id' => 5, 'crypto_payout_tx' => '0xdead']),
+            json_encode(['t' => 'deal_completed_buyer', 'lot_id' => 5]),
+            json_encode(['t' => 'deal_completed_seller', 'lot_id' => 5, 'crypto_payout_tx' => '0xdead']),
+        ];
+        $state = DealChatTagSequenceValidator::reduceStateFromOrderedDealTags($tags, false);
+        $this->assertSame(DealChatTagSequenceValidator::STATE_COMPLETED, $state);
+    }
+
     public function test_empty_history_with_active_buyer_falls_back_to_started(): void
     {
         $state = DealChatTagSequenceValidator::reduceStateFromOrderedDealTags([], true);
