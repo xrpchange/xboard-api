@@ -2815,6 +2815,15 @@ class ExchangeLotController extends Controller
                         'error_code' => $disputeOpenCheck['error_code'],
                     ], (int) ($disputeOpenCheck['status'] ?? 422));
                 }
+                if (($customDealTagData['t'] ?? '') === \App\Support\SellerStageUndoSupport::TAG) {
+                    $sellerEscrowForUndo = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+                    \App\Support\SellerStageUndoSupport::applyDatabaseSideEffects(
+                        $lot,
+                        trim((string) ($customDealTagData['step'] ?? '')),
+                        is_string($sellerEscrowForUndo) ? $sellerEscrowForUndo : null,
+                        fn (string $token) => $this->escrowTokenValidation->getCoreUrlAndKeyForToken($token),
+                    );
+                }
                 $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
         }
