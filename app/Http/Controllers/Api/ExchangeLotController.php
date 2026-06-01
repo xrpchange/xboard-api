@@ -2171,6 +2171,9 @@ class ExchangeLotController extends Controller
                         'error_code' => $disputeOpenCheck['error_code'],
                     ], (int) ($disputeOpenCheck['status'] ?? 422));
                 }
+                if (($customDealTagData['t'] ?? '') === \App\Support\BuyerStageUndoSupport::TAG_REQUEST) {
+                    $customDealTagData['confirm_code'] = \App\Support\SellerStageUndoSupport::generateConfirmCode();
+                }
                 if (($customDealTagData['t'] ?? '') === \App\Support\SellerStageUndoSupport::TAG_CONFIRM) {
                     $sellerEscrowForUndo = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
                     \App\Support\SellerStageUndoSupport::applyDatabaseSideEffects(
@@ -2382,6 +2385,13 @@ class ExchangeLotController extends Controller
         ];
         if ($buyerMailboxConfig !== null) {
             $response['mailbox'] = $buyerMailboxConfig;
+        }
+        if (is_array($customDealTagData)) {
+            $tagType = (string) ($customDealTagData['t'] ?? '');
+            if ($tagType === \App\Support\SellerStageUndoSupport::TAG_REQUEST
+                || $tagType === \App\Support\BuyerStageUndoSupport::TAG_REQUEST) {
+                $response['undo_confirm_code'] = (string) ($customDealTagData['confirm_code'] ?? '');
+            }
         }
 
         return response()->json($response);
@@ -2827,6 +2837,12 @@ class ExchangeLotController extends Controller
                 if (($customDealTagData['t'] ?? '') === \App\Support\SellerStageUndoSupport::TAG_REQUEST) {
                     $customDealTagData['confirm_code'] = \App\Support\SellerStageUndoSupport::generateConfirmCode();
                 }
+                if (($customDealTagData['t'] ?? '') === \App\Support\BuyerStageUndoSupport::TAG_CONFIRM) {
+                    \App\Support\BuyerStageUndoSupport::applyDatabaseSideEffects(
+                        $lot,
+                        trim((string) ($customDealTagData['step'] ?? '')),
+                    );
+                }
                 $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
         }
@@ -2939,9 +2955,12 @@ class ExchangeLotController extends Controller
             'success' => true,
             'message' => 'Message sent to buyer.',
         ];
-        if (is_array($customDealTagData)
-            && ($customDealTagData['t'] ?? '') === \App\Support\SellerStageUndoSupport::TAG_REQUEST) {
-            $response['undo_confirm_code'] = (string) ($customDealTagData['confirm_code'] ?? '');
+        if (is_array($customDealTagData)) {
+            $tagType = (string) ($customDealTagData['t'] ?? '');
+            if ($tagType === \App\Support\SellerStageUndoSupport::TAG_REQUEST
+                || $tagType === \App\Support\BuyerStageUndoSupport::TAG_REQUEST) {
+                $response['undo_confirm_code'] = (string) ($customDealTagData['confirm_code'] ?? '');
+            }
         }
 
         return response()->json($response);

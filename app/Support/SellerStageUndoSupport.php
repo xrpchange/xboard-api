@@ -112,6 +112,12 @@ final class SellerStageUndoSupport
                 'error_code' => 'seller_stage_undo_request_pending',
             ];
         }
+        if (BuyerStageUndoSupport::findOpenUndoRequestForLot($lot) !== null) {
+            return [
+                'message' => 'Cannot open a seller undo request while a buyer undo request is pending.',
+                'error_code' => 'stage_undo_request_pending',
+            ];
+        }
         if (trim((string) ($dealTagData['confirm_code'] ?? '')) !== '') {
             return [
                 'message' => 'confirm_code is assigned by the server on seller_stage_undo_request.',
