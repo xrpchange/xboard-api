@@ -20,6 +20,8 @@ final class BuyerStageUndoSupport
 
     public const TAG_CONFIRM = 'seller_stage_undo_confirm';
 
+    public const TAG_REJECT = 'seller_stage_undo_reject';
+
     public const STEP_BUYER_PAYMENT_PROOF = 'buyer_payment_proof';
 
     public const STEP_BUYER_DESTINATION_DETAILS = 'buyer_destination_details';
@@ -112,11 +114,35 @@ final class BuyerStageUndoSupport
      */
     public static function validateSellerStageUndoConfirm(ExchangeLot $lot, array $dealTagData): ?array
     {
+        $matchError = self::validateSellerResponseToOpenUndoRequest($lot, $dealTagData, 'seller_stage_undo_confirm');
+        if ($matchError !== null) {
+            return $matchError;
+        }
+
+        return self::validateUndoStepAllowed($lot, $dealTagData);
+    }
+
+    /**
+     * @return array{message: string, error_code: string}|null
+     */
+    public static function validateSellerStageUndoReject(ExchangeLot $lot, array $dealTagData): ?array
+    {
+        return self::validateSellerResponseToOpenUndoRequest($lot, $dealTagData, 'seller_stage_undo_reject');
+    }
+
+    /**
+     * @return array{message: string, error_code: string}|null
+     */
+    private static function validateSellerResponseToOpenUndoRequest(
+        ExchangeLot $lot,
+        array $dealTagData,
+        string $tagType,
+    ): ?array {
         $step = trim((string) ($dealTagData['step'] ?? ''));
         $code = trim((string) ($dealTagData['confirm_code'] ?? ''));
         if ($step === '' || $code === '') {
             return [
-                'message' => 'seller_stage_undo_confirm must include non-empty "step" and "confirm_code".',
+                'message' => $tagType.' must include non-empty "step" and "confirm_code".',
                 'error_code' => 'deal_tag_invalid',
             ];
         }
@@ -130,11 +156,11 @@ final class BuyerStageUndoSupport
         if ($open['step'] !== $step || $open['confirm_code'] !== $code) {
             return [
                 'message' => 'confirm_code or step does not match the open undo request.',
-                'error_code' => 'buyer_stage_undo_confirm_mismatch',
+                'error_code' => 'buyer_stage_undo_response_mismatch',
             ];
         }
 
-        return self::validateUndoStepAllowed($lot, $dealTagData);
+        return null;
     }
 
     /**
@@ -224,7 +250,7 @@ final class BuyerStageUndoSupport
     public static function applyTagObjectToState(string $state, array $obj): string
     {
         $t = trim((string) ($obj['t'] ?? ''));
-        if ($t === self::TAG_REQUEST) {
+        if ($t === self::TAG_REQUEST || $t === self::TAG_REJECT) {
             return $state;
         }
 

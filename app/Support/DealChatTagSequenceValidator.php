@@ -97,6 +97,9 @@ final class DealChatTagSequenceValidator
         if ($t === SellerStageUndoSupport::TAG_CONFIRM) {
             return SellerStageUndoSupport::validateBuyerStageUndoConfirm($lot, $dealTagData);
         }
+        if ($t === SellerStageUndoSupport::TAG_REJECT) {
+            return SellerStageUndoSupport::validateBuyerStageUndoReject($lot, $dealTagData);
+        }
         if ($t === BuyerStageUndoSupport::TAG_REQUEST) {
             return BuyerStageUndoSupport::validateBuyerStageUndoRequest($lot, $dealTagData);
         }
@@ -199,6 +202,9 @@ final class DealChatTagSequenceValidator
         }
         if ($t === BuyerStageUndoSupport::TAG_CONFIRM) {
             return BuyerStageUndoSupport::validateSellerStageUndoConfirm($lot, $dealTagData);
+        }
+        if ($t === BuyerStageUndoSupport::TAG_REJECT) {
+            return BuyerStageUndoSupport::validateSellerStageUndoReject($lot, $dealTagData);
         }
         $allowedSeller = [
             'seller_message',
@@ -318,10 +324,12 @@ final class DealChatTagSequenceValidator
                 return self::STATE_SELLER_EXITED;
             case SellerStageUndoSupport::TAG_REQUEST:
             case SellerStageUndoSupport::TAG_CONFIRM:
+            case SellerStageUndoSupport::TAG_REJECT:
             case SellerStageUndoSupport::TAG_LEGACY:
                 return SellerStageUndoSupport::applyTagObjectToState($state, $obj);
             case BuyerStageUndoSupport::TAG_REQUEST:
             case BuyerStageUndoSupport::TAG_CONFIRM:
+            case BuyerStageUndoSupport::TAG_REJECT:
                 return BuyerStageUndoSupport::applyTagObjectToState($state, $obj);
             default:
                 return $state;

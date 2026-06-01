@@ -334,4 +334,29 @@ class DealChatTagSequenceValidatorTest extends TestCase
         $state = DealChatTagSequenceValidator::reduceStateFromOrderedDealTags($tags, false);
         $this->assertSame(DealChatTagSequenceValidator::STATE_WAIT_BUYER_DEST, $state);
     }
+
+    public function test_buyer_stage_undo_reject_keeps_state_and_closes_request(): void
+    {
+        $tags = [
+            json_encode(['t' => 'start_deal', 'lot_id' => 13]),
+            json_encode(['t' => 'payment_details', 'lot_id' => 13, 'bank_id' => 2]),
+            json_encode(['t' => 'seller_stage_undo_request', 'lot_id' => 13, 'step' => 'payment_details', 'confirm_code' => '999000']),
+            json_encode(['t' => 'buyer_stage_undo_reject', 'lot_id' => 13, 'step' => 'payment_details', 'confirm_code' => '999000']),
+        ];
+        $state = DealChatTagSequenceValidator::reduceStateFromOrderedDealTags($tags, false);
+        $this->assertSame(DealChatTagSequenceValidator::STATE_WAIT_BUYER_PAY, $state);
+    }
+
+    public function test_seller_stage_undo_reject_keeps_state_after_buyer_proof(): void
+    {
+        $tags = [
+            json_encode(['t' => 'start_deal', 'lot_id' => 14]),
+            json_encode(['t' => 'payment_details', 'lot_id' => 14, 'bank_id' => 2]),
+            json_encode(['t' => 'receipt_confirmation', 'lot_id' => 14]),
+            json_encode(['t' => 'buyer_stage_undo_request', 'lot_id' => 14, 'step' => 'buyer_payment_proof', 'confirm_code' => '111333']),
+            json_encode(['t' => 'seller_stage_undo_reject', 'lot_id' => 14, 'step' => 'buyer_payment_proof', 'confirm_code' => '111333']),
+        ];
+        $state = DealChatTagSequenceValidator::reduceStateFromOrderedDealTags($tags, false);
+        $this->assertSame(DealChatTagSequenceValidator::STATE_WAIT_SELLER_CONFIRM, $state);
+    }
 }
