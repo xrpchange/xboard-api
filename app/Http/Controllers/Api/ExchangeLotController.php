@@ -156,6 +156,60 @@ class ExchangeLotController extends Controller
         return self::sellerEscrowCryptoCurrency($lot)?->code ?? ($lot->cryptoCurrency?->code ?? 'crypto');
     }
 
+    /** Tron T…, Stellar G…, Polygon 0x… — chain where funds actually live. */
+    private static function inferStablecoinNetworkFromBlockchainAddress(string $address): ?string
+    {
+        $w = trim($address);
+        if ($w === '') {
+            return null;
+        }
+        if (preg_match('/^T[1-9A-HJ-NP-Za-km-z]{33}$/', $w)) {
+            return 'tron';
+        }
+        if (preg_match('/^G[A-Z2-7]{55}$/', $w)) {
+            return 'stellar';
+        }
+        if (preg_match('/^0x[a-fA-F0-9]{40}$/', $w)) {
+            return 'polygon';
+        }
+
+        return null;
+    }
+
+    private static function coreNetworkFromCryptoType(string $cryptoType): ?string
+    {
+        if (preg_match('/^(usdt|usdc|dai)_(stellar|polygon|tron)$/', strtolower(trim($cryptoType)), $m)) {
+            return $m[2];
+        }
+
+        return null;
+    }
+
+    /**
+     * Buyer payout must use the deal's payment asset (lot), not a different USDT network from the token JSON alone.
+     */
+    private static function resolveBuyerDealPayoutCryptoType(ExchangeLot $lot, string $buyerEscrowToken): string
+    {
+        $lot->loadMissing(['fromCryptoCurrency', 'toCryptoCurrency', 'cryptoCurrency']);
+        $lotType = self::coreCryptoTypeForBuyerEscrow($lot);
+        $tokenType = self::coreCryptoTypeFromEscrowTokenJson($buyerEscrowToken);
+        if ($tokenType === null) {
+            return $lotType;
+        }
+        if ($tokenType === $lotType) {
+            return $lotType;
+        }
+        if (preg_match('/^(usdt|usdc|dai)_(stellar|polygon|tron)$/', $tokenType)
+            && preg_match('/^(usdt|usdc|dai)_(stellar|polygon|tron)$/', $lotType)
+        ) {
+            throw new \InvalidArgumentException(
+                'Buyer escrow token network does not match this deal. Deal requires '.$lotType.'; token is '.$tokenType.'.'
+            );
+        }
+
+        return $tokenType;
+    }
+
     /** Core validateEscrowToken matches token currency to crypto_type; prefer values derived from the token JSON. */
     private static function coreCryptoTypeFromEscrowTokenJson(string $escrowTokenJson): ?string
     {
@@ -171,7 +225,11 @@ class ExchangeLotController extends Controller
             return strtolower($m[1].'_'.$m[2]);
         }
         $currencyUpper = strtoupper($raw);
-        $network = isset($decoded['network']) ? strtolower(trim((string) $decoded['network'])) : '';
+        $walletAddress = isset($decoded['wallet_address']) && is_string($decoded['wallet_address'])
+            ? trim($decoded['wallet_address'])
+            : '';
+        $inferredNet = self::inferStablecoinNetworkFromBlockchainAddress($walletAddress);
+        $network = $inferredNet ?? (isset($decoded['network']) ? strtolower(trim((string) $decoded['network'])) : '');
         if ($network !== '' && in_array($network, ['stellar', 'tron', 'polygon'], true)) {
             foreach (['USDT' => 'usdt', 'USDC' => 'usdc', 'DAI' => 'dai'] as $sym => $prefix) {
                 if ($currencyUpper === $sym) {
@@ -3600,10 +3658,19 @@ class ExchangeLotController extends Controller
             }
 
             try {
-                $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($buyerEscrowToken)
-                    ?? self::coreCryptoTypeForBuyerEscrow($lot);
+                $cryptoType = self::resolveBuyerDealPayoutCryptoType($lot, $buyerEscrowToken);
             } catch (\InvalidArgumentException $e) {
                 return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+            }
+
+            $payoutNetwork = self::coreNetworkFromCryptoType($cryptoType);
+            $destNet = self::inferStablecoinNetworkFromBlockchainAddress($dest);
+            if ($payoutNetwork !== null && $destNet !== null && $payoutNetwork !== $destNet) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Seller payment address network does not match deal payment asset ('.$payoutNetwork.').',
+                    'error_code' => 'seller_crypto_address_network_mismatch',
+                ], 422);
             }
 
             [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($buyerEscrowToken);
@@ -3619,6 +3686,9 @@ class ExchangeLotController extends Controller
                 'native_amount' => 0.0,
                 'aml_required' => (bool) $lot->aml,
             ];
+            if ($payoutNetwork !== null) {
+                $payload['network'] = $payoutNetwork;
+            }
 
             $req = Http::timeout($timeout)->asJson();
             if ($coreKey !== '') {
