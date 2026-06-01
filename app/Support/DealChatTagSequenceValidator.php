@@ -310,6 +310,9 @@ final class DealChatTagSequenceValidator
             case 'seller_transfer_tx':
                 return self::STATE_WAIT_BUYER_COMPLETE;
             case 'deal_completed_seller':
+                if ($state === self::STATE_COMPLETED) {
+                    return self::STATE_COMPLETED;
+                }
                 $cryptoPayoutTx = trim((string) ($obj['crypto_payout_tx'] ?? ''));
 
                 return $cryptoPayoutTx !== ''
