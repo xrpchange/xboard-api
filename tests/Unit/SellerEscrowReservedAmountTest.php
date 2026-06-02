@@ -42,6 +42,23 @@ class SellerEscrowReservedAmountTest extends TestCase
         $this->assertSame(1.0, SellerEscrowReservedAmount::resolve($lot, 'usdt_tron'));
     }
 
+    #[Group('spec-LOT-013')]
+    public function test_deal_crypto_payout_uses_same_units_as_reservation_not_sale_tx_fiat(): void
+    {
+        $lot = new ExchangeLot([
+            'buyer_selected_amount' => 3.5,
+            'rate' => 3.5,
+            'from_crypto_currency_id' => 1,
+            'to_fiat_currency_id' => 2,
+        ]);
+        $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true]);
+        $lot->setRelation('toFiatCurrency', (object) ['code' => 'USD']);
+
+        // Sale transaction.amount stays in buyer to_currency (USD); Core payout must be XMR.
+        $this->assertSame(1.0, SellerEscrowReservedAmount::resolve($lot, 'xmr'));
+        $this->assertNotSame(3.5, SellerEscrowReservedAmount::resolve($lot, 'xmr'));
+    }
+
     public function test_returns_null_when_token_does_not_match_lot(): void
     {
         $lot = new ExchangeLot([

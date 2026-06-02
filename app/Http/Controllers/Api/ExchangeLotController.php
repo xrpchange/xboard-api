@@ -3736,15 +3736,19 @@ class ExchangeLotController extends Controller
                 ], 400);
             }
 
-            $amount = (float) $transaction->amount;
-            if ($amount <= 0) {
-                return response()->json(['success' => false, 'message' => 'Invalid transaction amount.'], 422);
-            }
-
             try {
                 $cryptoType = self::resolveBuyerDealPayoutCryptoType($lot, $buyerEscrowToken);
             } catch (\InvalidArgumentException $e) {
                 return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+            }
+
+            $amount = \App\Support\SellerEscrowReservedAmount::resolve($lot, $cryptoType);
+            if ($amount === null || $amount <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot compute crypto payout amount for this deal and token.',
+                    'error_code' => 'invalid_payout_amount',
+                ], 422);
             }
 
             $payoutNetwork = self::coreNetworkFromCryptoType($cryptoType);
@@ -4050,16 +4054,20 @@ class ExchangeLotController extends Controller
                 ], 400);
             }
 
-            $amount = (float) $transaction->amount;
-            if ($amount <= 0) {
-                return response()->json(['success' => false, 'message' => 'Invalid transaction amount.'], 422);
-            }
-
             try {
                 $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($sellerEscrowToken)
                     ?? self::coreCryptoTypeForSellerEscrow($lot);
             } catch (\InvalidArgumentException $e) {
                 return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+            }
+
+            $amount = \App\Support\SellerEscrowReservedAmount::resolve($lot, $cryptoType);
+            if ($amount === null || $amount <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot compute crypto payout amount for this deal and token.',
+                    'error_code' => 'invalid_payout_amount',
+                ], 422);
             }
 
             $addrError = self::validateStablecoinPayoutDestinationAddress($dest, $cryptoType);
@@ -4385,15 +4393,15 @@ class ExchangeLotController extends Controller
                     return ['success' => false, 'error' => 'buyer_crypto_address_missing', 'crypto_tx_id' => null];
                 }
 
-                $amount = (float) $transaction->amount;
-                if ($amount <= 0) {
-                    return ['success' => false, 'error' => 'invalid_amount', 'crypto_tx_id' => null];
-                }
-
                 try {
                     $cryptoType = self::coreCryptoTypeForSellerEscrow($lot);
                 } catch (\InvalidArgumentException $e) {
                     return ['success' => false, 'error' => $e->getMessage(), 'crypto_tx_id' => null];
+                }
+
+                $amount = \App\Support\SellerEscrowReservedAmount::resolve($lot, $cryptoType);
+                if ($amount === null || $amount <= 0) {
+                    return ['success' => false, 'error' => 'invalid_payout_amount', 'crypto_tx_id' => null];
                 }
 
                 [$coreUrl, $coreKey] = $this->resolveCoreUrlAndKeyForArbiterPayout($lot);
