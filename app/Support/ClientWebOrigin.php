@@ -5,13 +5,17 @@ namespace App\Support;
 /**
  * HTTPS origin of the web client for deal email deep links.
  *
- * Pattern: https://{domain} (production web) and https://dev.{domain} (dev web), any project domain.
+ * Pattern: https://{domain} (production web) and https://dev.{domain} (dev web) where still used.
  * No sandbox.{domain} web — sandbox.api.{domain} maps to https://{domain}.
+ * Domains in DOMAINS_WITHOUT_DEV_WEB: dev.api.{domain} also maps to https://{domain} (no dev.{domain} web).
  * DEFAULT_PROJECT_DOMAIN is the stock build fallback only. See docs/WEB_CLIENT_ORIGINS.md.
  */
 final class ClientWebOrigin
 {
     public const DEFAULT_PROJECT_DOMAIN = 'xdexboard.com';
+
+    /** Project domains that use apex web only (dev.{domain} web host retired). */
+    private const DOMAINS_WITHOUT_DEV_WEB = ['xdexboard.com', 'xrpchange.site'];
 
     public static function normalize(?string $raw): ?string
     {
@@ -48,7 +52,8 @@ final class ClientWebOrigin
 
     /**
      * Fallback when the client omits client_web_origin.
-     * dev.api.{domain} → dev web; sandbox.api.{domain} and api.{domain} → production web (no sandbox web host).
+     * dev.api.{domain} → dev web, or apex web when {domain} has no dev web tier;
+     * sandbox.api.{domain} and api.{domain} → production web (no sandbox web host).
      */
     public static function deriveFromApiHost(?string $apiBase): ?string
     {
@@ -62,7 +67,12 @@ final class ClientWebOrigin
         }
         $host = strtolower($host);
         if (preg_match('/^dev\.api\.(.+)$/', $host, $m)) {
-            return self::normalize('https://dev.'.$m[1]);
+            $domain = $m[1];
+            if (in_array($domain, self::DOMAINS_WITHOUT_DEV_WEB, true)) {
+                return self::normalize('https://'.$domain);
+            }
+
+            return self::normalize('https://dev.'.$domain);
         }
         if (preg_match('/^sandbox\.api\.(.+)$/', $host, $m)) {
             return self::normalize('https://'.$m[1]);

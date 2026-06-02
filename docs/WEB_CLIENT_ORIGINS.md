@@ -7,6 +7,6 @@ Pattern for any project domain `{domain}` (e.g. `xdexboard.com`, `xrpchange.site
 | Web origin | When |
 |------------|------|
 | `https://{domain}` | Production web; also for **sandbox API** emails (no `sandbox.{domain}` web). |
-| `https://dev.{domain}` | Development web (`dev.api.{domain}` requests). |
+| `https://dev.{domain}` | Development web (`dev.api.{domain}`) where still used; retired for `xdexboard.com` and `xrpchange.site` (use apex). |
 
 Deal emails: JSON **`client_web_origin`**, else **`App\Support\ClientWebOrigin::deriveFromApiHost()`** on the API request host. See `docs/DEAL_EMAIL_SUBJECT_TAG.md`.

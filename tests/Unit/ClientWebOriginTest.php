@@ -26,8 +26,8 @@ class ClientWebOriginTest extends TestCase
     public function test_normalize_upgrades_http_to_https(): void
     {
         $this->assertSame(
-            'https://dev.xrpchange.site',
-            ClientWebOrigin::normalize('http://dev.xrpchange.site')
+            'https://xrpchange.site',
+            ClientWebOrigin::normalize('http://xrpchange.site')
         );
     }
 
@@ -47,7 +47,7 @@ class ClientWebOriginTest extends TestCase
     public function test_derive_from_api_host_maps_environment_prefix(): void
     {
         $this->assertSame(
-            'https://dev.xdexboard.com',
+            'https://xdexboard.com',
             ClientWebOrigin::deriveFromApiHost('https://dev.api.xdexboard.com')
         );
         $this->assertSame(
@@ -59,8 +59,12 @@ class ClientWebOriginTest extends TestCase
             ClientWebOrigin::deriveFromApiHost('https://api.xdexboard.com')
         );
         $this->assertSame(
-            'https://dev.xrpchange.site',
+            'https://xrpchange.site',
             ClientWebOrigin::deriveFromApiHost('https://dev.api.xrpchange.site')
+        );
+        $this->assertSame(
+            'https://xrpchange.site',
+            ClientWebOrigin::deriveFromApiHost('https://api.xrpchange.site')
         );
         $this->assertSame(
             'https://xrpchange.site',
@@ -93,8 +97,8 @@ class ClientWebOriginTest extends TestCase
     public function test_resolve_prefers_client_origin_over_api_derivation(): void
     {
         $this->assertSame(
-            'https://dev.xrpchange.site',
-            ClientWebOrigin::resolve('https://dev.xrpchange.site', 'https://dev.api.xdexboard.com')
+            'https://xrpchange.site',
+            ClientWebOrigin::resolve('https://xrpchange.site', 'https://dev.api.xrpchange.site')
         );
     }
 }
