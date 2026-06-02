@@ -6342,12 +6342,12 @@ class ExchangeLotController extends Controller
     private function normalizeClientWebOriginForStorage(Request $request): ?string
     {
         $raw = $request->input('client_web_origin');
-        $fromBody = ClientWebOrigin::normalize(is_string($raw) ? $raw : null);
+        $fromBody = ClientWebOrigin::hostForStorage(is_string($raw) ? $raw : null);
         if ($fromBody !== null) {
             return $fromBody;
         }
 
-        return ClientWebOrigin::normalize($request->header('Origin'));
+        return ClientWebOrigin::hostForStorage($request->header('Origin'));
     }
 
     private function buildOpenDealEmailLinks(?string $clientWebOrigin, ?array $params, ?ExchangeLot $lot = null): array

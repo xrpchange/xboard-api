@@ -108,7 +108,23 @@ class ClientWebOriginTest extends TestCase
     {
         $this->assertSame(
             'https://xdexboard.com',
-            ClientWebOrigin::resolve('https://xdexboard.com', 'https://api.xrpchange.site')
+            ClientWebOrigin::resolve('xdexboard.com', 'https://api.xrpchange.site')
         );
+    }
+
+    #[Group('spec')]
+    #[Group('spec-LOT-011')]
+    public function test_host_for_storage_strips_scheme(): void
+    {
+        $this->assertSame('xdexboard.com', ClientWebOrigin::hostForStorage('https://xdexboard.com/'));
+        $this->assertSame('xdexboard.com', ClientWebOrigin::hostForStorage('xdexboard.com'));
+    }
+
+    #[Group('spec')]
+    #[Group('spec-LOT-011')]
+    public function test_https_origin_from_storage_accepts_host_or_legacy_origin(): void
+    {
+        $this->assertSame('https://xdexboard.com', ClientWebOrigin::httpsOriginFromStorage('xdexboard.com'));
+        $this->assertSame('https://xdexboard.com', ClientWebOrigin::httpsOriginFromStorage('https://xdexboard.com'));
     }
 }
