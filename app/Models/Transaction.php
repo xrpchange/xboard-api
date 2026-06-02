@@ -5,8 +5,6 @@ namespace App\Models;
 use App\Services\ReceiptAttachmentStorage;
 use App\Support\SellerEscrowReservedAmount;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use App\Models\ExchangeLot;
-use App\Support\SellerEscrowReservedAmount;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
