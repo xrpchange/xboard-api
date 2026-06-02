@@ -4235,13 +4235,13 @@ class ExchangeLotController extends Controller
                         'error_code' => 'deal_chat_persist_failed',
                     ], 500);
                 }
-                DealSaleTransactionCompletion::markPendingSaleTransactionsCompleted($lot);
-                DealTerminalLotClosure::releaseLotBuyerBinding($lot);
+                // Crypto payout: keep buyer_lot_email and pending-sale closure until buyer posts
+                // deal_completed_buyer or seller posts deal_completed_seller_timeout (LOT-002 / client stage flow).
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Crypto sent to buyer address. Deal marked completed.',
+                'message' => 'Crypto sent to buyer address. Waiting for buyer to confirm deal completion.',
                 'transaction_id' => $transaction->id,
                 'crypto_tx_id' => $cryptoTxId,
                 'destination_address' => $dest,
