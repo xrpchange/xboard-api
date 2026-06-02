@@ -1389,6 +1389,10 @@ class ExchangeLotController extends Controller
                 ? trim($validated['seller_notification_email'])
                 : null;
         }
+        $clientWebOriginForUpdate = $this->normalizeClientWebOriginForStorage($request);
+        if ($request->has('client_web_origin') || $clientWebOriginForUpdate !== null) {
+            $updateData['client_web_origin'] = $clientWebOriginForUpdate;
+        }
         // AML: read from raw JSON so "aml": null is never lost
         $raw = $request->getContent();
         $input = \is_array($request->all()) ? $request->all() : [];
