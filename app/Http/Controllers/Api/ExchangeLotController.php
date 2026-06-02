@@ -923,6 +923,7 @@ class ExchangeLotController extends Controller
             'buyer_payment_timeout_minutes' => \App\Support\BuyerPaymentTimeoutMinutes::validationRule(),
             'seller_notification_email' => 'nullable|string|email|max:255',
             'buyer_notification_email' => 'nullable|string|email|max:255',
+            'client_web_origin' => 'nullable|string|max:256',
             'expires_at' => 'nullable|date',
             'escrow_multisig_2_of_3_required' => 'nullable|boolean',
         ]);
@@ -1084,6 +1085,7 @@ class ExchangeLotController extends Controller
         $validated['seller_notification_email'] = ! empty($validated['seller_notification_email'])
             ? trim($validated['seller_notification_email'])
             : null;
+        $validated['client_web_origin'] = $this->normalizeClientWebOriginForStorage($request);
 
         unset($validated['from_currency'], $validated['to_currency']);
         $bankIds = $validated['bank_ids'] ?? null;
@@ -1241,6 +1243,7 @@ class ExchangeLotController extends Controller
             'aml' => 'nullable|boolean',
             'buyer_payment_timeout_minutes' => \App\Support\BuyerPaymentTimeoutMinutes::validationRule(),
             'seller_notification_email' => 'nullable|string|email|max:255',
+            'client_web_origin' => 'nullable|string|max:256',
             'escrow_multisig_2_of_3_required' => 'sometimes|boolean',
         ]);
 
@@ -1252,6 +1255,9 @@ class ExchangeLotController extends Controller
         }
 
         $validated = $validator->validated();
+        if ($request->has('client_web_origin')) {
+            $validated['client_web_origin'] = $this->normalizeClientWebOriginForStorage($request);
+        }
         $buyAmounts = array_values(array_filter(array_map('floatval', $validated['buy_amounts']), fn ($v) => $v > 0));
         if (empty($buyAmounts)) {
             return response()->json([
@@ -2220,7 +2226,7 @@ class ExchangeLotController extends Controller
                     ], 429);
                 }
                 $clientWebOriginRaw = $request->input('client_web_origin');
-                $links = $this->buildOpenDealEmailLinks($clientWebOriginRaw, $this->sellerOpenDealQueryParams($lot));
+                $links = $this->buildOpenDealEmailLinks($clientWebOriginRaw, $this->sellerOpenDealQueryParams($lot), $lot);
                 $clientWebUrl = $links['clientWebUrl'];
                 $webUrl = $links['appLandingUrl'];
                 $appIntentUrl = $links['appIntentUrl'];
@@ -2284,7 +2290,7 @@ class ExchangeLotController extends Controller
                             'to' => $buyerExternalEmail,
                         ]);
                     } else {
-                        $links = $this->buildOpenDealEmailLinks($clientWebOriginRaw, $this->sellerOpenDealQueryParams($lot));
+                        $links = $this->buildOpenDealEmailLinks($clientWebOriginRaw, $this->sellerOpenDealQueryParams($lot), $lot);
                         $clientWebUrl = $links['clientWebUrl'];
                         $webUrl = $links['appLandingUrl'];
                         $appIntentUrl = $links['appIntentUrl'];
@@ -2466,7 +2472,7 @@ class ExchangeLotController extends Controller
         $clientWebOriginRaw = $request->input('client_web_origin');
         $links = ['clientWebUrl' => null, 'appLandingUrl' => null, 'appIntentUrl' => null, 'appUrl' => null];
         try {
-            $links = $this->buildOpenDealEmailLinks($clientWebOriginRaw, $this->sellerOpenDealQueryParams($lot));
+            $links = $this->buildOpenDealEmailLinks($clientWebOriginRaw, $this->sellerOpenDealQueryParams($lot), $lot);
         } catch (\Throwable $e) {
             Log::warning('[exchange-lots] sendTestNotificationEmail: failed to build deep links', [
                 'lot_id' => $lot->id,
@@ -6329,7 +6335,18 @@ class ExchangeLotController extends Controller
     /**
      * @return array{clientWebUrl: ?string, appLandingUrl: ?string, appIntentUrl: ?string, appUrl: ?string}
      */
-    private function buildOpenDealEmailLinks(?string $clientWebOrigin, ?array $params): array
+    private function normalizeClientWebOriginForStorage(Request $request): ?string
+    {
+        $raw = $request->input('client_web_origin');
+        $fromBody = ClientWebOrigin::normalize(is_string($raw) ? $raw : null);
+        if ($fromBody !== null) {
+            return $fromBody;
+        }
+
+        return ClientWebOrigin::normalize($request->header('Origin'));
+    }
+
+    private function buildOpenDealEmailLinks(?string $clientWebOrigin, ?array $params, ?ExchangeLot $lot = null): array
     {
         $empty = [
             'clientWebUrl' => null,
@@ -6344,14 +6361,19 @@ class ExchangeLotController extends Controller
         $apiBase = app()->runningInConsole()
             ? null
             : rtrim(request()->getSchemeAndHttpHost(), '/');
+        $originRaw = $clientWebOrigin;
+        if (($originRaw === null || trim((string) $originRaw) === '') && $lot !== null) {
+            $stored = $lot->client_web_origin;
+            $originRaw = is_string($stored) && trim($stored) !== '' ? $stored : null;
+        }
         $origin = ClientWebOrigin::resolve(
-            $clientWebOrigin,
+            $originRaw,
             $apiBase,
             app()->runningInConsole() ? null : request()->header('Origin')
         );
         $clientWebUrl = $origin !== null ? $origin.'/open-deal?'.$query : null;
-        $appLandingUrl = null;
-        if ($apiBase !== null && $apiBase !== '') {
+        $appLandingUrl = $clientWebUrl;
+        if ($appLandingUrl === null && $apiBase !== null && $apiBase !== '') {
             $base = PublicHttpsUrl::upgradeMailBaseToHttps($apiBase);
             if ($base !== '') {
                 $appLandingUrl = $base.'/open-deal?'.$query;
@@ -6373,7 +6395,7 @@ class ExchangeLotController extends Controller
      */
     private function buildClientWebOpenDealUrl(ExchangeLot $lot, ?string $clientWebOrigin): ?string
     {
-        return $this->buildOpenDealEmailLinks($clientWebOrigin, $this->sellerOpenDealQueryParams($lot))['clientWebUrl'];
+        return $this->buildOpenDealEmailLinks($clientWebOrigin, $this->sellerOpenDealQueryParams($lot), $lot)['clientWebUrl'];
     }
 
     private function appendOpenDealPlainTextLinks(
@@ -6401,7 +6423,7 @@ class ExchangeLotController extends Controller
      */
     private function buildSellerOpenDealWebUrl(ExchangeLot $lot): ?string
     {
-        return $this->buildOpenDealEmailLinks(null, $this->sellerOpenDealQueryParams($lot))['appLandingUrl'];
+        return $this->buildOpenDealEmailLinks(null, $this->sellerOpenDealQueryParams($lot), $lot)['appLandingUrl'];
     }
 
     /**
@@ -6410,7 +6432,7 @@ class ExchangeLotController extends Controller
      */
     private function buildSellerOpenDealAppLink(ExchangeLot $lot): ?string
     {
-        return $this->buildOpenDealEmailLinks(null, $this->sellerOpenDealQueryParams($lot))['appUrl'];
+        return $this->buildOpenDealEmailLinks(null, $this->sellerOpenDealQueryParams($lot), $lot)['appUrl'];
     }
 
     /**
