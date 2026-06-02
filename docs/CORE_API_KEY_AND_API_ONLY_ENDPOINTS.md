@@ -37,7 +37,7 @@ If `CORE_API_KEY` is missing or empty, API-only endpoints return **500** with a 
 |---------------|------------------------|
 | **POST /api/escrow-tokens/create** | Token creation. Client calls API `POST /api/v1/escrow-tokens/create`; API calls Core with X-Core-Key. No direct client→Core token creation. |
 | **POST /api/delete-reservation** | Seller exits deal. API sends `seller_exited` message and calls Core to release the reservation. |
-| **POST /api/delete-reservation-by-buyer** | Buyer cancels deal. API calls Core to delete the reservation for that lot and buyer. |
+| **POST /api/delete-reservation-by-buyer** | Buyer cancels/exits deal. API calls Core to delete **all** reservation rows for `exchange_lot_id` on that Core env (seller payment-details hold + buyer rows). API also calls **delete-reservation** with the seller token when available. |
 
 Business rules (who may create tokens, who may exit or cancel) are enforced in the **API**. Core only checks the key and executes the operation.
 
