@@ -4605,10 +4605,6 @@ class ExchangeLotController extends Controller
             ], 422);
         }
 
-        $amount = $lot->buyer_selected_amount > 0
-            ? (float) $lot->buyer_selected_amount
-            : (float) $lot->sell_amount;
-
         $sellerEscrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
         $coreSellerCryptoType = null;
 
@@ -4625,6 +4621,14 @@ class ExchangeLotController extends Controller
                     'error_code' => 'invalid_lot_crypto',
                 ], 422);
             }
+            $reservedAmount = \App\Support\SellerEscrowReservedAmount::resolve($lot, $coreSellerCryptoType);
+            if ($reservedAmount === null || $reservedAmount <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot compute escrow reservation amount for this deal and token.',
+                    'error_code' => 'invalid_reservation_amount',
+                ], 422);
+            }
             [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
             $timeout = (int) config('services.core.timeout', 10);
             $req = Http::timeout($timeout);
@@ -4633,7 +4637,7 @@ class ExchangeLotController extends Controller
             }
             $reservationPayload = [
                 'exchange_lot_id' => $lot->id,
-                'reserved_amount' => $amount,
+                'reserved_amount' => $reservedAmount,
                 'escrow_token' => $sellerEscrowToken,
                 'crypto_type' => $coreSellerCryptoType,
                 'is_legal_entity' => false,
