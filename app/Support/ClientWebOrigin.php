@@ -142,4 +142,49 @@ final class ClientWebOrigin
 
         return self::deriveFromApiHost($apiRequestBase);
     }
+
+    /**
+     * HTTPS origin for API /open-deal app landing (intent redirect in mail WebViews).
+     * Keeps the request API environment prefix (api, sandbox.api, dev.api) but uses the
+     * project domain from the resolved web client origin — not the node API host on cross-node lots.
+     *
+     * Example: web https://xdexboard.com + request https://api.xrpchange.site → https://api.xdexboard.com
+     */
+    public static function deriveAppApiOriginForAppLanding(?string $resolvedWebOrigin, ?string $apiRequestBase): ?string
+    {
+        if (! is_string($resolvedWebOrigin) || trim($resolvedWebOrigin) === '') {
+            if (! is_string($apiRequestBase) || trim($apiRequestBase) === '') {
+                return null;
+            }
+            $base = PublicHttpsUrl::upgradeMailBaseToHttps(rtrim($apiRequestBase, '/'));
+
+            return $base !== '' ? $base : null;
+        }
+        $webHost = parse_url($resolvedWebOrigin, PHP_URL_HOST);
+        if (! is_string($webHost) || $webHost === '') {
+            return null;
+        }
+        $webHost = strtolower($webHost);
+        $projectDomain = $webHost;
+        if (preg_match('/^dev\.(.+)$/', $webHost, $m)) {
+            $projectDomain = $m[1];
+        }
+        $apiLabel = 'api';
+        if (is_string($apiRequestBase) && trim($apiRequestBase) !== '') {
+            $apiHost = parse_url(PublicHttpsUrl::upgradeMailBaseToHttps(rtrim($apiRequestBase, '/')), PHP_URL_HOST);
+            if (is_string($apiHost) && $apiHost !== '') {
+                $apiHost = strtolower($apiHost);
+                if (preg_match('/^dev\.api\./', $apiHost)) {
+                    $apiLabel = 'dev.api';
+                } elseif (preg_match('/^sandbox\.api\./', $apiHost)) {
+                    $apiLabel = 'sandbox.api';
+                }
+            }
+        }
+        if ($apiLabel === 'dev.api' && in_array($projectDomain, self::DOMAINS_WITHOUT_DEV_WEB, true)) {
+            $apiLabel = 'api';
+        }
+
+        return self::normalize('https://'.$apiLabel.'.'.$projectDomain);
+    }
 }

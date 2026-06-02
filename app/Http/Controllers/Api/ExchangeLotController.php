@@ -6376,14 +6376,8 @@ class ExchangeLotController extends Controller
             app()->runningInConsole() ? null : request()->header('Origin')
         );
         $clientWebUrl = $origin !== null ? $origin.'/open-deal?'.$query : null;
-        // App email button: same web client host as browser (not node API host on cross-node lots).
-        $appLandingUrl = $clientWebUrl;
-        if ($appLandingUrl === null && $apiBase !== null && $apiBase !== '') {
-            $base = PublicHttpsUrl::upgradeMailBaseToHttps($apiBase);
-            if ($base !== '') {
-                $appLandingUrl = $base.'/open-deal?'.$query;
-            }
-        }
+        $appApiOrigin = ClientWebOrigin::deriveAppApiOriginForAppLanding($origin, $apiBase);
+        $appLandingUrl = $appApiOrigin !== null ? $appApiOrigin.'/open-deal?'.$query : null;
         $appUrl = DealSellerOpenLinks::appDeepLink($params);
         $appIntentUrl = DealSellerOpenLinks::androidIntentUri($params);
 
