@@ -442,6 +442,125 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * Best-effort: release all Core reservations for a lot on deal termination (buyer exit/cancel, etc.).
+     * Seller hold from send_payment_details lives on the seller token's Core; buyer token may be another Core env.
+     */
+    private function releaseCoreReservationsOnDealEnd(
+        ExchangeLot $lot,
+        ?string $buyerEscrowToken,
+        ?string $sellerEscrowToken,
+        string $reason
+    ): void {
+        $sellerToken = is_string($sellerEscrowToken) && trim($sellerEscrowToken) !== ''
+            ? trim($sellerEscrowToken)
+            : null;
+        if ($sellerToken === null) {
+            $wallet = trim((string) ($lot->wallet_address ?? ''));
+            if ($wallet !== '' && str_starts_with($wallet, '{')) {
+                $sellerToken = $wallet;
+            }
+        }
+        if ($sellerToken !== null) {
+            $this->postCoreDeleteReservationSeller($lot, $sellerToken, $reason);
+        }
+        if (is_string($buyerEscrowToken) && trim($buyerEscrowToken) !== '') {
+            $this->postCoreDeleteReservationByBuyer($lot, trim($buyerEscrowToken), $reason);
+        }
+    }
+
+    private function postCoreDeleteReservationSeller(ExchangeLot $lot, string $sellerEscrowToken, string $reason): void
+    {
+        $lot->loadMissing(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
+        try {
+            [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
+            try {
+                $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($sellerEscrowToken)
+                    ?? self::coreCryptoTypeForSellerEscrow($lot);
+            } catch (\InvalidArgumentException) {
+                $cryptoType = strtolower((string) ($lot->cryptoCurrency?->code ?? 'xmr'));
+            }
+            $timeout = (int) config('services.core.timeout', 10);
+            $req = Http::timeout($timeout);
+            if ($coreKey !== '') {
+                $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+            }
+            $endpoint = rtrim($coreUrl, '/').'/api/delete-reservation';
+            $resp = $req->post($endpoint, [
+                'exchange_lot_id' => (string) $lot->id,
+                'escrow_token' => $sellerEscrowToken,
+                'crypto_type' => $cryptoType,
+            ]);
+            if ($resp->successful()) {
+                Log::info('[exchange-lots] Core delete-reservation OK', [
+                    'lot_id' => $lot->id,
+                    'reason' => $reason,
+                    'core_endpoint' => $endpoint,
+                ]);
+            } else {
+                Log::warning('[exchange-lots] Core delete-reservation failed', [
+                    'lot_id' => $lot->id,
+                    'reason' => $reason,
+                    'status' => $resp->status(),
+                    'body' => $resp->body(),
+                    'core_endpoint' => $endpoint,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] Core delete-reservation exception', [
+                'lot_id' => $lot->id,
+                'reason' => $reason,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function postCoreDeleteReservationByBuyer(ExchangeLot $lot, string $buyerEscrowToken, string $reason): void
+    {
+        $lot->loadMissing(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
+        try {
+            [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($buyerEscrowToken);
+            try {
+                $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($buyerEscrowToken)
+                    ?? self::coreCryptoTypeForBuyerEscrow($lot);
+            } catch (\InvalidArgumentException) {
+                $cryptoType = strtolower((string) ($lot->cryptoCurrency?->code ?? 'xmr'));
+            }
+            $timeout = (int) config('services.core.timeout', 10);
+            $req = Http::timeout($timeout);
+            if ($coreKey !== '') {
+                $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+            }
+            $endpoint = rtrim($coreUrl, '/').'/api/delete-reservation-by-buyer';
+            $resp = $req->post($endpoint, [
+                'exchange_lot_id' => (string) $lot->id,
+                'escrow_token' => $buyerEscrowToken,
+                'crypto_type' => $cryptoType,
+            ]);
+            if ($resp->successful()) {
+                Log::info('[exchange-lots] Core delete-reservation-by-buyer OK', [
+                    'lot_id' => $lot->id,
+                    'reason' => $reason,
+                    'core_endpoint' => $endpoint,
+                ]);
+            } else {
+                Log::warning('[exchange-lots] Core delete-reservation-by-buyer failed', [
+                    'lot_id' => $lot->id,
+                    'reason' => $reason,
+                    'status' => $resp->status(),
+                    'body' => $resp->body(),
+                    'core_endpoint' => $endpoint,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[exchange-lots] Core delete-reservation-by-buyer exception', [
+                'lot_id' => $lot->id,
+                'reason' => $reason,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
      * Return first active buyer deal for the request token (if exists).
      * Used by clients to restore in-progress buyer deal from server state
      * when local state is missing (e.g. app on another device).
@@ -2021,39 +2140,7 @@ class ExchangeLotController extends Controller
         if ($buyerExitedEmailToClear !== null) {
             $buyerToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
             if (! empty($buyerToken) && is_string($buyerToken)) {
-                try {
-                    [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($buyerToken);
-                    try {
-                        $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($buyerToken)
-                            ?? self::coreCryptoTypeForBuyerEscrow($lot);
-                    } catch (\InvalidArgumentException) {
-                        $cryptoType = strtolower((string) ($lot->cryptoCurrency?->code ?? 'xmr'));
-                    }
-                    $timeout = (int) config('services.core.timeout', 10);
-                    $req = Http::timeout($timeout);
-                    if ($coreKey !== '') {
-                        $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
-                    }
-                    $resp = $req->post(rtrim($coreUrl, '/').'/api/delete-reservation-by-buyer', [
-                        'exchange_lot_id' => (string) $lot->id,
-                        'escrow_token' => $buyerToken,
-                        'crypto_type' => $cryptoType,
-                    ]);
-                    if ($resp->successful()) {
-                        Log::info('[exchange-lots] sendMessageToSeller: buyer_exited Core delete-reservation-by-buyer OK', ['lot_id' => $lot->id]);
-                    } else {
-                        Log::warning('[exchange-lots] sendMessageToSeller: buyer_exited Core delete-reservation-by-buyer failed', [
-                            'lot_id' => $lot->id,
-                            'status' => $resp->status(),
-                            'body' => $resp->body(),
-                        ]);
-                    }
-                } catch (\Throwable $e) {
-                    Log::warning('[exchange-lots] sendMessageToSeller: buyer_exited Core delete-reservation-by-buyer exception', [
-                        'lot_id' => $lot->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
+                $this->releaseCoreReservationsOnDealEnd($lot, $buyerToken, null, 'buyer_exited');
             }
             $deleted = Transaction::where('exchange_lot_id', $lot->id)
                 ->where('buyer_lot_email', $buyerExitedEmailToClear)
@@ -2725,39 +2812,7 @@ class ExchangeLotController extends Controller
         if ($messageType === 'seller_exited') {
             $sellerEscrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
             if (! empty($sellerEscrowToken) && is_string($sellerEscrowToken)) {
-                try {
-                    [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
-                    try {
-                        $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($sellerEscrowToken)
-                            ?? self::coreCryptoTypeForSellerEscrow($lot);
-                    } catch (\InvalidArgumentException) {
-                        $cryptoType = strtolower((string) ($lot->cryptoCurrency?->code ?? 'xmr'));
-                    }
-                    $timeout = (int) config('services.core.timeout', 10);
-                    $req = \Illuminate\Support\Facades\Http::timeout($timeout);
-                    if ($coreKey !== '') {
-                        $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
-                    }
-                    $resp = $req->post(rtrim($coreUrl, '/').'/api/delete-reservation', [
-                        'exchange_lot_id' => (string) $lot->id,
-                        'escrow_token' => $sellerEscrowToken,
-                        'crypto_type' => $cryptoType,
-                    ]);
-                    if ($resp->successful()) {
-                        Log::info('[exchange-lots] sendMessageToBuyer: Core delete-reservation OK (seller_exited)', ['lot_id' => $lot->id]);
-                    } else {
-                        Log::warning('[exchange-lots] sendMessageToBuyer: Core delete-reservation failed (seller_exited)', [
-                            'lot_id' => $lot->id,
-                            'status' => $resp->status(),
-                            'body' => $resp->body(),
-                        ]);
-                    }
-                } catch (\Throwable $e) {
-                    Log::warning('[exchange-lots] sendMessageToBuyer: Core delete-reservation exception (seller_exited)', [
-                        'lot_id' => $lot->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
+                $this->releaseCoreReservationsOnDealEnd($lot, null, $sellerEscrowToken, 'seller_exited');
             }
             DB::table('exchange_lots')
                 ->where('id', $lot->id)
@@ -3221,43 +3276,7 @@ class ExchangeLotController extends Controller
             }
         }
 
-        $transactions = Transaction::where('exchange_lot_id', $lot->id)->where('buyer_lot_email', $lot->buyer_lot_email)->get();
-        [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($escrowToken);
-        $timeout = (int) config('services.core.timeout', 10);
-        try {
-            $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($escrowToken)
-                ?? self::coreCryptoTypeForBuyerEscrow($lot);
-        } catch (\InvalidArgumentException) {
-            $cryptoType = strtolower((string) ($lot->cryptoCurrency?->code ?? 'xmr'));
-        }
-
-        // Delete reservation in Core (works with or without transactions: by exchange_lot_id + buyer token)
-        try {
-            $req = Http::timeout($timeout);
-            if ($coreKey !== '') {
-                $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
-            }
-            $resp = $req->post(rtrim($coreUrl, '/').'/api/delete-reservation-by-buyer', [
-                'exchange_lot_id' => (string) $lot->id,
-                'escrow_token' => $escrowToken,
-                'crypto_type' => $cryptoType,
-            ]);
-            if ($resp->successful()) {
-                Log::info('[exchange-lots] buyerCancelDeal: Core delete-reservation-by-buyer OK', ['lot_id' => $lot->id]);
-            } else {
-                Log::warning('[exchange-lots] buyerCancelDeal: Core delete-reservation-by-buyer failed', [
-                    'lot_id' => $lot->id,
-                    'status' => $resp->status(),
-                    'body' => $resp->body(),
-                    'core_url' => rtrim($coreUrl, '/').'/api/delete-reservation-by-buyer',
-                ]);
-            }
-        } catch (\Throwable $e) {
-            Log::warning('[exchange-lots] buyerCancelDeal: Core delete-reservation-by-buyer exception', [
-                'lot_id' => $lot->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        $this->releaseCoreReservationsOnDealEnd($lot, $escrowToken, null, 'buyer_cancel_deal');
 
         Transaction::where('exchange_lot_id', $lot->id)->where('buyer_lot_email', $lot->buyer_lot_email)->delete();
         DB::table('exchange_lots')->where('id', $lot->id)->update([
@@ -3376,47 +3395,14 @@ class ExchangeLotController extends Controller
                 'error_code' => 'validation_error',
             ], 422);
         }
-        [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($escrowToken);
-        $timeout = (int) config('services.core.timeout', 10);
         $releasedLotIds = [];
         $deletedTransactions = 0;
         $clearedLots = 0;
 
         foreach ($lots as $lot) {
             /** @var ExchangeLot $lot */
-            try {
-                $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($escrowToken)
-                    ?? self::coreCryptoTypeForBuyerEscrow($lot);
-            } catch (\Throwable) {
-                $cryptoType = strtolower((string) ($lot->cryptoCurrency?->code ?? 'xmr'));
-            }
-
-            // Best-effort: release reservation in Core. Even if it fails, proceed with server-side cleanup.
-            try {
-                $req = Http::timeout($timeout);
-                if ($coreKey !== '') {
-                    $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
-                }
-                $resp = $req->post(rtrim($coreUrl, '/').'/api/delete-reservation-by-buyer', [
-                    'exchange_lot_id' => (string) $lot->id,
-                    'escrow_token' => $escrowToken,
-                    'crypto_type' => $cryptoType,
-                ]);
-                if ($resp->successful()) {
-                    $releasedLotIds[] = (int) $lot->id;
-                } else {
-                    Log::warning('[exchange-lots] buyerCancelDealByToken: Core delete-reservation-by-buyer failed', [
-                        'lot_id' => $lot->id,
-                        'status' => $resp->status(),
-                        'body' => $resp->body(),
-                    ]);
-                }
-            } catch (\Throwable $e) {
-                Log::warning('[exchange-lots] buyerCancelDealByToken: Core delete-reservation-by-buyer exception', [
-                    'lot_id' => $lot->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            $this->releaseCoreReservationsOnDealEnd($lot, $escrowToken, null, 'buyer_cancel_deal_by_token');
+            $releasedLotIds[] = (int) $lot->id;
 
             $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
             if ($buyerEmail !== '') {
@@ -6206,6 +6192,8 @@ class ExchangeLotController extends Controller
             'lot_id' => $lot->id,
             'deleted_rows' => $deletedChat,
         ]);
+
+        $this->releaseCoreReservationsOnDealEnd($lot, null, null, 'start_deal_new_session');
 
         $this->closeOpenDisputesForLot(
             lot: $lot,
