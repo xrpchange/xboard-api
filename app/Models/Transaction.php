@@ -3,7 +3,10 @@
 namespace App\Models;
 
 use App\Services\ReceiptAttachmentStorage;
+use App\Support\SellerEscrowReservedAmount;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\ExchangeLot;
+use App\Support\SellerEscrowReservedAmount;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
@@ -131,12 +134,7 @@ class Transaction extends Model
                 && $transaction->status === 'completed'
                 && $transaction->tx_type === 'sale'
             ) {
-                $amount = (float) $transaction->amount;
-                if ($amount > 0) {
-                    DB::table('exchange_lots')
-                        ->where('id', $transaction->exchange_lot_id)
-                        ->increment('sold_crypto_amount', $amount);
-                }
+                self::incrementSoldCryptoAmountForLot($transaction);
             }
         });
 
@@ -147,12 +145,7 @@ class Transaction extends Model
                 && $transaction->wasChanged('status')
                 && $transaction->getOriginal('status') !== 'completed'
             ) {
-                $amount = (float) $transaction->amount;
-                if ($amount > 0) {
-                    DB::table('exchange_lots')
-                        ->where('id', $transaction->exchange_lot_id)
-                        ->increment('sold_crypto_amount', $amount);
-                }
+                self::incrementSoldCryptoAmountForLot($transaction);
             }
         });
 
@@ -162,5 +155,28 @@ class Transaction extends Model
                 ReceiptAttachmentStorage::deleteFilesFromReceiptLinks($links);
             }
         });
+    }
+
+    /**
+     * Lot remaining volume uses sell_amount - sold_crypto_amount in **from/seller crypto** units,
+     * not transactions.amount (buyer to_currency, often fiat).
+     */
+    private static function incrementSoldCryptoAmountForLot(Transaction $transaction): void
+    {
+        $lotId = $transaction->exchange_lot_id;
+        if ($lotId === null) {
+            return;
+        }
+        $lot = ExchangeLot::query()->find($lotId);
+        if ($lot === null) {
+            return;
+        }
+        $amount = SellerEscrowReservedAmount::resolveForSellerEscrowLot($lot);
+        if ($amount === null || $amount <= 0) {
+            return;
+        }
+        DB::table('exchange_lots')
+            ->where('id', $lotId)
+            ->increment('sold_crypto_amount', $amount);
     }
 } 

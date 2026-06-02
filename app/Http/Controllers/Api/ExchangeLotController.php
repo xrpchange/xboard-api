@@ -26,6 +26,7 @@ use App\Support\ArbiterReceiptPdfResolver;
 use App\Support\ClientWebOrigin;
 use App\Support\DealBuyerEscrowTokenHash;
 use App\Support\DealChatTagSequenceValidator;
+use App\Support\DealEscrowCryptoType;
 use App\Support\DealSaleTransactionCompletion;
 use App\Support\DealSellerOpenLinks;
 use App\Support\DealTerminalLotClosure;
@@ -88,6 +89,16 @@ class ExchangeLotController extends Controller
         ]);
     }
 
+    private static function coreCryptoTypeForSellerEscrow(ExchangeLot $lot): string
+    {
+        return DealEscrowCryptoType::sellerCoreType($lot);
+    }
+
+    private static function coreCryptoTypeForBuyerEscrow(ExchangeLot $lot): string
+    {
+        return DealEscrowCryptoType::buyerCoreType($lot);
+    }
+
     private static function sellerEscrowCryptoCurrency(ExchangeLot $lot): ?CryptoCurrency
     {
         $lot->loadMissing(['fromCryptoCurrency', 'toCryptoCurrency', 'cryptoCurrency']);
@@ -99,56 +110,6 @@ class ExchangeLotController extends Controller
         }
 
         return $lot->cryptoCurrency;
-    }
-
-    private static function coreCryptoTypeFromCurrencyRow(CryptoCurrency $row): string
-    {
-        $code = strtolower(trim((string) $row->code));
-        if ($code === '') {
-            throw new \InvalidArgumentException('Linked crypto currency has empty code.');
-        }
-        if (preg_match('/_(stellar|polygon|tron)$/', $code)) {
-            return $code;
-        }
-        $network = strtolower(trim((string) ($row->network ?? '')));
-        if ($network !== '' && $network !== 'native' && ! str_contains($code, '_')) {
-            return $code.'_'.$network;
-        }
-
-        return $code;
-    }
-
-    private static function coreCryptoTypeForSellerEscrow(ExchangeLot $lot): string
-    {
-        $row = self::sellerEscrowCryptoCurrency($lot);
-        if ($row === null) {
-            throw new \InvalidArgumentException('Lot has no crypto currency for escrow (from_crypto, to_crypto, or crypto_currency_id).');
-        }
-
-        return self::coreCryptoTypeFromCurrencyRow($row);
-    }
-
-    private static function buyerEscrowCryptoCurrency(ExchangeLot $lot): ?CryptoCurrency
-    {
-        $lot->loadMissing(['fromCryptoCurrency', 'toCryptoCurrency', 'cryptoCurrency']);
-        if ($lot->toCryptoCurrency) {
-            return $lot->toCryptoCurrency;
-        }
-        if ($lot->fromCryptoCurrency) {
-            return $lot->fromCryptoCurrency;
-        }
-
-        return $lot->cryptoCurrency;
-    }
-
-    private static function coreCryptoTypeForBuyerEscrow(ExchangeLot $lot): string
-    {
-        $row = self::buyerEscrowCryptoCurrency($lot);
-        if ($row === null) {
-            throw new \InvalidArgumentException('Lot has no crypto currency for buyer escrow (to_crypto, from_crypto, or crypto_currency_id).');
-        }
-
-        return self::coreCryptoTypeFromCurrencyRow($row);
     }
 
     private static function sellerMailboxCryptoCode(ExchangeLot $lot): string
@@ -7202,7 +7163,9 @@ class ExchangeLotController extends Controller
         }
 
         try {
-            $cryptoType = self::coreCryptoTypeForSellerEscrow($lot);
+            $cryptoType = $tagType === 'buyer_crypto_tx'
+                ? self::coreCryptoTypeForBuyerEscrow($lot)
+                : self::coreCryptoTypeForSellerEscrow($lot);
         } catch (\InvalidArgumentException $e) {
             return [
                 'deal_tag' => $dealTagData,
@@ -7345,41 +7308,13 @@ class ExchangeLotController extends Controller
 
     private function expectedAmountForCoreTxCheck(ExchangeLot $lot, string $tagType): ?float
     {
-        // Primary source for partial deals: current receipt-related transaction row.
-        $receiptTx = $lot->latestReceiptTransaction();
-        $receiptAmount = is_numeric($receiptTx?->amount) ? (float) $receiptTx->amount : null;
-        if ($receiptAmount !== null && $receiptAmount > 0) {
-            return $receiptAmount;
-        }
-
+        // On-chain proof only — escrow token units (not transactions.amount / buyer fiat).
         if ($tagType === 'buyer_crypto_tx') {
-            $tx = Transaction::query()
-                ->where('exchange_lot_id', $lot->id)
-                ->where('payment_details_set_by', 'seller')
-                ->orderByDesc('id')
-                ->first(['amount']);
-            $amount = is_numeric($tx?->amount) ? (float) $tx->amount : null;
-            if ($amount !== null && $amount > 0) {
-                return $amount;
-            }
+            return \App\Support\SellerEscrowReservedAmount::resolveForBuyerEscrowLot($lot);
         }
 
         if ($tagType === 'seller_transfer_tx') {
-            $tx = Transaction::query()
-                ->where('exchange_lot_id', $lot->id)
-                ->where('payment_details_set_by', 'buyer')
-                ->orderByDesc('id')
-                ->first(['amount']);
-            $amount = is_numeric($tx?->amount) ? (float) $tx->amount : null;
-            if ($amount !== null && $amount > 0) {
-                return $amount;
-            }
-
-            // Fallback only when explicit transaction row is not available.
-            $selected = is_numeric($lot->buyer_selected_amount) ? (float) $lot->buyer_selected_amount : null;
-            if ($selected !== null && $selected > 0) {
-                return $selected;
-            }
+            return \App\Support\SellerEscrowReservedAmount::resolveForSellerEscrowLot($lot);
         }
 
         return null;
