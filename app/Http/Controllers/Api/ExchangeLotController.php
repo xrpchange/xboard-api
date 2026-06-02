@@ -6376,8 +6376,8 @@ class ExchangeLotController extends Controller
             app()->runningInConsole() ? null : request()->header('Origin')
         );
         $clientWebUrl = $origin !== null ? $origin.'/open-deal?'.$query : null;
-        $appLandingUrl = $clientWebUrl;
-        if ($appLandingUrl === null && $apiBase !== null && $apiBase !== '') {
+        $appLandingUrl = null;
+        if ($apiBase !== null && $apiBase !== '') {
             $base = PublicHttpsUrl::upgradeMailBaseToHttps($apiBase);
             if ($base !== '') {
                 $appLandingUrl = $base.'/open-deal?'.$query;
