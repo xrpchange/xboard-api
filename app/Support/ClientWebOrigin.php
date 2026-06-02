@@ -84,10 +84,54 @@ final class ClientWebOrigin
         return null;
     }
 
-    /** Client-sent origin, else browser `Origin` header, else derived from the API request host. */
+    /**
+     * Web client host for DB (`exchange_lots.client_web_origin`): apex or dev host only, no `https://`.
+     * Accepts full origin (`https://xdexboard.com`) or bare domain (`xdexboard.com`).
+     */
+    public static function hostForStorage(?string $raw): ?string
+    {
+        if (! is_string($raw)) {
+            return null;
+        }
+        $raw = trim($raw);
+        if ($raw === '' || strlen($raw) > 256) {
+            return null;
+        }
+        $fromOrigin = self::normalize($raw);
+        if ($fromOrigin !== null) {
+            $host = parse_url($fromOrigin, PHP_URL_HOST);
+
+            return is_string($host) && $host !== '' ? strtolower($host) : null;
+        }
+        $host = strtolower(rtrim($raw, '/'));
+        if (str_contains($host, '://') || str_contains($host, '/')) {
+            return null;
+        }
+        if ($host === '' || (! str_contains($host, '.') && $host !== 'localhost')) {
+            return null;
+        }
+
+        return $host;
+    }
+
+    /** Build HTTPS origin from stored host (or legacy full origin in DB). */
+    public static function httpsOriginFromStorage(?string $stored): ?string
+    {
+        if (! is_string($stored)) {
+            return null;
+        }
+        $stored = trim($stored);
+        if ($stored === '') {
+            return null;
+        }
+
+        return self::normalize($stored) ?? self::normalize('https://'.$stored);
+    }
+
+    /** Client-sent value, else browser `Origin`, else API host — for email/push links (full HTTPS origin). */
     public static function resolve(?string $fromClient, ?string $apiRequestBase = null, ?string $originHeader = null): ?string
     {
-        $normalized = self::normalize($fromClient);
+        $normalized = self::httpsOriginFromStorage($fromClient) ?? self::normalize($fromClient);
         if ($normalized !== null) {
             return $normalized;
         }
