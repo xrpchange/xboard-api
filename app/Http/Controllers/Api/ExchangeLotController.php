@@ -4615,6 +4615,10 @@ class ExchangeLotController extends Controller
             ], 422);
         }
 
+        $amount = ($lot->buyer_selected_amount ?? 0) > 0
+            ? (float) $lot->buyer_selected_amount
+            : (float) $lot->sell_amount;
+
         $sellerEscrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
         $coreSellerCryptoType = null;
 
