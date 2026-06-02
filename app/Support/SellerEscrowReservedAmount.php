@@ -11,6 +11,26 @@ use App\Models\ExchangeLot;
  */
 final class SellerEscrowReservedAmount
 {
+    /** Deal amount in seller escrow token units (e.g. XMR on XMR→USD lot). */
+    public static function resolveForSellerEscrowLot(ExchangeLot $lot): ?float
+    {
+        try {
+            return self::resolve($lot, DealEscrowCryptoType::sellerCoreType($lot));
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+    }
+
+    /** Deal amount in buyer escrow token units (e.g. USDT on USDT→USD lot). */
+    public static function resolveForBuyerEscrowLot(ExchangeLot $lot): ?float
+    {
+        try {
+            return self::resolve($lot, DealEscrowCryptoType::buyerCoreType($lot));
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+    }
+
     public static function escrowCoreTypeMatchesLotCurrencyField(string $tokenCore, string $lotCurrency): bool
     {
         $token = strtolower(trim($tokenCore));
