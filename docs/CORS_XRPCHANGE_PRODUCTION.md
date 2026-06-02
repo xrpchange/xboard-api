@@ -53,6 +53,27 @@ Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
 5. `nginx -t && systemctl reload nginx`
 6. Re-run the `curl` check above.
 
+### Core API (`sandbox.api.core.xrpchange.site`)
+
+On **`khasanov@xrp1`**, TLS for `*.core.xrpchange.site` is in **`/etc/nginx/sites-available/core.conf`** (symlink in `sites-enabled/`). A broken variant answered **OPTIONS with `204` and no `Access-Control-*`** (nginx intercepted `/api/` before Apache).
+
+**Fix (Jun 2026):** remove both `location /api/ { … if OPTIONS return 204; }` blocks so preflight is proxied to XAMPP Apache (`httpd-vhosts.conf` for `api.core.xrpchange.site`). Helper:
+
+```bash
+scp scripts/fix-nginx-core-xrpchange-cors.py khasanov@xrp1:/tmp/
+ssh khasanov@xrp1 'sudo cp /etc/nginx/sites-available/core.conf /etc/nginx/sites-available/core.conf.bak && sudo python3 /tmp/fix-nginx-core-xrpchange-cors.py /etc/nginx/sites-available/core.conf && sudo nginx -t && sudo systemctl reload nginx'
+```
+
+**Verify Core preflight:**
+
+```bash
+curl -sI -X OPTIONS "https://sandbox.api.core.xrpchange.site/api/escrow-tokens/get-encrypted-part" \
+  -H "Origin: https://xdexboard.com" \
+  -H "Access-Control-Request-Method: POST" | grep -i access-control
+```
+
+Expect **`Access-Control-Allow-Origin: *`** (from Apache), not a bare `204` from nginx.
+
 Laravel must **not** add CORS (`HandleCors` removed in `bootstrap/app.php`). Do not re-enable `config/cors.php` while Apache sets headers.
 
 ## Apache (upstream)
