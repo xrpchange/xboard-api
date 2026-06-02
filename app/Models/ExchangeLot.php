@@ -57,6 +57,7 @@ class ExchangeLot extends Model
         'aml',
         'buyer_payment_timeout_minutes',
         'seller_notification_email',
+        'client_web_origin',
         'expires_at',
         'escrow_multisig_2_of_3_required',
         'sold_crypto_amount',

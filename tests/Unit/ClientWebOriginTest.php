@@ -101,4 +101,14 @@ class ClientWebOriginTest extends TestCase
             ClientWebOrigin::resolve('https://xrpchange.site', 'https://dev.api.xrpchange.site')
         );
     }
+
+    #[Group('spec')]
+    #[Group('spec-LOT-011')]
+    public function test_resolve_prefers_stored_lot_origin_over_node_api_host(): void
+    {
+        $this->assertSame(
+            'https://xdexboard.com',
+            ClientWebOrigin::resolve('https://xdexboard.com', 'https://api.xrpchange.site')
+        );
+    }
 }

@@ -75,7 +75,7 @@ final class DealWebPushNotifier
             'targets' => $rows->count(),
         ]);
 
-        $openUrl = $this->openDealUrl($nodeKey, (string) $lot->id);
+        $openUrl = $this->openDealUrl($nodeKey, (string) $lot->id, $lot);
         $payload = json_encode([
             'title' => 'XBoard',
             'body' => 'Deal #'.$lot->id,
@@ -145,7 +145,7 @@ final class DealWebPushNotifier
         }
     }
 
-    private function openDealUrl(string $nodeKey, string $lotId): string
+    private function openDealUrl(string $nodeKey, string $lotId, ExchangeLot $lot): string
     {
         $query = http_build_query([
             'lot_id' => $lotId,
@@ -154,8 +154,9 @@ final class DealWebPushNotifier
         $apiBase = app()->runningInConsole()
             ? null
             : rtrim((string) request()->getSchemeAndHttpHost(), '/');
+        $stored = $lot->client_web_origin;
         $origin = ClientWebOrigin::resolve(
-            null,
+            is_string($stored) && trim($stored) !== '' ? $stored : null,
             $apiBase,
             app()->runningInConsole() ? null : request()->header('Origin')
         );

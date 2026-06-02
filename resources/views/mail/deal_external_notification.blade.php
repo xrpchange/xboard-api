@@ -4,8 +4,8 @@
     /** @var string|null $clientWebUrl Web client origin + /open-deal */
     /** @var string|null $appUrl xboard:// copy fallback */
     /** @var string|null $appIntentUrl intent:// for landing page only */
-    $greenHref = $webUrl;
-    $hasLinks = $greenHref || $clientWebUrl || $appUrl;
+    $greenHref = $webUrl ?? $clientWebUrl;
+    $hasLinks = $greenHref || $appUrl;
 @endphp
 
 <!doctype html>
@@ -51,7 +51,7 @@
                                 </div>
                             @endif
 
-                            @if ($clientWebUrl)
+                            @if ($clientWebUrl && $clientWebUrl !== $greenHref)
                                 <div style="margin:0 0 12px 0;padding:10px;background:#fff;border:1px solid #ddd;border-radius:4px;">
                                     <a href="{{ $clientWebUrl }}"
                                        target="_blank" rel="noopener noreferrer"
