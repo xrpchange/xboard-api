@@ -127,4 +127,32 @@ class ClientWebOriginTest extends TestCase
         $this->assertSame('https://xdexboard.com', ClientWebOrigin::httpsOriginFromStorage('xdexboard.com'));
         $this->assertSame('https://xdexboard.com', ClientWebOrigin::httpsOriginFromStorage('https://xdexboard.com'));
     }
+
+    #[Group('spec')]
+    #[Group('spec-LOT-011')]
+    public function test_derive_app_api_origin_uses_project_domain_not_node_api_host(): void
+    {
+        $this->assertSame(
+            'https://api.xdexboard.com',
+            ClientWebOrigin::deriveAppApiOriginForAppLanding('https://xdexboard.com', 'https://api.xrpchange.site')
+        );
+        $this->assertSame(
+            'https://sandbox.api.xdexboard.com',
+            ClientWebOrigin::deriveAppApiOriginForAppLanding('https://xdexboard.com', 'https://sandbox.api.xrpchange.site')
+        );
+        $this->assertSame(
+            'https://api.xdexboard.com',
+            ClientWebOrigin::deriveAppApiOriginForAppLanding('https://xdexboard.com', 'https://api.xdexboard.com')
+        );
+    }
+
+    #[Group('spec')]
+    #[Group('spec-LOT-011')]
+    public function test_derive_app_api_origin_falls_back_to_request_api_when_web_unknown(): void
+    {
+        $this->assertSame(
+            'https://api.xrpchange.site',
+            ClientWebOrigin::deriveAppApiOriginForAppLanding(null, 'https://api.xrpchange.site')
+        );
+    }
 }
