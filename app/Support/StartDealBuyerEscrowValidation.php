@@ -21,7 +21,7 @@ final class StartDealBuyerEscrowValidation
      */
     public function validate(ExchangeLot $lot, string $buyerEscrowPublicPart, float $selectedAmount): ?array
     {
-        $paysCrypto = DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot);
+        $paysCrypto = self::resolveBuyerFirstLegPaysCrypto($lot);
         if ($paysCrypto === null) {
             return [
                 'message' => 'Lot currency types are incomplete; cannot start deal.',
@@ -172,5 +172,23 @@ final class StartDealBuyerEscrowValidation
         }
 
         return null;
+    }
+
+    /**
+     * On-chain first leg when buyer pays `to_crypto`, even if currency-type heuristics misclassified the pair.
+     */
+    private static function resolveBuyerFirstLegPaysCrypto(ExchangeLot $lot): ?bool
+    {
+        if ($lot->to_fiat_currency_id) {
+            return false;
+        }
+        if ($lot->to_crypto_currency_id) {
+            return true;
+        }
+        if ($lot->from_fiat_currency_id) {
+            return false;
+        }
+
+        return DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot);
     }
 }
