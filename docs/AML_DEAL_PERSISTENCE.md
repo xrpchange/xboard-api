@@ -13,6 +13,7 @@ This is an exchange, not a long-term compliance archive. **All deal AML data for
 | **Core** | Runtime screening only (`performDealAmlScreeningOrSkip`). No AML persistence in Core DB. |
 | **API** | Merges screening snapshots + reserve debits into `transactions.aml_check_json`; operator alert on provider failures. |
 | **Client** | Server payout actions; localized errors for two failure classes (see below). |
+| **API `start_deal`** | When the buyer’s first leg is on-chain crypto and `exchange_lots.aml` is true: reject if `X-Escrow-Token` / `escrow_token` Core type ≠ `DealEscrowCryptoType::buyerCoreType`, or Core `reservation-requirements` (`reservation_side=buyer`) shows insufficient `available` / gas. Spec **LOT-016** — `App\Support\StartDealBuyerEscrowValidation`. Mirrors client `LotDetailScreen` + `ExchangeLot.buyerFirstLegPaysCryptoOrNull()`. |
 
 Cross-repo flow: **`xboard-core/docs/AML_DEAL_FLOW.md`**.
 
