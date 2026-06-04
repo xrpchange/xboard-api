@@ -10,6 +10,7 @@ Start by reading:
 
 - README.md — service purpose, local setup, deployment
 - `./docs/` folder — detailed information about endpoints, database schemas, and integrations
+- **`docs/ECOSYSTEM_CANONICAL_BASELINE.md`** — ecosystem rollback tag `canonical-2026-06-04` (stable baseline across all repos)
 
 Key points:
 - **Public URLs are HTTPS-only:** no `http://` in mail or browser links; do not add in-app http→https redirect middleware (breaks behind TLS terminators). See `.cursor/rules/https-only-public-urls.mdc`.
