@@ -10,11 +10,11 @@ The tag is on the default branch tip in every repository (`main` or `master`). T
 
 | Repository | Default branch | Commit | Notes |
 |------------|----------------|--------|--------|
-| **xboard-client** | `main` | `dc4c80a` | Seller deal steps / IDLE; tokens filter; this doc |
-| **xboard-api** | `main` | `ba2e7d4` | AML `start_deal` buyer escrow type match; this doc |
-| **xboard-core** | `master` | `0bb7478` | Stellar amount + XLM gas headroom; this doc |
-| **xboard-monero-balance** | `main` | `dca5118` | Baseline pin + this doc |
-| **xboard-proxy-imap** | `main` | `e79b151` | Baseline pin + this doc |
+| **xboard-client** | `main` | `b83f493` | Seller deal steps / IDLE; tokens filter; this doc |
+| **xboard-api** | `main` | `843313a` | AML `start_deal` buyer escrow type match; this doc |
+| **xboard-core** | `master` | `91bda3a` | Stellar amount + XLM gas headroom; this doc |
+| **xboard-monero-balance** | `main` | `d4390da` | Baseline pin + this doc |
+| **xboard-proxy-imap** | `main` | `a199d0f` | Baseline pin + this doc |
 
 > **xboard-core** uses **`master`**, not `main`. All other listed repos use **`main`**.
 
@@ -23,7 +23,7 @@ The tag is on the default branch tip in every repository (`main` or `master`). T
 - **xboard-client:** Removed merged stale branches (already contained in `main`):  
   `client/web-kotlin2-compose-coroutines-and-shell`, `fix/deal-seller-send-payment-details`, `web/webgl-idle-recovery-v70` (local + `origin`).
 - **Other repos:** Only `main` / `master` — nothing to merge.
-- **Remote:** Annotated tag `canonical-2026-06-04` on the commit in the table above (same as default-branch tip after this documentation push).
+- **Remote:** Annotated tag `canonical-2026-06-04` on the commit in the table above. After `git fetch --tags && git checkout canonical-2026-06-04`, run `git rev-parse --short HEAD` — it must match the table SHA for that repo.
 
 ## Restore this baseline in one repo
 
