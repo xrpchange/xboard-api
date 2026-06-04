@@ -43,6 +43,25 @@ final class DealEscrowPublicPart
         };
     }
 
+    public static function coreTypesCompatible(?string $tokenType, string $lotType): bool
+    {
+        $token = strtolower(trim((string) $tokenType));
+        $lot = strtolower(trim($lotType));
+        if ($token === '' || $lot === '') {
+            return false;
+        }
+        if ($token === $lot) {
+            return true;
+        }
+        if (str_starts_with($token, $lot.'_') || str_starts_with($lot, $token.'_')) {
+            return true;
+        }
+        $tokenBase = str_contains($token, '_') ? strstr($token, '_', true) : $token;
+        $lotBase = str_contains($lot, '_') ? strstr($lot, '_', true) : $lot;
+
+        return $tokenBase !== false && $lotBase !== false && $tokenBase === $lotBase;
+    }
+
     public static function tokenHashFromJson(string $escrowTokenJson): ?string
     {
         $decoded = json_decode($escrowTokenJson, true);
