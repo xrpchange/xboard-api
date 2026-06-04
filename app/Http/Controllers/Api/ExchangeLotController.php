@@ -27,6 +27,7 @@ use App\Support\ClientWebOrigin;
 use App\Support\DealBuyerEscrowTokenHash;
 use App\Support\DealChatTagSequenceValidator;
 use App\Support\DealEscrowCryptoType;
+use App\Support\StartDealBuyerEscrowValidation;
 use App\Support\DealSaleTransactionCompletion;
 use App\Support\DealSellerOpenLinks;
 use App\Support\DealTerminalLotClosure;
@@ -55,6 +56,7 @@ class ExchangeLotController extends Controller
         private DealAmlPersistenceService $dealAmlPersistence,
         private DealAmlAdminAlertService $dealAmlAdminAlert,
         private DealWebPushNotifier $dealWebPushNotifier,
+        private StartDealBuyerEscrowValidation $startDealBuyerEscrowValidation,
     ) {}
 
     /**
@@ -1918,6 +1920,15 @@ class ExchangeLotController extends Controller
                     'message' => 'selected_amount is not available for the lot remaining volume.',
                     'error_code' => 'selected_amount_not_available',
                 ], 422);
+            }
+            $buyerEscrowPublic = is_string($requesterPublicPart) ? trim($requesterPublicPart) : '';
+            $escrowValidation = $this->startDealBuyerEscrowValidation->validate($lot, $buyerEscrowPublic, $selected);
+            if ($escrowValidation !== null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $escrowValidation['message'],
+                    'error_code' => $escrowValidation['error_code'],
+                ], $escrowValidation['status']);
             }
         }
         $buyerNotificationEmailForExternal = null;

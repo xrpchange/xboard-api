@@ -1,0 +1,73 @@
+<?php
+
+namespace App\Support;
+
+use App\Models\ExchangeLot;
+
+/**
+ * Buyer first payment leg (bank vs on-chain crypto). Mirrors xboard-client ExchangeLot.kt.
+ *
+ * @see docs/DEAL_IN_PROGRESS_SCREENS.md §4.1 (client doc; same rules on API)
+ */
+final class DealBuyerFirstLeg
+{
+    public static function buyerFirstLegIsBankTransfer(ExchangeLot $lot): ?bool
+    {
+        $fromType = self::currencyTypeForLotSide($lot, 'from');
+        $toType = self::currencyTypeForLotSide($lot, 'to');
+        if ($fromType === null || $toType === null) {
+            return null;
+        }
+        $fromOnChain = in_array($fromType, ['crypto', 'stablecoin'], true);
+
+        return match (true) {
+            $fromType === 'fiat' => true,
+            $fromOnChain && $toType === 'fiat' => true,
+            $fromOnChain && $toType === 'stablecoin' => false,
+            $fromOnChain && $toType === 'crypto' => false,
+            default => null,
+        };
+    }
+
+    public static function buyerFirstLegPaysCrypto(ExchangeLot $lot): ?bool
+    {
+        $bank = self::buyerFirstLegIsBankTransfer($lot);
+        if ($bank === null) {
+            return null;
+        }
+
+        return ! $bank;
+    }
+
+    private static function currencyTypeForLotSide(ExchangeLot $lot, string $side): ?string
+    {
+        if ($side === 'from') {
+            if ($lot->from_fiat_currency_id) {
+                return 'fiat';
+            }
+            if ($lot->from_crypto_currency_id) {
+                $lot->loadMissing('fromCryptoCurrency');
+                $row = $lot->fromCryptoCurrency;
+
+                return $row && ! $row->is_native ? 'stablecoin' : 'crypto';
+            }
+
+            return null;
+        }
+        if ($side === 'to') {
+            if ($lot->to_fiat_currency_id) {
+                return 'fiat';
+            }
+            if ($lot->to_crypto_currency_id) {
+                $lot->loadMissing('toCryptoCurrency');
+                $row = $lot->toCryptoCurrency;
+
+                return $row && ! $row->is_native ? 'stablecoin' : 'crypto';
+            }
+
+            return null;
+        }
+
+        return null;
+    }
+}
