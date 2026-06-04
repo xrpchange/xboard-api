@@ -10,11 +10,11 @@ The tag is on the default branch tip in every repository (`main` or `master`). T
 
 | Repository | Default branch | Commit | Notes |
 |------------|----------------|--------|--------|
-| **xboard-client** | `main` | `955a2b1` | Seller deal steps / IDLE; tokens currency filter when network is All |
-| **xboard-api** | `main` | `91a2857` | AML `start_deal` buyer escrow type match |
-| **xboard-core** | `master` | `a0cf0bb` | Stellar payment amount + XLM gas headroom for failed-ledger retries |
-| **xboard-monero-balance** | `main` | `879b91e` | (baseline pin; no deal-flow change in this tag) |
-| **xboard-proxy-imap** | `main` | `d96863b` | (baseline pin; no deal-flow change in this tag) |
+| **xboard-client** | `main` | `69a513a` | Seller deal steps / IDLE; tokens filter; this doc |
+| **xboard-api** | `main` | `af8b19f` | AML `start_deal` buyer escrow type match; this doc |
+| **xboard-core** | `master` | `dff9c2e` | Stellar amount + XLM gas headroom; this doc |
+| **xboard-monero-balance** | `main` | `1c6b3d4` | Baseline pin + this doc |
+| **xboard-proxy-imap** | `main` | `8cd5a98` | Baseline pin + this doc |
 
 > **xboard-core** uses **`master`**, not `main`. All other listed repos use **`main`**.
 
@@ -23,7 +23,7 @@ The tag is on the default branch tip in every repository (`main` or `master`). T
 - **xboard-client:** Removed merged stale branches (already contained in `main`):  
   `client/web-kotlin2-compose-coroutines-and-shell`, `fix/deal-seller-send-payment-details`, `web/webgl-idle-recovery-v70` (local + `origin`).
 - **Other repos:** Only `main` / `master` — nothing to merge.
-- **Remote:** Tag `canonical-2026-06-04` pushed on GitHub for every repo above.
+- **Remote:** Annotated tag `canonical-2026-06-04` on the commit in the table above (same as default-branch tip after this documentation push).
 
 ## Restore this baseline in one repo
 
