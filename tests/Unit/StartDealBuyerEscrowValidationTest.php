@@ -3,8 +3,9 @@
 namespace Tests\Unit;
 
 use App\Models\ExchangeLot;
-use App\Support\StartDealBuyerEscrowValidation;
 use App\Services\EscrowTokenValidationService;
+use App\Support\StartDealBuyerEscrowValidation;
+use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
@@ -53,6 +54,45 @@ class StartDealBuyerEscrowValidationTest extends TestCase
 
         $validator = new StartDealBuyerEscrowValidation($this->createMock(EscrowTokenValidationService::class));
         $result = $validator->validate($lot, '', 100.0);
+
+        $this->assertNull($result);
+    }
+
+    public function test_accepts_usdt_token_when_lot_requires_usdt_tron_payment(): void
+    {
+        $lot = new ExchangeLot([
+            'aml' => true,
+            'wallet_hash' => 'sellerhash',
+            'from_crypto_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+        ]);
+        $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'xrp', 'is_native' => true, 'network' => 'native']);
+        $lot->setRelation('toCryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
+        $lot->setRelation('fromFiatCurrency', null);
+        $lot->setRelation('toFiatCurrency', null);
+
+        $usdtToken = json_encode([
+            'currency' => 'USDT',
+            'network' => 'tron',
+            'wallet_address' => 'TBuyerUsdtTronAddress123456789012345',
+            'token_hash' => 'buyerusdttronhash',
+        ], JSON_THROW_ON_ERROR);
+
+        $coreMock = $this->createMock(EscrowTokenValidationService::class);
+        $coreMock->expects($this->once())
+            ->method('getCoreUrlAndKeyForToken')
+            ->willReturn(['https://core.test', 'key']);
+        Http::fake([
+            'https://core.test/api/escrow-tokens/reservation-requirements' => Http::response([
+                'data' => [
+                    'available' => 100.0,
+                    'min_to_reserve' => 10.0,
+                ],
+            ], 200),
+        ]);
+
+        $validator = new StartDealBuyerEscrowValidation($coreMock);
+        $result = $validator->validate($lot, $usdtToken, 50.0);
 
         $this->assertNull($result);
     }

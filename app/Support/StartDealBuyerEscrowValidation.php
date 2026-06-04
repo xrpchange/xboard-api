@@ -63,7 +63,7 @@ final class StartDealBuyerEscrowValidation
         }
 
         $tokenType = DealEscrowPublicPart::coreCryptoTypeFromJson($trimmed);
-        if ($tokenType === null || $tokenType !== $lotType) {
+        if ($tokenType === null || ! DealEscrowPublicPart::coreTypesCompatible($tokenType, $lotType)) {
             return [
                 'message' => 'Buyer escrow token must match the lot payment currency ('.$lotType.').',
                 'error_code' => 'buyer_escrow_token_crypto_mismatch',
