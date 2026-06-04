@@ -10,11 +10,11 @@ The tag is on the default branch tip in every repository (`main` or `master`). T
 
 | Repository | Default branch | Commit | Notes |
 |------------|----------------|--------|--------|
-| **xboard-client** | `main` | `69a513a` | Seller deal steps / IDLE; tokens filter; this doc |
-| **xboard-api** | `main` | `af8b19f` | AML `start_deal` buyer escrow type match; this doc |
-| **xboard-core** | `master` | `dff9c2e` | Stellar amount + XLM gas headroom; this doc |
-| **xboard-monero-balance** | `main` | `1c6b3d4` | Baseline pin + this doc |
-| **xboard-proxy-imap** | `main` | `8cd5a98` | Baseline pin + this doc |
+| **xboard-client** | `main` | `dc4c80a` | Seller deal steps / IDLE; tokens filter; this doc |
+| **xboard-api** | `main` | `ba2e7d4` | AML `start_deal` buyer escrow type match; this doc |
+| **xboard-core** | `master` | `0bb7478` | Stellar amount + XLM gas headroom; this doc |
+| **xboard-monero-balance** | `main` | `dca5118` | Baseline pin + this doc |
+| **xboard-proxy-imap** | `main` | `e79b151` | Baseline pin + this doc |
 
 > **xboard-core** uses **`master`**, not `main`. All other listed repos use **`main`**.
 
