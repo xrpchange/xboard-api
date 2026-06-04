@@ -6,24 +6,34 @@ This marks the **most stable known point** across the XBoard multi-repo workspac
 
 The tag is on the default branch tip in every repository (`main` or `master`). There is **no separate long-lived branch** to merge — only the default branch plus this annotated tag.
 
-## Commits at this baseline
+## Repositories at this baseline
 
-| Repository | Default branch | Commit | Notes |
-|------------|----------------|--------|--------|
-| **xboard-client** | `main` | `4c8bbdd` | Seller deal steps / IDLE; tokens filter; this doc |
-| **xboard-api** | `main` | `a33345a` | AML `start_deal` buyer escrow type match; this doc |
-| **xboard-core** | `master` | `e4a1a5e` | Stellar amount + XLM gas headroom; this doc |
-| **xboard-monero-balance** | `main` | `8cd95c9` | Baseline pin + this doc |
-| **xboard-proxy-imap** | `main` | `1c82e21` | Baseline pin + this doc |
+| Repository | Default branch | What is pinned |
+|------------|----------------|----------------|
+| **xboard-client** | `main` | Seller deal steps / IDLE; tokens filter; ecosystem baseline doc |
+| **xboard-api** | `main` | AML `start_deal` buyer escrow type match; baseline doc |
+| **xboard-core** | `master` | Stellar payment amount + XLM gas headroom; baseline doc |
+| **xboard-monero-balance** | `main` | Stable service pin + baseline doc |
+| **xboard-proxy-imap** | `main` | Stable proxy pin + baseline doc |
 
 > **xboard-core** uses **`master`**, not `main`. All other listed repos use **`main`**.
+
+**Verify commit** after checkout (must match on your machine):
+
+```bash
+git fetch origin --tags
+git checkout canonical-2026-06-04
+git rev-parse --short HEAD
+```
+
+The tag `canonical-2026-06-04` on `origin` points at the commit that includes `docs/ECOSYSTEM_CANONICAL_BASELINE.md` on the default branch.
 
 ## What was consolidated (2026-06-04)
 
 - **xboard-client:** Removed merged stale branches (already contained in `main`):  
   `client/web-kotlin2-compose-coroutines-and-shell`, `fix/deal-seller-send-payment-details`, `web/webgl-idle-recovery-v70` (local + `origin`).
 - **Other repos:** Only `main` / `master` — nothing to merge.
-- **Remote:** Annotated tag `canonical-2026-06-04` on the commit in the table above. After `git fetch --tags && git checkout canonical-2026-06-04`, run `git rev-parse --short HEAD` — it must match the table SHA for that repo.
+- **Remote:** Annotated tag `canonical-2026-06-04` pushed on GitHub for every repo above (same name, **different commit hash per repo**).
 
 ## Restore this baseline in one repo
 
