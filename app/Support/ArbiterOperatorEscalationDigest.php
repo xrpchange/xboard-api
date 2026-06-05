@@ -50,7 +50,13 @@ final class ArbiterOperatorEscalationDigest
             $reasonLabel = self::policyReasonLabel($policyReasonCode);
         }
 
+        $envLabel = trim((string) ($context['deployment_environment_label'] ?? ''));
+        if ($envLabel === '') {
+            $envLabel = ApiDeploymentEnvironment::label();
+        }
+
         $facts = [
+            ['label' => 'Deal environment', 'value' => $envLabel],
             ['label' => 'Dispute lot', 'value' => $lotId !== '' ? $lotId : '—'],
             ['label' => 'Opened by', 'value' => $sideLabel],
             [
@@ -105,15 +111,41 @@ final class ArbiterOperatorEscalationDigest
             ];
         }
 
+        $txProofs = is_array($context['tx_proofs'] ?? null) ? $context['tx_proofs'] : [];
+
         return [
             'headline' => $headline,
             'lead' => $lead,
             'reason_label' => $reasonLabel,
             'policy_reason_code' => $mailEscalationKind === 'policy_manual' ? trim($policyReasonCode) : '',
+            'deployment_environment_label' => $envLabel,
             'facts' => $facts,
             'sections' => $sections,
             'chat_turns' => $chatTurns,
+            'tx_proofs' => $txProofs,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $check
+     */
+    public static function formatCoreTxCheckSummary(?array $check): string
+    {
+        if ($check === null || $check === []) {
+            return 'No server on-chain check recorded when the message was sent.';
+        }
+        $verified = array_key_exists('verified', $check)
+            ? (($check['verified'] ?? false) ? 'yes' : 'no')
+            : 'unknown';
+        $parts = ['verified='.$verified];
+        if (isset($check['confirmations'])) {
+            $parts[] = 'confirmations='.(string) $check['confirmations'];
+        }
+        if (! empty($check['checked_at_utc'])) {
+            $parts[] = 'checked_at_utc='.(string) $check['checked_at_utc'];
+        }
+
+        return implode(', ', $parts);
     }
 
     /**
@@ -300,6 +332,31 @@ final class ArbiterOperatorEscalationDigest
             $lines[] = (string) ($sec['title'] ?? '');
             $lines[] = str_repeat('-', 40);
             $lines[] = trim((string) ($sec['content'] ?? ''));
+        }
+        if (($digest['tx_proofs'] ?? []) !== []) {
+            $lines[] = '';
+            $lines[] = 'Declared transfers (arbitration)';
+            $lines[] = str_repeat('-', 40);
+            foreach ($digest['tx_proofs'] as $proof) {
+                $label = (string) ($proof['label'] ?? 'Transfer');
+                $msgId = (string) ($proof['message_id'] ?? '');
+                $lines[] = $label.' (chat message #'.$msgId.')';
+                if (! empty($proof['bank_receipt_only'])) {
+                    $lines[] = '  Bank receipt proof — review PDF links in chat; no on-chain id.';
+                } else {
+                    $lines[] = '  tx_id: '.(string) ($proof['tx_id'] ?? '');
+                    if (! empty($proof['crypto_type'])) {
+                        $lines[] = '  crypto_type: '.(string) $proof['crypto_type'];
+                    }
+                    $lines[] = '  At send time: '.self::formatCoreTxCheckSummary(is_array($proof['core_tx_check'] ?? null) ? $proof['core_tx_check'] : null);
+                    if (! empty($proof['explorer_url'])) {
+                        $lines[] = '  Explorer: '.(string) $proof['explorer_url'];
+                    }
+                    if (! empty($proof['verify_url'])) {
+                        $lines[] = '  Re-verify (Core): '.(string) $proof['verify_url'];
+                    }
+                }
+            }
         }
         $lines[] = '';
         $lines[] = 'Actions (open in browser; links expire):';

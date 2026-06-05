@@ -24,16 +24,19 @@ final class ArbiterPromptContextAssembler
      *   exchange_rules_digest: string,
      *   deal_machine_state: string,
      *   recent_chat_digest: string,
+     *   declared_transactions_digest: string,
      * }
      */
     public static function forLot(ExchangeLot $lot, string $requesterSide): array
     {
         $side = strtolower(trim($requesterSide)) === 'seller' ? 'seller' : 'buyer';
+        $txProofs = DealArbitrationTxProofCatalog::forLot($lot);
 
         return [
             'exchange_rules_digest' => self::loadRulesDigest(),
             'deal_machine_state' => DealChatTagSequenceValidator::computeStateForLot($lot),
             'recent_chat_digest' => self::buildChatDigest($lot, $side),
+            'declared_transactions_digest' => DealArbitrationTxProofCatalog::formatDigestLines($txProofs),
         ];
     }
 

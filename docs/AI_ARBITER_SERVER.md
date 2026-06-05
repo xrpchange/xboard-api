@@ -96,9 +96,26 @@ Before calling the provider, the controller attaches (non-authoritative) context
 
 - **`exchange_rules_digest`** — full contents of **`resources/prompts/arbiter_exchange_rules.md`** (fallback English line if file missing; hard safety cap in code).  
 - **`deal_machine_state`** — `DealChatTagSequenceValidator::computeStateForLot($lot)` (same reducer as `deal_tag` validation).  
-- **`recent_chat_digest`** — last N messages visible to the **requester** (same `deleted_by_*` filters as `GET …/chat-messages`), one line per message with truncated `body` / `deal_tag`.
+- **`recent_chat_digest`** — last N messages visible to the **requester** (same `deleted_by_*` filters as `GET …/chat-messages`), one line per message with truncated `body` / `deal_tag` (format: `id=N side=… tag={…} body=…`).
+- **`declared_transactions_digest`** — all chat rows whose `deal_tag.t` is `buyer_crypto_tx`, `seller_transfer_tx`, or `deal_completed_seller` (`crypto_payout_tx`), including stored **`core_tx_check`** when the message was accepted. Built by `App\Support\DealArbitrationTxProofCatalog`. Same block is appended in operator escalation mail and in `ArbiterDealContextPlainText`.
 
 Enforcement of progression and payouts remains **server-side only**; the digest steers the model toward questions and conservative verdicts.
+
+### Operator mail: declared transfer checks (arbitration)
+
+When `ARBITER_OPERATOR_ESCALATION_EMAIL` is set, `ArbiterOperatorEscalationMail` adds a **Declared transfers (arbitration)** section:
+
+| Control | Purpose |
+|---------|---------|
+| **Check transfer (Core)** | Green button — signed GET `/arbiter/operator/{lot}/verify-tx/{message_id}`. One page: pass/fail verdict, prior check at send time, optional explorer link. Uses **sandbox** or **production** Core URL from the API host (`sandbox.api.*` → `CORE_URL`; `api.*` → `CORE_PRODUCTION_URL`). |
+| **Block explorer** | Blue button — `config/xboard.php` → `tx_explorer_url_templates.production` or `.sandbox` (`{tx}` by Core `crypto_type`). Sandbox deals open testnet explorers (e.g. Blockstream testnet, Nile Tronscan, Amoy Polygonscan). |
+| **Open receipt** | Bank-only `seller_transfer_tx` with `receipt_links` — direct HTTPS links to PDFs; no on-chain id. |
+
+Mail shows an environment pill (**Production** / **Sandbox**) and **Verified when sent** status from `deal_tag.core_tx_check`. Operator does not copy tx ids — clicks buttons in the email only.
+
+Bank-only second leg (`seller_transfer_tx` with `receipt_links` and no `tx_number`) is listed as **bank receipt proof** — receipt buttons only.
+
+`Compensate buyer` / `Deny buyer` links remain acknowledgment-only (no payout automation); operator uses explorer/Core results plus full chat digest to decide.
 
 ### Receipt PDF (text for all; binary only when text exists)
 
