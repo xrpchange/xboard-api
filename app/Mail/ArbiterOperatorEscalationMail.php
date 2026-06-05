@@ -54,6 +54,7 @@ class ArbiterOperatorEscalationMail extends Mailable
 
         $base = PublicHttpsUrl::upgradeMailBaseToHttps(self::resolveOperatorMailBaseUrl());
         URL::forceRootUrl($base);
+        $digest = $this->digest;
         try {
             $urls = [
                 'reply' => URL::temporarySignedRoute('arbiter.operator.action', $expires, [
@@ -69,6 +70,7 @@ class ArbiterOperatorEscalationMail extends Mailable
                     'action' => 'deny_buyer',
                 ]),
             ];
+            $digest = $this->digestWithTxVerifyUrls($digest, $lot, $expires);
         } finally {
             URL::forceRootUrl(null);
         }
@@ -77,10 +79,10 @@ class ArbiterOperatorEscalationMail extends Mailable
             'mailSection' => 'html',
             'lotId' => $lot,
             'urls' => $urls,
-            'digest' => $this->digest,
+            'digest' => $digest,
         ])->render();
 
-        $plainTrimmed = ArbiterOperatorEscalationDigest::toPlainText($this->digest, $lot, $urls);
+        $plainTrimmed = ArbiterOperatorEscalationDigest::toPlainText($digest, $lot, $urls);
 
         return new Content(
             htmlString: $html,
@@ -108,5 +110,37 @@ class ArbiterOperatorEscalationMail extends Mailable
         }
 
         return rtrim((string) config('app.url', 'http://localhost'), '/');
+    }
+
+    /**
+     * @param  array<string, mixed>  $digest
+     * @return array<string, mixed>
+     */
+    private function digestWithTxVerifyUrls(array $digest, string $lotId, \DateTimeInterface $expires): array
+    {
+        $proofs = $digest['tx_proofs'] ?? [];
+        if (! is_array($proofs) || $proofs === []) {
+            return $digest;
+        }
+
+        $enriched = [];
+        foreach ($proofs as $proof) {
+            if (! is_array($proof) || ! empty($proof['bank_receipt_only'])) {
+                $enriched[] = $proof;
+
+                continue;
+            }
+            $messageId = (int) ($proof['message_id'] ?? 0);
+            if ($messageId > 0) {
+                $proof['verify_url'] = URL::temporarySignedRoute('arbiter.operator.verify_tx', $expires, [
+                    'lot' => $lotId,
+                    'message' => $messageId,
+                ]);
+            }
+            $enriched[] = $proof;
+        }
+        $digest['tx_proofs'] = $enriched;
+
+        return $digest;
     }
 }

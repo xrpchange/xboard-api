@@ -3,7 +3,10 @@
 namespace App\Services\Arbiter;
 
 use App\Mail\ArbiterOperatorEscalationMail;
+use App\Models\ExchangeLot;
+use App\Support\ApiDeploymentEnvironment;
 use App\Support\ArbiterOperatorEscalationDigest;
+use App\Support\DealArbitrationTxProofCatalog;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -31,6 +34,7 @@ final class ArbiterOperatorEscalationNotifier
         $ctx['receipt_pdf_llm'] = $ctx['receipt_pdf_llm'] ?? 'receipt_pdf_image_only_operator_escalation';
         $ctx['receipt_pdf_text_excerpt'] = (string) ($ctx['receipt_pdf_text_excerpt'] ?? '');
 
+        $ctx = self::enrichContextWithTxProofs($ctx);
         $digest = ArbiterOperatorEscalationDigest::build($ctx, $rules, 'image_only_receipt', '');
         $lotId = (string) ($ctx['lot_id'] ?? '?');
         Mail::send(new ArbiterOperatorEscalationMail($to, $lotId, $digest, 'image_only_receipt', ''));
@@ -85,5 +89,34 @@ final class ArbiterOperatorEscalationNotifier
         ]);
 
         return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    private static function enrichContextWithTxProofs(array $context): array
+    {
+        $lotId = (int) ($context['lot_id'] ?? 0);
+        if ($lotId <= 0) {
+            return $context;
+        }
+        $environment = ApiDeploymentEnvironment::current();
+        $context['deployment_environment'] = $environment;
+        $context['deployment_environment_label'] = ApiDeploymentEnvironment::label($environment);
+
+        try {
+            $lot = ExchangeLot::query()->find($lotId);
+            if ($lot !== null) {
+                $context['tx_proofs'] = DealArbitrationTxProofCatalog::forLot($lot, $environment);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[arbiter] tx_proofs_catalog_skip', [
+                'lot_id' => $lotId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $context;
     }
 }

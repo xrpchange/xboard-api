@@ -49,6 +49,11 @@ final class ArbiterDealContextPlainText
             '',
             'recent_chat_digest (requester-visible thread; truncated):',
             $chatDigest !== '' ? $chatDigest : '(none)',
+            '',
+            'declared_transactions_digest (buyer_crypto_tx / seller_transfer_tx / seller payout tags; includes core_tx_check when present):',
+            trim((string) ($context['declared_transactions_digest'] ?? '')) !== ''
+                ? (string) $context['declared_transactions_digest']
+                : '(none)',
         ]);
     }
 }

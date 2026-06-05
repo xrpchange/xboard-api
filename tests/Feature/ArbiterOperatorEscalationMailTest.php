@@ -98,4 +98,10 @@ class ArbiterOperatorEscalationMailTest extends TestCase
             'body' => 'Hello from operator',
         ])->assertForbidden();
     }
+
+    public function test_operator_verify_tx_route_rejects_unsigned_request(): void
+    {
+        $this->get('/arbiter/operator/7/verify-tx/12')->assertForbidden();
+    }
+
 }

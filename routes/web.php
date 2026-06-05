@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Arbiter\ArbiterOperatorActionController;
+use App\Http\Controllers\Arbiter\ArbiterOperatorTxVerifyController;
 use App\Http\Controllers\OpenDealController;
 use Illuminate\Support\Facades\Route;
 
@@ -28,6 +29,13 @@ Route::match(['get', 'post'], '/arbiter/operator/{lot}/{action}', [ArbiterOperat
     ->where('action', 'reply|compensate_buyer|deny_buyer')
     ->middleware('signed')
     ->name('arbiter.operator.action');
+
+/** Signed link: re-verify declared on-chain tx id from a deal chat message via Core. */
+Route::get('/arbiter/operator/{lot}/verify-tx/{message}', [ArbiterOperatorTxVerifyController::class, 'show'])
+    ->whereNumber('lot')
+    ->whereNumber('message')
+    ->middleware('signed')
+    ->name('arbiter.operator.verify_tx');
 
 // Swagger документация
 Route::get('/api/documentation', function () {
