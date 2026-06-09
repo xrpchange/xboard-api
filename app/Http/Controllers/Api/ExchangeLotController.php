@@ -15,6 +15,7 @@ use App\Models\FiatCurrency;
 use App\Models\Node;
 use App\Models\Transaction;
 use App\Services\Arbiter\ArbiterService;
+use App\Services\Deal\DealInternalMailRateLimitService;
 use App\Services\Deal\DealWebPushNotifier;
 use App\Services\DealAmlAdminAlertService;
 use App\Services\DealAmlPersistenceService;
@@ -26,6 +27,7 @@ use App\Support\ArbiterReceiptPdfResolver;
 use App\Support\ClientWebOrigin;
 use App\Support\DealBuyerEscrowTokenHash;
 use App\Support\DealChatTagSequenceValidator;
+use App\Support\DealChatMessageLimits;
 use App\Support\DealEscrowCryptoType;
 use App\Support\StartDealBuyerEscrowValidation;
 use App\Support\DealSaleTransactionCompletion;
@@ -57,6 +59,7 @@ class ExchangeLotController extends Controller
         private DealAmlAdminAlertService $dealAmlAdminAlert,
         private DealWebPushNotifier $dealWebPushNotifier,
         private StartDealBuyerEscrowValidation $startDealBuyerEscrowValidation,
+        private DealInternalMailRateLimitService $dealInternalMailRateLimit,
     ) {}
 
     /**
@@ -1638,7 +1641,7 @@ class ExchangeLotController extends Controller
     public function sendMessageToSeller(Request $request, ExchangeLot $lot): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'message' => 'required|string|max:10000',
+            'message' => DealChatMessageLimits::messageValidationRule(),
             'buyer_locale' => 'nullable|string|max:10',
             'selected_amount' => 'nullable|numeric|min:0',
             'message_type' => 'nullable|string|in:start_deal,buyer_exited',
@@ -2254,6 +2257,12 @@ class ExchangeLotController extends Controller
                 }
                 $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
+            $buyerSenderMailbox = $requesterMailboxEmail ?? trim((string) ($lot->buyer_lot_email ?? ''));
+            if (($internalMailLimitResponse = $this->rejectIfInternalMailLimitExceeded(
+                $buyerSenderMailbox !== '' ? $buyerSenderMailbox : null
+            )) !== null) {
+                return $internalMailLimitResponse;
+            }
             $this->sendDealEmail(
                 to: $sellerEmail,
                 subject: $subject,
@@ -2691,7 +2700,7 @@ class ExchangeLotController extends Controller
     public function sendMessageToBuyer(Request $request, ExchangeLot $lot): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'message' => 'required|string|max:10000',
+            'message' => DealChatMessageLimits::messageValidationRule(),
             'message_type' => 'nullable|string|in:seller_exited',
             'deal_tag' => 'nullable|string|max:20000',
         ]);
@@ -2901,6 +2910,10 @@ class ExchangeLotController extends Controller
                 'to' => $buyerEmail,
                 'subject' => $subject,
             ]);
+
+            if (($internalMailLimitResponse = $this->rejectIfInternalMailLimitExceeded($sellerEmail)) !== null) {
+                return $internalMailLimitResponse;
+            }
 
             try {
                 $this->sendDealEmail(
@@ -3438,7 +3451,7 @@ class ExchangeLotController extends Controller
             'address' => 'nullable|string|max:500',
             'crypto_type' => 'nullable|string|max:30',
             'bank_data' => 'nullable|string|max:5000',
-            'message' => 'nullable|string|max:10000',
+            'message' => DealChatMessageLimits::messageValidationRule(required: false),
         ]);
         if ($validator->fails()) {
             return response()->json([
@@ -3595,6 +3608,9 @@ class ExchangeLotController extends Controller
             : ($paymentType === 'bank' ? $bankData : $address);
 
         if (! empty($sellerEmail)) {
+            if (($internalMailLimitResponse = $this->rejectIfInternalMailLimitExceeded($buyerEmail)) !== null) {
+                return $internalMailLimitResponse;
+            }
             try {
                 $this->sendDealEmail(
                     to: $sellerEmail,
@@ -4532,7 +4548,7 @@ class ExchangeLotController extends Controller
             'address' => 'required_if:payment_type,crypto|nullable|string|max:500',
             'crypto_type' => 'required_if:payment_type,crypto|nullable|string|max:30',
             'bank_data' => 'nullable|string|max:5000',
-            'message' => 'nullable|string|max:10000', // Seller's text shown in chat (e.g. bank requisites as typed)
+            'message' => DealChatMessageLimits::messageValidationRule(required: false), // Seller's text shown in chat (e.g. bank requisites as typed)
             'escrow_token' => 'nullable|string|max:10000', // Seller full token: used to set transaction_id on Core reservation
         ]);
 
@@ -4729,12 +4745,26 @@ class ExchangeLotController extends Controller
         $sellerMessage = trim((string) $request->input('message', ''));
         $body = $sellerMessage !== '' ? $sellerMessage : ('Payment details for Lot #'.$lot->id.'.');
 
+        $sellerSenderMailbox = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot))
+            ?? trim((string) ($lot->seller_lot_email ?? ''));
+        if ($sellerSenderMailbox === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'No seller mailbox for this lot.',
+                'error_code' => 'no_seller_mailbox',
+            ], 400);
+        }
+
         Log::info('[exchange-lots] sendPaymentDetails: sending mail', [
             'lot_id' => $lot->id,
             'transaction_id' => $transaction->id,
             'to' => $buyerEmail,
             'payment_type' => $paymentType,
         ]);
+
+        if (($internalMailLimitResponse = $this->rejectIfInternalMailLimitExceeded($sellerSenderMailbox)) !== null) {
+            return $internalMailLimitResponse;
+        }
 
         try {
             Mail::raw($body, function ($message) use ($buyerEmail, $subject, $tagJson) {
@@ -6119,10 +6149,15 @@ class ExchangeLotController extends Controller
         ?string $dealTag
     ): bool {
         try {
-            // Enforce max message length on server side.
-            $maxLen = (int) config('deal.max_message_length', 1000);
-            if ($maxLen > 0 && mb_strlen($body) > $maxLen) {
-                $body = mb_substr($body, 0, $maxLen);
+            $maxLen = DealChatMessageLimits::maxBodyLength();
+            if (mb_strlen($body) > $maxLen) {
+                Log::warning('[exchange-lots] insertDealChatMessage: body exceeds max length', [
+                    'lot_id' => $lot->id,
+                    'max_len' => $maxLen,
+                    'body_len' => mb_strlen($body),
+                ]);
+
+                return false;
             }
 
             DealChatMessage::create([
@@ -6457,6 +6492,30 @@ class ExchangeLotController extends Controller
      * Send deal email as plain text.
      * Structured payload is delivered via X-XBoard-Deal-Tag and rendered by client chat.
      */
+    private function rejectIfInternalMailLimitExceeded(?string $senderLotMailboxEmail): ?JsonResponse
+    {
+        if (! $this->dealInternalMailRateLimit->isEnabled()) {
+            return null;
+        }
+
+        if (! $this->dealInternalMailRateLimit->reserveSendSlot($senderLotMailboxEmail)) {
+            $normalized = $this->dealInternalMailRateLimit->normalizeMailboxEmail($senderLotMailboxEmail);
+            $sentToday = $normalized !== null
+                ? $this->dealInternalMailRateLimit->sentCountToday($normalized)
+                : $this->dealInternalMailRateLimit->dailyLimit();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Daily internal mail limit reached for this deal mailbox.',
+                'error_code' => 'deal_internal_mail_daily_limit_reached',
+                'daily_limit' => $this->dealInternalMailRateLimit->dailyLimit(),
+                'sent_today' => $sentToday,
+            ], 422);
+        }
+
+        return null;
+    }
+
     private function sendDealEmail(
         string $to,
         string $subject,

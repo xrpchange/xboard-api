@@ -54,6 +54,18 @@ The API inserts into `deal_chat_messages` in these cases:
 
 Email-based inserts use the same `body`, `deal_tag`, and sender/recipient as the sent email. Chat-only inserts may keep `from_email` / `to_email` as `null`.
 
+### Message size and internal mail volume
+
+| Limit | Config | Default |
+|-------|--------|---------|
+| Max body length (characters) | `DEAL_CHAT_MAX_MESSAGE_LENGTH` | **1000** — validated on `send-message*` / payment-details APIs; client caps input to the same value. |
+| Max rows per lot | `DEAL_CHAT_MAX_MESSAGES` | **1000** — oldest rows pruned after insert. |
+| Internal mail sends per lot mailbox per **UTC day** | `DEAL_INTERNAL_MAIL_DAILY_LIMIT` | **300** — counted in `deal_internal_mail_daily_counters` when buyer/seller sends internal deal SMTP (`sendMessageToSeller`, `sendMessageToBuyer`, `sendPaymentDetails`, `buyerSetCryptoDestination`). **422** `deal_internal_mail_daily_limit_reached`. Not applied to AI arbiter, operator replies, or automated payout completion mails. |
+
+**Operator anti-flood (24h UTC):** signed links in arbiter escalation mail (`block_buyer_internal_mail` / `block_seller_internal_mail`) set `sent_count` to the daily limit for that participant’s deal mailbox — no separate ban flag. Counter resets on the next UTC calendar day.
+
+External notification email uses a separate counter (`email_test_counters`, `MAIL_TEST_EMAIL_DAILY_LIMIT`).
+
 ---
 
 ## Per-side soft delete (clearing mailbox)

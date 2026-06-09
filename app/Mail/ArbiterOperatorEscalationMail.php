@@ -69,6 +69,14 @@ class ArbiterOperatorEscalationMail extends Mailable
                     'lot' => $lot,
                     'action' => 'deny_buyer',
                 ]),
+                'block_buyer_internal_mail' => URL::temporarySignedRoute('arbiter.operator.action', $expires, [
+                    'lot' => $lot,
+                    'action' => 'block_buyer_internal_mail',
+                ]),
+                'block_seller_internal_mail' => URL::temporarySignedRoute('arbiter.operator.action', $expires, [
+                    'lot' => $lot,
+                    'action' => 'block_seller_internal_mail',
+                ]),
             ];
             $digest = $this->digestWithTxVerifyUrls($digest, $lot, $expires);
         } finally {
