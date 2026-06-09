@@ -56,6 +56,19 @@ Other server-set fields may be added (e.g. `amount`, `currency`) in the same JSO
 
 Other types may be added without changing the format.
 
+### Dispute / arbiter chat tags (API-written, `deal_chat_messages.deal_tag`)
+
+These tags are inserted by the API (not sent via buyer/seller `send-message` with `X-XBoard-Deal-Tag`). They use the same JSON shape and appear in deal chat UIs.
+
+| Value | Description |
+|-------|-------------|
+| `dispute_requested` | **Legacy** — prefer `dispute_requested_by_buyer` / `dispute_requested_by_seller`. |
+| `dispute_requested_by_buyer` | Buyer opened a dispute. JSON: `lot_id`. |
+| `dispute_requested_by_seller` | Seller opened a dispute. JSON: `lot_id`. |
+| `arbiter_message` | AI arbiter reply in chat. JSON includes `lot_id`, `source_side` (`buyer` \| `seller`), `reason_code`, `arbiter_status`, `operator_escalation_email_sent`, etc. |
+| `operator_mail_reply` | Exchange operator reply mirrored into chat. JSON: `lot_id`, optional `operator_action`. |
+| `operator_escalation_requested` | Participant pressed the arbiter button **after** their AI review in the current cycle and requested human operator follow-up (no second AI call). JSON: `lot_id`, `requested_by` (`buyer` \| `seller`), `operator_escalation_email_sent` (bool), `dispute_id`. **Email subject** to the operator includes who pressed the button (buyer/seller). Next participant escalation in the same cycle is allowed only after `operator_mail_reply`. |
+
 ---
 
 ## Flow matrix by pair

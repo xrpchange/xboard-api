@@ -28,7 +28,7 @@ php artisan test --group spec
 
 **What:** Column **`exchange_lots.arbiter_ai_invocations`** (unsigned int, default `0`). Migration: `database/migrations/2026_04_19_000001_add_arbiter_ai_invocations_to_exchange_lots.php` (on MySQL, backfills from existing `arbiter_ai` message counts per lot).
 
-**When:** Immediately after buyer/seller escrow auth succeeds, **before** `$request->validate(...)` and **before** `ArbiterService::buildArbiterMessage()`, the controller runs a single atomic SQL increment:
+**When:** After buyer/seller escrow auth, validation, and **participant policy** resolve to the **AI** path (not `operator_escalation`), **before** `ArbiterService::buildArbiterMessage()`, the controller runs a single atomic SQL increment:
 
 ```sql
 UPDATE exchange_lots
@@ -50,7 +50,23 @@ WHERE id = ? AND arbiter_ai_invocations < ?
 
 **Semantics:** One successful `UPDATE … + 1` consumes a slot **even if** a later step throws (e.g. insert failure). That trade-off favours **budget protection** over “refund the slot” on rare server errors.
 
-**Out of scope for this counter:** Human **operator** replies (`DealChatMessage` with `sender_side = exchange_operator`, tag `operator_mail_reply`) are written from `ArbiterOperatorActionController` and **never** hit `requestArbiterMessage` — **no** per-lot API cap on operator volume.
+**Out of scope for this counter:** Human **operator** replies (`DealChatMessage` with `sender_side = exchange_operator`, tag `operator_mail_reply`) are written from `ArbiterOperatorActionController` and **never** hit `requestArbiterMessage` — **no** per-lot API cap on operator volume. Participant **operator escalation** (`operator_escalation_requested` chat row + operator email, no LLM) also **does not** increment `arbiter_ai_invocations`.
+
+---
+
+## Participant arbiter button policy
+
+**Class:** `App\Support\DisputeArbiterParticipantPolicy`.
+
+Each side (buyer/seller) in an active dispute cycle:
+
+1. Must post **at least one chat message** as that side before the arbiter button works (`422` + `dispute_participant_comment_required`).
+2. **First** press in the cycle → **AI** (`arbiter_message`, consumes invocation budget when cap enabled).
+3. **Second** press (after their AI reply, before operator answers in chat) → **no LLM**; `ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('participant_requested_review', …)` and a **system** chat row with `deal_tag.t = operator_escalation_requested` (`requested_by`, `operator_escalation_email_sent`). Operator email subject includes **Buyer** or **Seller** (who pressed).
+4. Further presses until `operator_mail_reply` → `422` + `arbiter_wait_for_operator_reply`.
+5. Cycle resets after the latest `operator_mail_reply` (or from `deal_disputes.opened_at` if none).
+
+Tag registry: **`docs/DEAL_EMAIL_SUBJECT_TAG.md`** (*Dispute / arbiter chat tags*).
 
 **`GET /api/v1/exchange-lots/{lot}/dispute-status`:** Besides `dispute`, the JSON includes:
 

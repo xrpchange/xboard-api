@@ -14,6 +14,7 @@ use App\Models\ExchangeLot;
 use App\Models\FiatCurrency;
 use App\Models\Node;
 use App\Models\Transaction;
+use App\Services\Arbiter\ArbiterOperatorEscalationNotifier;
 use App\Services\Arbiter\ArbiterService;
 use App\Services\Deal\DealInternalMailRateLimitService;
 use App\Services\Deal\DealWebPushNotifier;
@@ -27,6 +28,7 @@ use App\Support\ArbiterReceiptPdfResolver;
 use App\Support\ClientWebOrigin;
 use App\Support\DealBuyerEscrowTokenHash;
 use App\Support\DealChatTagSequenceValidator;
+use App\Support\DisputeArbiterParticipantPolicy;
 use App\Support\DealChatMessageLimits;
 use App\Support\DealEscrowCryptoType;
 use App\Support\StartDealBuyerEscrowValidation;
@@ -5078,6 +5080,9 @@ class ExchangeLotController extends Controller
             ->orderByDesc('id')
             ->first();
 
+        $requesterSide = $isSeller ? 'seller' : 'buyer';
+        $participantPolicy = DisputeArbiterParticipantPolicy::resolveForSide($lot, $requesterSide);
+
         return response()->json([
             'success' => true,
             'dispute' => $activeDispute ? [
@@ -5097,6 +5102,12 @@ class ExchangeLotController extends Controller
                 'invocations' => $invocations,
                 'max_invocations' => $maxAiArbiter > 0 ? $maxAiArbiter : null,
                 'limit_reached' => $maxAiArbiter > 0 && $invocations >= $maxAiArbiter,
+            ],
+            'arbiter_participant' => [
+                'action' => $participantPolicy['action'],
+                'ai_used_in_cycle' => $participantPolicy['ai_used_in_cycle'],
+                'operator_escalation_sent_in_cycle' => $participantPolicy['operator_escalation_sent_in_cycle'],
+                'has_participant_comment' => $participantPolicy['has_participant_comment'],
             ],
         ]);
     }
@@ -5120,6 +5131,39 @@ class ExchangeLotController extends Controller
             return response()->json(['success' => false, 'message' => 'Not authorized to request arbiter message.'], 403);
         }
 
+        $validated = $request->validate([
+            'message' => ['nullable', 'string', 'max:4000'],
+            'provider' => ['nullable', 'string', 'max:64'],
+            'provider_hint' => ['nullable', 'string', 'max:64'],
+            'bank_timezone' => ['nullable', 'string', 'max:64'],
+            'payment_time_raw' => ['nullable', 'string', 'max:128'],
+            'pdf_sha256' => ['nullable', 'string', 'size:64', 'regex:/^[a-fA-F0-9]{64}$/'],
+            'email_message_sha256' => ['nullable', 'string', 'size:64', 'regex:/^[a-fA-F0-9]{64}$/'],
+            'dkim_signature_sha256' => ['nullable', 'string', 'size:64', 'regex:/^[a-fA-F0-9]{64}$/'],
+        ]);
+
+        $contextMessage = trim((string) ($validated['message'] ?? ''));
+        $requesterSide = $isSeller ? 'seller' : 'buyer';
+
+        $participantPolicy = DisputeArbiterParticipantPolicy::resolveForSide($lot, $requesterSide);
+        if ($participantPolicy['action'] === DisputeArbiterParticipantPolicy::ACTION_COMMENT_REQUIRED) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Post at least one message in the dispute chat before requesting the arbiter.',
+                'error_code' => DisputeArbiterParticipantPolicy::ERROR_COMMENT_REQUIRED,
+            ], 422);
+        }
+        if ($participantPolicy['action'] === DisputeArbiterParticipantPolicy::ACTION_WAIT_FOR_OPERATOR) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Wait for an exchange operator reply in chat before using this button again.',
+                'error_code' => DisputeArbiterParticipantPolicy::ERROR_WAIT_FOR_OPERATOR,
+            ], 422);
+        }
+        if ($participantPolicy['action'] === DisputeArbiterParticipantPolicy::ACTION_OPERATOR_ESCALATION) {
+            return $this->respondParticipantOperatorEscalation($lot, $requesterSide, $contextMessage, $validated);
+        }
+
         $maxAiArbiter = (int) config('deal.max_ai_arbiter_invocations_per_lot', 30);
         if ($maxAiArbiter > 0) {
             // Reserve before LLM: prevents replay loops that burn provider budget without inserting chat rows.
@@ -5137,19 +5181,6 @@ class ExchangeLotController extends Controller
             }
         }
 
-        $validated = $request->validate([
-            'message' => ['nullable', 'string', 'max:4000'],
-            'provider' => ['nullable', 'string', 'max:64'],
-            'provider_hint' => ['nullable', 'string', 'max:64'],
-            'bank_timezone' => ['nullable', 'string', 'max:64'],
-            'payment_time_raw' => ['nullable', 'string', 'max:128'],
-            'pdf_sha256' => ['nullable', 'string', 'size:64', 'regex:/^[a-fA-F0-9]{64}$/'],
-            'email_message_sha256' => ['nullable', 'string', 'size:64', 'regex:/^[a-fA-F0-9]{64}$/'],
-            'dkim_signature_sha256' => ['nullable', 'string', 'size:64', 'regex:/^[a-fA-F0-9]{64}$/'],
-        ]);
-
-        $contextMessage = trim((string) ($validated['message'] ?? ''));
-        $requesterSide = $isSeller ? 'seller' : 'buyer';
         $providerHint = trim((string) ($validated['provider_hint'] ?? $validated['provider'] ?? ''));
         $normalizedPaymentTime = $this->normalizeBankTimeToUtc(
             (string) ($validated['payment_time_raw'] ?? ''),
@@ -6140,6 +6171,79 @@ class ExchangeLotController extends Controller
     /**
      * Write a deal chat message (mail-as-event: when we send email we persist to chat table).
      */
+    /**
+     * Participant pressed the arbiter button after their AI review in this cycle — operator mail + system chat row.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function respondParticipantOperatorEscalation(
+        ExchangeLot $lot,
+        string $requesterSide,
+        string $contextMessage,
+        array $validated,
+    ): JsonResponse {
+        $arbiterPromptContext = ArbiterPromptContextAssembler::forLot($lot, $requesterSide);
+        $operatorContext = array_merge([
+            'lot_id' => $lot->id,
+            'requester_side' => $requesterSide,
+            'message' => $contextMessage,
+            'bank_timezone' => (string) ($validated['bank_timezone'] ?? ''),
+            'payment_time_raw' => (string) ($validated['payment_time_raw'] ?? ''),
+        ], $arbiterPromptContext);
+
+        $operatorEmailSent = ArbiterOperatorEscalationNotifier::notifyPolicyManualReview(
+            'participant_requested_review',
+            $operatorContext,
+            ['confidence' => 0.0],
+        );
+
+        $dispute = $this->ensureDealDisputeOpened(
+            lot: $lot,
+            openedBy: $requesterSide,
+            arbiterId: 'arbiter_ai_v1',
+            arbiterModelVersion: '',
+            status: 'in_review'
+        );
+
+        $escalationBody = 'The participant requested manual review by the exchange operator. Please wait for a reply in this chat.';
+        $escalationTag = json_encode([
+            't' => 'operator_escalation_requested',
+            'lot_id' => (string) $lot->id,
+            'requested_by' => $requesterSide,
+            'operator_escalation_email_sent' => $operatorEmailSent,
+            'dispute_id' => $dispute->id,
+        ], JSON_UNESCAPED_UNICODE);
+
+        $this->insertDealChatMessage(
+            lot: $lot,
+            senderSide: 'system',
+            fromEmail: null,
+            toEmail: null,
+            body: $escalationBody,
+            dealTag: $escalationTag !== false ? $escalationTag : null,
+        );
+
+        Log::info('[arbiter] participant_operator_escalation', [
+            'lot_id' => $lot->id,
+            'requester_side' => $requesterSide,
+            'operator_escalation_email_sent' => $operatorEmailSent,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Operator escalation requested.',
+            'data' => [
+                'action' => DisputeArbiterParticipantPolicy::ACTION_OPERATOR_ESCALATION,
+                'sender_side' => 'system',
+                'body' => $escalationBody,
+                'dispute_id' => $dispute->id,
+                'dispute_status' => 'in_review',
+                'reason_code' => 'participant_requested_review',
+                'operator_escalation_email_sent' => $operatorEmailSent,
+            ],
+        ]);
+    }
+
     private function insertDealChatMessage(
         ExchangeLot $lot,
         string $senderSide,

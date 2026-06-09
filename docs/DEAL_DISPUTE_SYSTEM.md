@@ -107,8 +107,12 @@ The JSON always includes **`dispute`**: an object for the latest active row (`op
 | `arbiter_ai.invocations` | int | Value of `exchange_lots.arbiter_ai_invocations` after refresh. |
 | `arbiter_ai.max_invocations` | int \| null | Cap from `config('deal.max_ai_arbiter_invocations_per_lot')`, or `null` if cap disabled (`0`). |
 | `arbiter_ai.limit_reached` | bool | `true` when cap is enabled and `invocations >= max_invocations`. |
+| `arbiter_participant.action` | string | Per-side arbiter button: `comment_required` \| `ai` \| `operator_escalation` \| `wait_for_operator`. |
+| `arbiter_participant.ai_used_in_cycle` | bool | This side already received an `arbiter_message` with matching `source_side` since the last `operator_mail_reply` (or since dispute open). |
+| `arbiter_participant.operator_escalation_sent_in_cycle` | bool | This side already has `operator_escalation_requested` with matching `requested_by` in the current cycle. |
+| `arbiter_participant.has_participant_comment` | bool | At least one chat row from this side exists since cycle start. |
 
-Full rationale for the counter and the **422** contract: **`docs/AI_ARBITER_SERVER.md`** (*Per-lot AI invocation budget*).
+Full rationale for the counter and the **422** contract: **`docs/AI_ARBITER_SERVER.md`** (*Per-lot AI invocation budget*). Participant button policy (one AI per cycle, then operator mail tag `operator_escalation_requested`): same doc, *Participant arbiter button policy*.
 
 ### Exchange lot column (not in `deal_disputes`)
 
