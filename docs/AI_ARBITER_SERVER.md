@@ -250,7 +250,33 @@ cd /var/www/xboard-api
 sudo -u www-data php artisan arbiter:gigachat-check --clear-cache
 ```
 
-Expect `oauth_http=200`, `chat_http=200`, `chat_preview=OK`. If chat returns **401** after OAuth succeeded, clear the cached token (`--clear-cache`) — `GigaChatArbiterProvider` also retries once on 401 with a fresh token.
+Expect `oauth_http=200`, `models_http=200`, a non-empty `models_sample=…` line, `chat_http=200`, `chat_preview=OK`. If chat returns **401** after OAuth succeeded, clear the cached token (`--clear-cache`) — `GigaChatArbiterProvider` also retries once on 401 with a fresh token.
+
+### GigaChat model selection
+
+Only one model is used per deployment: **`ARBITER_GIGACHAT_MODEL`** (default `GigaChat`). The arbiter does **not** try other model ids on failure.
+
+1. Run `arbiter:gigachat-check` and read **`models_sample`** — ids your authorization key can call (e.g. `GigaChat`, `GigaChat-2`, `GigaChat-2-Pro`, `GigaChat-Pro`).
+2. Set the model in **`.env`** on the API host, for example:
+
+```env
+ARBITER_GIGACHAT_MODEL=GigaChat-2
+```
+
+3. Reload Laravel config (production):
+
+```bash
+cd /var/www/xboard-api
+sudo -u www-data php artisan config:cache
+```
+
+4. Re-run the check (optional `--clear-cache`):
+
+```bash
+sudo -u www-data php artisan arbiter:gigachat-check --clear-cache
+```
+
+If the configured model is missing from `/models`, the check prints a **warning**; chat completion will fail until you pick a listed id.
 
 ### When *not* to disable verify
 
@@ -278,7 +304,7 @@ Prefer **installing the CA** over `ARBITER_GIGACHAT_VERIFY_SSL=false`. Use `fals
 | `ARBITER_GIGACHAT_SCOPE` | `GIGACHAT_API_PERS` | OAuth scope (`GIGACHAT_API_B2B` / `GIGACHAT_API_CORP` for legal entities per Sber docs). |
 | `ARBITER_GIGACHAT_OAUTH_URL` | `https://ngw.devices.sberbank.ru:9443/api/v2/oauth` | Token endpoint. |
 | `ARBITER_GIGACHAT_API_BASE_URL` | `https://gigachat.devices.sberbank.ru/api/v1` | OpenAI-compatible API root. |
-| `ARBITER_GIGACHAT_MODEL` | `GigaChat` | Model name. |
+| `ARBITER_GIGACHAT_MODEL` | `GigaChat` | Model id for chat completions (see *GigaChat model selection*; list via `arbiter:gigachat-check` → `models_sample`). |
 | `ARBITER_GIGACHAT_TIMEOUT` | `45` | HTTP timeout (seconds) for OAuth + chat. |
 | `ARBITER_GIGACHAT_VERIFY_SSL` | *(env-dependent)* | If **unset**: verify TLS only when `APP_ENV=production`; otherwise `false` (many dev hosts / XAMPP lack a good CA bundle for Sber). Set explicitly `true` or `false` to override. |
 | `ARBITER_DEEPSEEK_API_KEY` | *(empty)* | DeepSeek API key. |

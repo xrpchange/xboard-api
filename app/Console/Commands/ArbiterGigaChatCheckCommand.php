@@ -84,6 +84,30 @@ class ArbiterGigaChatCheckCommand extends Command
             $apiClient = $apiClient->withoutVerifying();
         }
 
+        $modelsResp = $apiClient->get($apiBase.'/models');
+        $this->line('models_http='.$modelsResp->status());
+        $modelIds = [];
+        if ($modelsResp->successful()) {
+            $data = $modelsResp->json('data');
+            if (is_array($data)) {
+                foreach ($data as $item) {
+                    if (is_array($item) && isset($item['id']) && is_string($item['id'])) {
+                        $modelIds[] = $item['id'];
+                    }
+                }
+            }
+            $sample = implode(', ', array_slice($modelIds, 0, 12));
+            if (count($modelIds) > 12) {
+                $sample .= ', …';
+            }
+            $this->line('models_sample='.$sample);
+            if ($model !== '' && $modelIds !== [] && ! in_array($model, $modelIds, true)) {
+                $this->warn("Configured model \"{$model}\" is not in the /models list for this key.");
+            }
+        } else {
+            $this->warn(mb_substr($modelsResp->body(), 0, 400));
+        }
+
         $chatResp = $apiClient->post($apiBase.'/chat/completions', [
             'model' => $model,
             'temperature' => 0,
