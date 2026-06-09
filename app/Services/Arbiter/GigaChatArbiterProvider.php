@@ -40,38 +40,20 @@ class GigaChatArbiterProvider implements ArbiterProvider
             throw new \RuntimeException('GigaChat OAuth credential is not configured.');
         }
 
-        $accessToken = $this->getCachedAccessToken();
-        $url = rtrim($this->apiBaseUrl, '/') . '/chat/completions';
+        $response = $this->postChatCompletion($payload, $this->getCachedAccessToken());
 
-        $request = Http::timeout($this->timeoutSeconds)
-            ->withHeaders([
-                'Accept' => 'application/json',
-                'Content-Type' => 'application/json',
-            ])
-            ->withToken($accessToken);
-
-        if (!$this->verifySsl) {
-            $request = $request->withoutVerifying();
+        if ($response->status() === 401) {
+            $this->forgetCachedAccessToken();
+            $response = $this->postChatCompletion($payload, $this->fetchAndCacheAccessToken(
+                $this->accessTokenCacheKey()
+            ));
         }
 
-        $response = $request->post($url, [
-            'model' => $this->model,
-            'temperature' => 0,
-            'max_tokens' => 350,
-            'messages' => [
-                [
-                    'role' => 'system',
-                    'content' => (string) ($payload['system_prompt'] ?? ''),
-                ],
-                [
-                    'role' => 'user',
-                    'content' => (string) ($payload['user_prompt'] ?? ''),
-                ],
-            ],
-        ]);
+        if (! $response->successful()) {
+            $snippet = mb_substr(trim($response->body()), 0, 240);
+            $detail = $snippet !== '' ? ' body='.$snippet : '';
 
-        if (!$response->successful()) {
-            throw new \RuntimeException('GigaChat request failed with status ' . $response->status());
+            throw new \RuntimeException('GigaChat request failed with status '.$response->status().$detail);
         }
 
         $json = $response->json();
@@ -87,9 +69,54 @@ class GigaChatArbiterProvider implements ArbiterProvider
         ];
     }
 
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function postChatCompletion(array $payload, string $accessToken): \Illuminate\Http\Client\Response
+    {
+        $url = rtrim($this->apiBaseUrl, '/').'/chat/completions';
+
+        $request = Http::timeout($this->timeoutSeconds)
+            ->withHeaders([
+                'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
+            ])
+            ->withToken($accessToken);
+
+        if (! $this->verifySsl) {
+            $request = $request->withoutVerifying();
+        }
+
+        return $request->post($url, [
+            'model' => $this->model,
+            'temperature' => 0,
+            'max_tokens' => 350,
+            'messages' => [
+                [
+                    'role' => 'system',
+                    'content' => (string) ($payload['system_prompt'] ?? ''),
+                ],
+                [
+                    'role' => 'user',
+                    'content' => (string) ($payload['user_prompt'] ?? ''),
+                ],
+            ],
+        ]);
+    }
+
+    private function accessTokenCacheKey(): string
+    {
+        return 'arbiter:gigachat:access:'.hash('sha256', $this->oauthCredential);
+    }
+
+    private function forgetCachedAccessToken(): void
+    {
+        Cache::forget($this->accessTokenCacheKey());
+    }
+
     private function getCachedAccessToken(): string
     {
-        $cacheKey = 'arbiter:gigachat:access:' . hash('sha256', $this->oauthCredential);
+        $cacheKey = $this->accessTokenCacheKey();
 
         $cached = Cache::get($cacheKey);
         if (is_string($cached) && $cached !== '') {
@@ -127,10 +154,7 @@ class GigaChatArbiterProvider implements ArbiterProvider
             throw new \RuntimeException('GigaChat OAuth returned no access_token.');
         }
 
-        $expiresAt = (int) ($json['expires_at'] ?? 0);
-        $ttlSeconds = $expiresAt > 0
-            ? max(120, $expiresAt - time() - 90)
-            : 1200;
+        $ttlSeconds = self::accessTokenCacheTtlSeconds($json);
 
         Cache::put($cacheKey, $token, $ttlSeconds);
 
@@ -148,5 +172,23 @@ class GigaChatArbiterProvider implements ArbiterProvider
         }
 
         return 'Basic ' . $raw;
+    }
+
+    /**
+     * @param  array<string, mixed>  $oauthJson
+     */
+    public static function accessTokenCacheTtlSeconds(array $oauthJson): int
+    {
+        $expiresRaw = (int) ($oauthJson['expires_at'] ?? 0);
+        if ($expiresRaw <= 0) {
+            return 1200;
+        }
+        // Sber may return expires_at in seconds or milliseconds.
+        $expiresAtSeconds = $expiresRaw > 9_999_999_999
+            ? (int) floor($expiresRaw / 1000)
+            : $expiresRaw;
+        $ttl = $expiresAtSeconds - time() - 90;
+
+        return max(120, min($ttl, 1800));
     }
 }
