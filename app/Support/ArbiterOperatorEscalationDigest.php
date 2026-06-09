@@ -44,6 +44,11 @@ final class ArbiterOperatorEscalationDigest
             $lead = 'A receipt file is on record for this dispute, but it appears to be a scan or image with no extractable text. '
                 .'The automatic review step was skipped so a person can review the case.';
             $reasonLabel = 'Scanned or image-only receipt';
+        } elseif ($policyReasonCode === 'participant_requested_review') {
+            $headline = 'Participant requested operator review';
+            $lead = 'A buyer or seller pressed the arbiter button after their AI review for this cycle and asked for human staff follow-up. '
+                .'Use the signed links below to reply in the deal thread or take compensating actions.';
+            $reasonLabel = 'Participant requested manual review';
         } else {
             $headline = 'Dispute needs manual review';
             $lead = self::policyLead($policyReasonCode);
@@ -58,7 +63,10 @@ final class ArbiterOperatorEscalationDigest
         $facts = [
             ['label' => 'Deal environment', 'value' => $envLabel],
             ['label' => 'Dispute lot', 'value' => $lotId !== '' ? $lotId : '—'],
-            ['label' => 'Opened by', 'value' => $sideLabel],
+            [
+                'label' => $policyReasonCode === 'participant_requested_review' ? 'Requested by' : 'Opened by',
+                'value' => $sideLabel,
+            ],
             [
                 'label' => 'Evidence strength (system estimate)',
                 'value' => $confidencePct.'% — higher usually means more proof fields and detail were provided.',
@@ -118,6 +126,7 @@ final class ArbiterOperatorEscalationDigest
             'lead' => $lead,
             'reason_label' => $reasonLabel,
             'policy_reason_code' => $mailEscalationKind === 'policy_manual' ? trim($policyReasonCode) : '',
+            'requester_side' => $side,
             'deployment_environment_label' => $envLabel,
             'facts' => $facts,
             'sections' => $sections,
@@ -239,15 +248,29 @@ final class ArbiterOperatorEscalationDigest
             'deal_completed_seller' => 'Deal completed',
             'arbiter_message' => 'Arbiter reply',
             'operator_mail_reply' => 'Operator reply',
+            'operator_escalation_requested' => 'Operator review requested',
             default => $t !== '' ? 'Structured update' : '',
         };
     }
 
-    public static function emailSubject(string $lotId, string $mailEscalationKind, string $policyReasonCode): string
-    {
+    public static function emailSubject(
+        string $lotId,
+        string $mailEscalationKind,
+        string $policyReasonCode,
+        ?string $requesterSide = null,
+    ): string {
         $lot = trim($lotId) !== '' ? trim($lotId) : '?';
         if ($mailEscalationKind === 'image_only_receipt') {
             return '[XBoard] Dispute on lot '.$lot.' — receipt needs human review';
+        }
+        if ($policyReasonCode === 'participant_requested_review') {
+            $side = match (strtolower(trim((string) $requesterSide))) {
+                'buyer' => 'Buyer',
+                'seller' => 'Seller',
+                default => 'Participant',
+            };
+
+            return '[XBoard] Dispute on lot '.$lot.' — '.$side.' requested operator review';
         }
 
         return '[XBoard] Dispute on lot '.$lot.' — '.self::policySubjectFragment($policyReasonCode);
@@ -262,6 +285,7 @@ final class ArbiterOperatorEscalationDigest
             'low_confidence' => 'uncertain automatic result',
             'ai_inconclusive' => 'AI could not conclude',
             'ai_continue_review' => 'AI needs more review',
+            'participant_requested_review' => 'participant requested operator review',
             default => 'manual review required',
         };
     }
@@ -269,6 +293,7 @@ final class ArbiterOperatorEscalationDigest
     private static function policyReasonLabel(string $code): string
     {
         return match (trim($code)) {
+            'participant_requested_review' => 'Participant requested manual review',
             'insufficient_context' => 'Not enough information for automatic review',
             'anti_replay_triggered' => 'Possible duplicate payment evidence',
             'provider_unavailable' => 'Review service unavailable',

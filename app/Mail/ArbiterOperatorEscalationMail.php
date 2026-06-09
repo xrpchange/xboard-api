@@ -33,10 +33,14 @@ class ArbiterOperatorEscalationMail extends Mailable
 
     public function envelope(): Envelope
     {
+        $requesterSide = is_string($this->digest['requester_side'] ?? null)
+            ? (string) $this->digest['requester_side']
+            : null;
         $subject = ArbiterOperatorEscalationDigest::emailSubject(
             $this->lotId,
             $this->mailEscalationKind,
             $this->policyReasonCode,
+            $requesterSide,
         );
 
         return new Envelope(
