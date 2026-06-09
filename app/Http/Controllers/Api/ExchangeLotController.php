@@ -2260,7 +2260,9 @@ class ExchangeLotController extends Controller
                 $tagJson = json_encode($customDealTagData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
             $buyerSenderMailbox = $requesterMailboxEmail ?? trim((string) ($lot->buyer_lot_email ?? ''));
-            if (($internalMailLimitResponse = $this->rejectIfInternalMailLimitExceeded(
+            // start_deal: internal lot-mail + external notification limits are separate; do not consume
+            // deal_internal_mail_daily_counters here (external cap uses email_test_counters / MAIL_TEST_EMAIL_DAILY_LIMIT).
+            if ($messageType !== 'start_deal' && ($internalMailLimitResponse = $this->rejectIfInternalMailLimitExceeded(
                 $buyerSenderMailbox !== '' ? $buyerSenderMailbox : null
             )) !== null) {
                 return $internalMailLimitResponse;
@@ -6658,7 +6660,7 @@ class ExchangeLotController extends Controller
             return false;
         }
 
-        $today = now()->toDateString();
+        $today = now()->utc()->toDateString();
 
         return DB::transaction(function () use ($normalized, $today, $limit): bool {
             $row = DB::table('email_test_counters')
