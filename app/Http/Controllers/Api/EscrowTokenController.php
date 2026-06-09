@@ -177,12 +177,8 @@ class EscrowTokenController extends BaseApiController
             ], 429);
         }
 
-        if (!$this->incrementEmailTestCounter($email)) {
-            return response()->json([
-                'message' => 'Daily limit for external emails reached for this address.',
-                'error_code' => 'external_email_daily_limit_reached',
-            ], 429);
-        }
+        // Mailbox verification uses verification_code_email_limit_exceeded only — not MAIL_TEST_EMAIL_DAILY_LIMIT
+        // (deal external notifications: start_deal seller_notification_email, send-test-notification-email).
 
         $ttlMinutes = (int) config('mail.mailbox_verification.code_ttl_minutes', 30);
         $code = (string) random_int(100000, 999999);
@@ -926,54 +922,6 @@ class EscrowTokenController extends BaseApiController
             'recipient_domain' => $domain,
             'hint' => 'Set MAIL_MAILER to smtp, postmark, resend, etc. on the API host. log/array only records locally.',
         ]);
-    }
-
-    /**
-     * Existing per-recipient daily limit for external emails (MAIL_TEST_EMAIL_DAILY_LIMIT).
-     */
-    private function incrementEmailTestCounter(string $email): bool
-    {
-        $limit = (int) config('mail.test_email_daily_limit', 30);
-        if ($limit <= 0) {
-            return true;
-        }
-
-        $normalized = strtolower(trim($email));
-        if ($normalized === '') {
-            return false;
-        }
-
-        $today = now()->toDateString();
-
-        return DB::transaction(function () use ($normalized, $today, $limit): bool {
-            $row = DB::table('email_test_counters')
-                ->where('email', $normalized)
-                ->where('day', $today)
-                ->lockForUpdate()
-                ->first();
-
-            if ($row !== null && (int) $row->sent_count >= $limit) {
-                return false;
-            }
-
-            if ($row === null) {
-                DB::table('email_test_counters')->insert([
-                    'email' => $normalized,
-                    'day' => $today,
-                    'sent_count' => 1,
-                    'last_sent_at' => now(),
-                ]);
-            } else {
-                DB::table('email_test_counters')
-                    ->where('id', $row->id)
-                    ->update([
-                        'sent_count' => (int) $row->sent_count + 1,
-                        'last_sent_at' => now(),
-                    ]);
-            }
-
-            return true;
-        });
     }
 
     private function resolveCoreUrlAndKeyByHost(Request $request): array
