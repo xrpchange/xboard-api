@@ -98,6 +98,10 @@ Before calling the provider, the controller attaches (non-authoritative) context
 - **`deal_machine_state`** — `DealChatTagSequenceValidator::computeStateForLot($lot)` (same reducer as `deal_tag` validation).  
 - **`recent_chat_digest`** — last N messages visible to the **requester** (same `deleted_by_*` filters as `GET …/chat-messages`), one line per message with truncated `body` / `deal_tag` (format: `id=N side=… tag={…} body=…`).
 - **`declared_transactions_digest`** — chat rows whose `deal_tag.t` is `buyer_crypto_tx`, `receipt_confirmation` (buyer bank receipt PDFs), `seller_transfer_tx`, or `deal_completed_seller` (`crypto_payout_tx`), including stored **`core_tx_check`** when the message was accepted. Built by `App\Support\DealArbitrationTxProofCatalog`. Same block is appended in operator escalation mail (both image-only and policy/manual paths, including `provider_unavailable`) and in `ArbiterDealContextPlainText`.
+- **`deal_milestones_digest`** — chronological key `deal_tag` milestones (`payment_details`, `receipt_confirmation`, `seller_received_funds`, `buyer_destination_details`, dispute tags, …) via `DealArbitrationMilestonesDigest`. **`deal_machine_state_meaning`** explains the state code (e.g. `wait_seller_transfer` = seller already confirmed fiat; seller must send crypto).
+- **`recent_chat_digest`** for the LLM **omits** prior `arbiter_message` / `operator_mail_reply` rows (buyer/seller thread only). Operator escalation mail still includes the full requester-visible thread.
+- When the client omits `pdf_sha256`, the server auto-fills it from the lot’s latest receipt (`ArbiterReceiptPdfResolver::resolveLatestKnownReceiptSha256Hex`) so PDF text can reach the model.
+- When the primary LLM returns verdict **`manual_review`**, operator escalation mail is sent (`reason_code=ai_inconclusive`) in addition to the AI chat post — not only on provider failure.
 
 Enforcement of progression and payouts remains **server-side only**; the digest steers the model toward questions and conservative verdicts.
 

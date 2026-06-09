@@ -108,7 +108,7 @@ class ArbiterService
                     $ctxLow = $context;
                     $ctxLow['receipt_pdf_llm'] = $receiptAttachment['prompt_status'];
                     $ctxLow['receipt_pdf_text_excerpt'] = $receiptAttachment['text_excerpt'];
-                    ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('low_confidence', $ctxLow, $rules);
+                    $operatorEscalationSent = ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('low_confidence', $ctxLow, $rules);
 
                     return [
                         'message' => $display."\n\n".'Escalated to manual review due to low confidence in submitted context.',
@@ -119,18 +119,35 @@ class ArbiterService
                         'reason_code' => 'low_confidence',
                         'policy' => 'rules_first_ai_gray_zone',
                         'verdict' => 'manual_review',
+                        'operator_escalation_email_sent' => $operatorEscalationSent,
                     ];
+                }
+
+                $operatorEscalationSent = null;
+                $reasonCode = 'ai_generated';
+                if ($parsedVerdict === 'manual_review') {
+                    $ctxEsc = $context;
+                    $ctxEsc['receipt_pdf_llm'] = $receiptAttachment['prompt_status'];
+                    $ctxEsc['receipt_pdf_text_excerpt'] = $receiptAttachment['text_excerpt'];
+                    $operatorEscalationSent = ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('ai_inconclusive', $ctxEsc, $rules);
+                    $reasonCode = 'ai_inconclusive';
+                } elseif ($parsedVerdict === 'continue_review') {
+                    $ctxEsc = $context;
+                    $ctxEsc['receipt_pdf_llm'] = $receiptAttachment['prompt_status'];
+                    $ctxEsc['receipt_pdf_text_excerpt'] = $receiptAttachment['text_excerpt'];
+                    $operatorEscalationSent = ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('ai_continue_review', $ctxEsc, $rules);
                 }
 
                 return [
                     'message' => $display,
-                    'arbiter_status' => 'in_review',
+                    'arbiter_status' => $parsedVerdict === 'manual_review' ? 'manual_review' : 'in_review',
                     'confidence' => $confidence,
                     'provider_used' => $provider->providerId(),
                     'model_version' => (string) ($generated['model'] ?? ''),
-                    'reason_code' => 'ai_generated',
+                    'reason_code' => $reasonCode,
                     'policy' => 'rules_first_ai_gray_zone',
                     'verdict' => $parsedVerdict,
+                    'operator_escalation_email_sent' => $operatorEscalationSent,
                 ];
             } catch (\Throwable $e) {
                 $lastError = $e;
@@ -219,7 +236,8 @@ class ArbiterService
     private function systemPrompt(bool $receiptPdfBinaryAttached, bool $receiptPdfTextExcerptPresent): string
     {
         $base = 'You are an AI arbiter assistant for exchange disputes on this platform. '
-            .'Be neutral and concise. Use facts only from the user prompt (rules digest, deal_machine_state, recent_chat_digest, fingerprints, requester message). '
+            .'Be neutral and concise. Use facts only from the user prompt (rules digest, deal_machine_state, deal_machine_state_meaning, deal_milestones_digest, declared_transactions_digest, recent_chat_digest, fingerprints, requester message). '
+            .'Treat deal_milestones_digest and deal_machine_state_meaning as authoritative for whether steps like seller_received_funds or receipt_confirmation occurred — do not contradict them from chat prose alone. '
             .'The exchange server enforces deal_tag order and payouts; your verdict must stay consistent with that digest and state — you cannot override server rules. '
             .'If data is insufficient or contradictory, ask specific questions and prefer continue_review or manual_review over favor_buyer or favor_seller. '
             .'After your human-readable summary (4–8 lines), output exactly one more line with no leading spaces: '

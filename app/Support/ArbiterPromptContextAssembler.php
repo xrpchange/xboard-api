@@ -23,6 +23,8 @@ final class ArbiterPromptContextAssembler
      * @return array{
      *   exchange_rules_digest: string,
      *   deal_machine_state: string,
+     *   deal_machine_state_meaning: string,
+     *   deal_milestones_digest: string,
      *   recent_chat_digest: string,
      *   declared_transactions_digest: string,
      * }
@@ -31,10 +33,13 @@ final class ArbiterPromptContextAssembler
     {
         $side = strtolower(trim($requesterSide)) === 'seller' ? 'seller' : 'buyer';
         $txProofs = DealArbitrationTxProofCatalog::forLot($lot);
+        $dealState = DealChatTagSequenceValidator::computeStateForLot($lot);
 
         return [
             'exchange_rules_digest' => self::loadRulesDigest(),
-            'deal_machine_state' => DealChatTagSequenceValidator::computeStateForLot($lot),
+            'deal_machine_state' => $dealState,
+            'deal_machine_state_meaning' => DealArbitrationMilestonesDigest::stateMeaning($dealState),
+            'deal_milestones_digest' => DealArbitrationMilestonesDigest::forLot($lot),
             'recent_chat_digest' => self::buildChatDigest($lot, $side),
             'declared_transactions_digest' => DealArbitrationTxProofCatalog::formatDigestLines($txProofs),
         ];
@@ -74,6 +79,9 @@ final class ArbiterPromptContextAssembler
         $rows = $q->orderByDesc('id')->limit(self::MAX_CHAT_LINES)->get()->reverse();
         $lines = [];
         foreach ($rows as $m) {
+            if (self::shouldOmitFromLlmChatDigest($m)) {
+                continue;
+            }
             $body = (string) ($m->body ?? '');
             $body = preg_replace('/\s+/u', ' ', $body) ?? $body;
             $body = mb_substr(trim($body), 0, self::MAX_BODY_CHARS);
@@ -83,5 +91,24 @@ final class ArbiterPromptContextAssembler
         }
 
         return $lines === [] ? '(no chat messages in requester view)' : implode("\n", $lines);
+    }
+
+    private static function shouldOmitFromLlmChatDigest(DealChatMessage $message): bool
+    {
+        $side = strtolower(trim((string) ($message->sender_side ?? '')));
+        if (in_array($side, ['arbiter_ai', 'exchange_operator'], true)) {
+            return true;
+        }
+        $raw = trim((string) ($message->deal_tag ?? ''));
+        if ($raw === '' || ! str_starts_with($raw, '{')) {
+            return false;
+        }
+        $tag = json_decode($raw, true);
+        if (! is_array($tag)) {
+            return false;
+        }
+        $tagType = trim((string) ($tag['t'] ?? ''));
+
+        return in_array($tagType, ['arbiter_message', 'operator_mail_reply'], true);
     }
 }

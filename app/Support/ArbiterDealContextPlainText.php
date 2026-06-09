@@ -20,6 +20,8 @@ final class ArbiterDealContextPlainText
         $providerHint = trim((string) ($context['provider_hint'] ?? ''));
         $rulesDigest = (string) ($context['exchange_rules_digest'] ?? '');
         $dealState = trim((string) ($context['deal_machine_state'] ?? ''));
+        $dealStateMeaning = trim((string) ($context['deal_machine_state_meaning'] ?? ''));
+        $milestonesDigest = trim((string) ($context['deal_milestones_digest'] ?? ''));
         $chatDigest = (string) ($context['recent_chat_digest'] ?? '');
         $receiptText = (string) ($context['receipt_pdf_text_excerpt'] ?? '');
 
@@ -43,6 +45,12 @@ final class ArbiterDealContextPlainText
             '',
             'deal_machine_state (server-computed from deal_tag history; same reducer as API validators):',
             $dealState !== '' ? $dealState : 'unknown',
+            '',
+            'deal_machine_state_meaning (authoritative interpretation of the state code):',
+            $dealStateMeaning !== '' ? $dealStateMeaning : '(none)',
+            '',
+            'deal_milestones_digest (chronological key deal_tag milestones; use before inferring from chat prose alone):',
+            $milestonesDigest !== '' ? $milestonesDigest : '(none)',
             '',
             'exchange_rules_digest (canonical guidance; if conflict with server behavior, defer to server — say so in prose):',
             $rulesDigest !== '' ? $rulesDigest : '(missing)',
