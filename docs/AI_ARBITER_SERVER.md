@@ -241,7 +241,16 @@ curl -sS -o /dev/null -w "api ssl_verify=%{ssl_verify_result} http=%{http_code}\
   --max-time 15 https://gigachat.devices.sberbank.ru/api/v1/models
 ```
 
-`ssl_verify=0` = success. From `/var/www/xboard-api`, OAuth via Laravel with production config should return HTTP **200** and a non-empty `access_token` while `ARBITER_GIGACHAT_VERIFY_SSL` stays **true** (default when `APP_ENV=production`).
+`ssl_verify=0` = success. From `/var/www/xboard-api`, OAuth via Laravel with production config should return HTTP **200** and a non-empty `access_token` while `ARBITER_GIGACHAT_VERIFY_SSL` stays **enabled** (default when `APP_ENV=production`).
+
+**Laravel check (preferred):**
+
+```bash
+cd /var/www/xboard-api
+sudo -u www-data php artisan arbiter:gigachat-check --clear-cache
+```
+
+Expect `oauth_http=200`, `chat_http=200`, `chat_preview=OK`. If chat returns **401** after OAuth succeeded, clear the cached token (`--clear-cache`) — `GigaChatArbiterProvider` also retries once on 401 with a fresh token.
 
 ### When *not* to disable verify
 
