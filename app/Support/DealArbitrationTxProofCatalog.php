@@ -14,6 +14,7 @@ final class DealArbitrationTxProofCatalog
 {
     private const TX_TAG_TYPES = [
         'buyer_crypto_tx',
+        'receipt_confirmation',
         'seller_transfer_tx',
         'deal_completed_seller',
     ];
@@ -60,7 +61,8 @@ final class DealArbitrationTxProofCatalog
             $txId = self::extractTxId($tagType, $tag);
             $receiptLinks = $tag['receipt_links'] ?? null;
             $hasReceiptLinks = is_array($receiptLinks) && count($receiptLinks) > 0;
-            $bankReceiptOnly = $tagType === 'seller_transfer_tx' && $txId === '' && $hasReceiptLinks;
+            $bankReceiptOnly = ($tagType === 'receipt_confirmation' && $hasReceiptLinks)
+                || ($tagType === 'seller_transfer_tx' && $txId === '' && $hasReceiptLinks);
 
             if ($txId === '' && ! $bankReceiptOnly) {
                 continue;
@@ -117,7 +119,10 @@ final class DealArbitrationTxProofCatalog
             $side = (string) ($p['sender_side'] ?? '?');
             $tagType = (string) ($p['tag_type'] ?? '');
             if (! empty($p['bank_receipt_only'])) {
-                $lines[] = "id={$msgId} side={$side} tag={$tagType} kind=bank_receipt_proof body=(seller bank receipt in deal_tag.receipt_links)";
+                $bodyHint = $tagType === 'receipt_confirmation'
+                    ? '(buyer bank receipt in deal_tag.receipt_links)'
+                    : '(seller bank receipt in deal_tag.receipt_links)';
+                $lines[] = "id={$msgId} side={$side} tag={$tagType} kind=bank_receipt_proof body={$bodyHint}";
 
                 continue;
             }
@@ -186,7 +191,9 @@ final class DealArbitrationTxProofCatalog
     private static function labelForTag(string $tagType, bool $bankReceiptOnly): string
     {
         if ($bankReceiptOnly) {
-            return 'Seller bank transfer (receipt proof)';
+            return $tagType === 'receipt_confirmation'
+                ? 'Buyer bank payment (receipt proof)'
+                : 'Seller bank transfer (receipt proof)';
         }
 
         return match ($tagType) {

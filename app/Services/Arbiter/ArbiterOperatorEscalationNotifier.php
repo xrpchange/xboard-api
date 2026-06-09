@@ -68,6 +68,7 @@ final class ArbiterOperatorEscalationNotifier
         $ctx['receipt_pdf_llm'] = $ctx['receipt_pdf_llm'] ?? 'not_applicable_policy_escalation';
         $ctx['receipt_pdf_text_excerpt'] = (string) ($ctx['receipt_pdf_text_excerpt'] ?? '');
 
+        $ctx = self::enrichContextWithTxProofs($ctx);
         $digest = ArbiterOperatorEscalationDigest::build($ctx, $rules, 'policy_manual', $reasonCode);
         $lotId = (string) ($ctx['lot_id'] ?? '?');
         try {
