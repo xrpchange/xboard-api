@@ -8,6 +8,13 @@ return [
     'max_message_length' => (int) env('DEAL_CHAT_MAX_MESSAGE_LENGTH', 1000),
 
     /**
+     * Daily cap on participant-initiated internal deal mail per lot mailbox (UTC day).
+     * Operator can block a sender for the rest of the day by setting sent_count to this limit
+     * in deal_internal_mail_daily_counters. Set to 0 to disable.
+     */
+    'internal_mail_daily_limit' => (int) env('DEAL_INTERNAL_MAIL_DAILY_LIMIT', 300),
+
+    /**
      * Cap AI arbiter **invocations** per lot: each POST /arbiter-message reserves one slot atomically
      * *before* calling the LLM so failures cannot be replayed to drain budget. Operator mail replies are unlimited.
      * Set to 0 to disable (not recommended in production).

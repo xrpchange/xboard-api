@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\DealChatMessage;
 use App\Models\ExchangeLot;
 use App\Services\Deal\DealChatImapWakeMailer;
+use App\Services\Deal\DealInternalMailRateLimitService;
 use App\Support\PublicHttpsUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,7 @@ final class ArbiterOperatorActionController extends Controller
 {
     public function __construct(
         private readonly DealChatImapWakeMailer $dealChatImapWakeMailer,
+        private readonly DealInternalMailRateLimitService $dealInternalMailRateLimit,
     ) {}
 
     public function handle(Request $request, string $lot, string $action): View|RedirectResponse
@@ -39,6 +41,14 @@ final class ArbiterOperatorActionController extends Controller
                     'formAction' => $this->secureRequestUrl($request),
                 ]);
             }
+            if (in_array($action, ['block_buyer_internal_mail', 'block_seller_internal_mail'], true)) {
+                return view('arbiter.operator_block_internal_mail_form', [
+                    'lotId' => $lot,
+                    'action' => $action,
+                    'participant' => $action === 'block_buyer_internal_mail' ? 'buyer' : 'seller',
+                    'formAction' => $this->secureRequestUrl($request),
+                ]);
+            }
 
             return view('arbiter.operator_action_ack', [
                 'lotId' => $lot,
@@ -48,6 +58,12 @@ final class ArbiterOperatorActionController extends Controller
 
         if ($request->isMethod('post') && $action === 'reply') {
             return $this->storeOperatorReply($request, $lot);
+        }
+        if ($request->isMethod('post') && $action === 'block_buyer_internal_mail') {
+            return $this->blockParticipantInternalMail($lot, 'buyer');
+        }
+        if ($request->isMethod('post') && $action === 'block_seller_internal_mail') {
+            return $this->blockParticipantInternalMail($lot, 'seller');
         }
 
         abort(405);
@@ -103,6 +119,39 @@ final class ArbiterOperatorActionController extends Controller
 
         return view('arbiter.operator_reply_sent', [
             'lotId' => (string) $lotModel->id,
+        ]);
+    }
+
+    private function blockParticipantInternalMail(string $lot, string $side): View
+    {
+        $lotModel = ExchangeLot::query()->find((int) $lot);
+        if ($lotModel === null) {
+            abort(404, 'Lot not found');
+        }
+
+        $mailboxEmail = $side === 'buyer'
+            ? trim((string) ($lotModel->buyer_lot_email ?? ''))
+            : trim((string) ($lotModel->seller_lot_email ?? ''));
+
+        if ($mailboxEmail === '' || ! $this->dealInternalMailRateLimit->exhaustForUtcDay($mailboxEmail)) {
+            return view('arbiter.operator_block_internal_mail_failed', [
+                'lotId' => (string) $lotModel->id,
+                'participant' => $side,
+            ]);
+        }
+
+        Log::info('[arbiter] operator_internal_mail_blocked', [
+            'lot_id' => $lotModel->id,
+            'participant' => $side,
+            'mailbox_email' => $this->dealInternalMailRateLimit->normalizeMailboxEmail($mailboxEmail),
+            'daily_limit' => $this->dealInternalMailRateLimit->dailyLimit(),
+        ]);
+
+        return view('arbiter.operator_block_internal_mail_done', [
+            'lotId' => (string) $lotModel->id,
+            'participant' => $side,
+            'mailboxEmail' => $mailboxEmail,
+            'dailyLimit' => $this->dealInternalMailRateLimit->dailyLimit(),
         ]);
     }
 

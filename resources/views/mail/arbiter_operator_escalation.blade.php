@@ -150,6 +150,9 @@
                 <a class="btn btn-reply" href="{{ $urls['reply'] }}">Reply in thread</a>
                 <a class="btn btn-secondary" href="{{ $urls['compensate_buyer'] }}">Compensate buyer</a>
                 <a class="btn btn-warn" href="{{ $urls['deny_buyer'] }}">Deny buyer</a>
+                <p class="hint">Anti-flood (UTC day): set the participant deal mailbox counter to the daily cap — no separate ban flag.</p>
+                <a class="btn btn-warn" href="{{ $urls['block_buyer_internal_mail'] }}">Block buyer internal mail (24h)</a>
+                <a class="btn btn-warn" href="{{ $urls['block_seller_internal_mail'] }}">Block seller internal mail (24h)</a>
             </div>
         </div>
         <p class="footer">Lot {{ e($lotId) }} · {{ e($envLabel) }} · XBoard operator mail</p>
