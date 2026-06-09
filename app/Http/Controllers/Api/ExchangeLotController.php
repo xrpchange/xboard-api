@@ -5127,6 +5127,9 @@ class ExchangeLotController extends Controller
         );
 
         $pdfSha256Norm = strtolower(trim((string) ($validated['pdf_sha256'] ?? '')));
+        if ($pdfSha256Norm === '') {
+            $pdfSha256Norm = ArbiterReceiptPdfResolver::resolveLatestKnownReceiptSha256Hex($lot) ?? '';
+        }
         $fingerprints = array_filter([
             $pdfSha256Norm,
             strtolower(trim((string) ($validated['email_message_sha256'] ?? ''))),

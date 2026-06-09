@@ -260,6 +260,8 @@ final class ArbiterOperatorEscalationDigest
             'anti_replay_triggered' => 'possible duplicate payment evidence',
             'provider_unavailable' => 'review service unavailable',
             'low_confidence' => 'uncertain automatic result',
+            'ai_inconclusive' => 'AI could not conclude',
+            'ai_continue_review' => 'AI needs more review',
             default => 'manual review required',
         };
     }
@@ -271,6 +273,8 @@ final class ArbiterOperatorEscalationDigest
             'anti_replay_triggered' => 'Possible duplicate payment evidence',
             'provider_unavailable' => 'Review service unavailable',
             'low_confidence' => 'Automatic review was uncertain',
+            'ai_inconclusive' => 'AI could not reach a conclusion',
+            'ai_continue_review' => 'AI suggests continued review',
             default => 'Manual review',
         };
     }
@@ -282,6 +286,8 @@ final class ArbiterOperatorEscalationDigest
             'anti_replay_triggered' => 'The system detected a risk that the same payment proof may have been used before. Please verify the evidence carefully.',
             'provider_unavailable' => 'Every configured AI provider failed or timed out for this request. Treat this as a hand-off to human staff: use the signed links in this email to reply or take compensating actions. The deal chat will show users that manual handling applies.',
             'low_confidence' => 'An automatic review ran, but the confidence score stayed below the threshold where the platform trusts the result without a person. Please review the output and evidence.',
+            'ai_inconclusive' => 'The AI reviewed the dispute but returned a manual-review verdict without a clear favor buyer/seller outcome. Use the chat thread, transfer checks, and receipt links below — then reply in thread if needed.',
+            'ai_continue_review' => 'The AI reviewed the dispute but asked for continued review rather than a final outcome. Please read the latest AI message in chat and use the evidence links below.',
             default => 'This dispute was escalated for human review. Please use the details below.',
         };
     }
