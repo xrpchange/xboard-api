@@ -5101,9 +5101,12 @@ class ExchangeLotController extends Controller
                 'last_activity_at' => $this->toUtcIso8601($activeDispute->last_activity_at),
             ] : null,
             'arbiter_ai' => [
+                'enabled' => DisputeArbiterParticipantPolicy::isAiEnabled(),
                 'invocations' => $invocations,
                 'max_invocations' => $maxAiArbiter > 0 ? $maxAiArbiter : null,
-                'limit_reached' => $maxAiArbiter > 0 && $invocations >= $maxAiArbiter,
+                'limit_reached' => DisputeArbiterParticipantPolicy::isAiEnabled()
+                    && $maxAiArbiter > 0
+                    && $invocations >= $maxAiArbiter,
             ],
             'arbiter_participant' => [
                 'action' => $participantPolicy['action'],
@@ -5163,6 +5166,23 @@ class ExchangeLotController extends Controller
             ], 422);
         }
         if ($participantPolicy['action'] === DisputeArbiterParticipantPolicy::ACTION_OPERATOR_ESCALATION) {
+            if (! DisputeArbiterParticipantPolicy::isAiEnabled()) {
+                Log::info('[arbiter] ai_disabled_operator_only', [
+                    'lot_id' => $lot->id,
+                    'requester_side' => $requesterSide,
+                ]);
+            }
+
+            return $this->respondParticipantOperatorEscalation($lot, $requesterSide, $contextMessage, $validated);
+        }
+
+        if (! DisputeArbiterParticipantPolicy::isAiEnabled()) {
+            Log::warning('[arbiter] ai_disabled_unexpected_ai_action', [
+                'lot_id' => $lot->id,
+                'requester_side' => $requesterSide,
+                'policy_action' => $participantPolicy['action'],
+            ]);
+
             return $this->respondParticipantOperatorEscalation($lot, $requesterSide, $contextMessage, $validated);
         }
 

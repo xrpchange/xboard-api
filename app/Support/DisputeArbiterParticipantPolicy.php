@@ -53,9 +53,15 @@ final class DisputeArbiterParticipantPolicy
         $action = self::ACTION_AI;
         if (! $hasComment) {
             $action = self::ACTION_COMMENT_REQUIRED;
-        } elseif ($aiUsed && $escalationSent) {
+        } elseif (self::isAiEnabled()) {
+            if ($aiUsed && $escalationSent) {
+                $action = self::ACTION_WAIT_FOR_OPERATOR;
+            } elseif ($aiUsed) {
+                $action = self::ACTION_OPERATOR_ESCALATION;
+            }
+        } elseif ($escalationSent) {
             $action = self::ACTION_WAIT_FOR_OPERATOR;
-        } elseif ($aiUsed) {
+        } else {
             $action = self::ACTION_OPERATOR_ESCALATION;
         }
 
@@ -68,6 +74,11 @@ final class DisputeArbiterParticipantPolicy
             'cycle_started_at' => $cycleStart?->toIso8601String(),
             'has_participant_comment' => $hasComment,
         ];
+    }
+
+    public static function isAiEnabled(): bool
+    {
+        return (bool) config('services.arbiter.ai_enabled', true);
     }
 
     public static function cycleStartInstant(ExchangeLot $lot): ?CarbonInterface
