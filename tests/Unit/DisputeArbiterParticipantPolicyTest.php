@@ -134,6 +134,56 @@ class DisputeArbiterParticipantPolicyTest extends TestCase
         $this->assertSame(DisputeArbiterParticipantPolicy::ACTION_WAIT_FOR_OPERATOR, $policy['action']);
     }
 
+    /**
+     * @group spec
+     * @group spec-ARB-014
+     */
+    public function test_ai_disabled_skips_llm_path_and_requests_operator_first(): void
+    {
+        Config::set('services.arbiter.ai_enabled', false);
+
+        $lot = ExchangeLot::query()->create([]);
+        DealDispute::query()->create([
+            'exchange_lot_id' => $lot->id,
+            'status' => 'in_review',
+            'opened_at' => now()->subHour(),
+        ]);
+        $this->insertChatMessage($lot->id, 'buyer', null, now()->subMinutes(10));
+
+        $policy = DisputeArbiterParticipantPolicy::resolveForSide($lot, 'buyer');
+
+        $this->assertSame(DisputeArbiterParticipantPolicy::ACTION_OPERATOR_ESCALATION, $policy['action']);
+        $this->assertFalse(DisputeArbiterParticipantPolicy::isAiEnabled());
+    }
+
+    /**
+     * @group spec
+     * @group spec-ARB-014
+     */
+    public function test_ai_disabled_after_operator_escalation_must_wait_for_reply(): void
+    {
+        Config::set('services.arbiter.ai_enabled', false);
+
+        $lot = ExchangeLot::query()->create([]);
+        $openedAt = now()->subHour();
+        DealDispute::query()->create([
+            'exchange_lot_id' => $lot->id,
+            'status' => 'in_review',
+            'opened_at' => $openedAt,
+        ]);
+        $this->insertChatMessage($lot->id, 'buyer', null, $openedAt->copy()->addMinute());
+        $this->insertChatMessage(
+            $lot->id,
+            'system',
+            json_encode(['t' => 'operator_escalation_requested', 'requested_by' => 'buyer']),
+            $openedAt->copy()->addMinutes(2),
+        );
+
+        $policy = DisputeArbiterParticipantPolicy::resolveForSide($lot, 'buyer');
+
+        $this->assertSame(DisputeArbiterParticipantPolicy::ACTION_WAIT_FOR_OPERATOR, $policy['action']);
+    }
+
     public function test_operator_reply_resets_cycle_for_buyer(): void
     {
         $lot = ExchangeLot::query()->create([]);

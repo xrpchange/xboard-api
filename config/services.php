@@ -87,6 +87,12 @@ return [
     ],
 
     'arbiter' => [
+        /**
+         * When false, POST /arbiter-message never calls the LLM: participant arbiter button escalates
+         * straight to the exchange operator (email + operator_escalation_requested chat row).
+         * See docs/AI_ARBITER_SERVER.md § Operator-only dispute mode (no LLM).
+         */
+        'ai_enabled' => filter_var(env('ARBITER_AI_ENABLED', true), FILTER_VALIDATE_BOOL),
         // Single active LLM provider only (no automatic failover to other models). Production: GigaChat.
         'primary_provider' => env('ARBITER_PRIMARY_PROVIDER', 'gigachat'),
         /** @deprecated Ignored — kept empty. Do not use `ARBITER_FALLBACK_PROVIDERS`; arbiter never switches providers. */

@@ -54,6 +54,26 @@ WHERE id = ? AND arbiter_ai_invocations < ?
 
 ---
 
+## Operator-only dispute mode (no LLM)
+
+**Env:** `ARBITER_AI_ENABLED` → `config('services.arbiter.ai_enabled')` (default **`true`**).
+
+When set to **`false`** for an API deployment:
+
+- `POST …/arbiter-message` **never** calls `ArbiterService` / any LLM provider.
+- `exchange_lots.arbiter_ai_invocations` is **not** incremented.
+- Participant policy skips the AI step: after at least one dispute-chat message, the arbiter button maps to **`operator_escalation`** (same path as the second press in AI mode): operator email via `ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('participant_requested_review', …)` plus a **system** chat row `deal_tag.t = operator_escalation_requested`.
+- Further presses until `operator_mail_reply` → `422` + `arbiter_wait_for_operator_reply`.
+- Cycle still resets after the latest `operator_mail_reply`.
+
+Use when the exchange runs disputes **only** with a human operator (no GigaChat / other LLM keys on that host).
+
+**`GET …/dispute-status`:** `arbiter_ai.enabled` is `false`. `limit_reached` stays `false` while AI is disabled (cap is irrelevant).
+
+Clients should label the arbiter button **“Request operator review”** (not “Ask AI arbiter”) when `arbiter_ai.enabled === false` or `arbiter_participant.action === operator_escalation`.
+
+---
+
 ## Participant arbiter button policy
 
 **Class:** `App\Support\DisputeArbiterParticipantPolicy`.
@@ -61,8 +81,8 @@ WHERE id = ? AND arbiter_ai_invocations < ?
 Each side (buyer/seller) in an active dispute cycle:
 
 1. Must post **at least one chat message** as that side before the arbiter button works (`422` + `dispute_participant_comment_required`).
-2. **First** press in the cycle → **AI** (`arbiter_message`, consumes invocation budget when cap enabled).
-3. **Second** press (after their AI reply, before operator answers in chat) → **no LLM**; `ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('participant_requested_review', …)` and a **system** chat row with `deal_tag.t = operator_escalation_requested` (`requested_by`, `operator_escalation_email_sent`). Operator email subject includes **Buyer** or **Seller** (who pressed).
+2. **First** press in the cycle → **AI** (`arbiter_message`, consumes invocation budget when cap enabled) — **skipped when `ARBITER_AI_ENABLED=false`** (goes straight to step 3).
+3. **Second** press (after their AI reply, before operator answers in chat) — **or first press when AI is disabled** → **no LLM**; `ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('participant_requested_review', …)` and a **system** chat row with `deal_tag.t = operator_escalation_requested` (`requested_by`, `operator_escalation_email_sent`). Operator email subject includes **Buyer** or **Seller** (who pressed).
 4. Further presses until `operator_mail_reply` → `422` + `arbiter_wait_for_operator_reply`.
 5. Cycle resets after the latest `operator_mail_reply` (or from `deal_disputes.opened_at` if none).
 
@@ -72,14 +92,16 @@ Tag registry: **`docs/DEAL_EMAIL_SUBJECT_TAG.md`** (*Dispute / arbiter chat tags
 
 ```json
 "arbiter_ai": {
+  "enabled": true,
   "invocations": 12,
   "max_invocations": 30,
   "limit_reached": false
 }
 ```
 
+- `enabled` — `ARBITER_AI_ENABLED` on this API host (`false` = operator-only mode; see above).
 - `max_invocations` is `null` when the cap is disabled (`0`).
-- `limit_reached` is `invocations >= max_invocations` when `max_invocations` is non-null.
+- `limit_reached` is `invocations >= max_invocations` when `max_invocations` is non-null **and** `enabled` is `true`.
 
 Clients may use this to disable **Ask AI arbiter** before the user taps (optional UX).
 

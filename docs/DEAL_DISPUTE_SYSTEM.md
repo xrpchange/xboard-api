@@ -57,7 +57,7 @@ Dispute state is synchronized from existing deal actions:
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/v1/exchange-lots/{lot}/dispute-status` | Returns latest active dispute (`opened`/`in_review`) for the lot or `null`, plus **`arbiter_ai`** usage for UI (invocation cap). |
-| POST | `/v1/exchange-lots/{lot}/arbiter-message` | Reserves one **AI invocation slot** on the lot (when cap &gt; 0), then adds arbiter message to chat and updates dispute state to `in_review`. Returns **422** + `error_code: ai_arbiter_iteration_limit_reached` when the cap is exhausted. |
+| POST | `/v1/exchange-lots/{lot}/arbiter-message` | When `ARBITER_AI_ENABLED=true` (default): reserves one **AI invocation slot** on the lot (when cap &gt; 0), calls the LLM, adds arbiter message to chat. When **`ARBITER_AI_ENABLED=false`**: no LLM — escalates to the exchange operator (email + `operator_escalation_requested`). Returns **422** + `error_code: ai_arbiter_iteration_limit_reached` when the AI cap is exhausted (AI mode only). |
 
 Auth:
 
