@@ -59,4 +59,23 @@ class DealArbitrationTxProofCatalogTest extends TestCase
         $this->assertSame('sandbox', ApiDeploymentEnvironment::resolveFromHost('sandbox.api.xdexboard.com'));
         $this->assertSame('production', ApiDeploymentEnvironment::resolveFromHost('api.xdexboard.com'));
     }
+
+    public function test_format_digest_lines_includes_buyer_bank_receipt_confirmation(): void
+    {
+        $proofs = [[
+            'message_id' => 11,
+            'sender_side' => 'buyer',
+            'tag_type' => 'receipt_confirmation',
+            'label' => 'Buyer bank payment (receipt proof)',
+            'tx_id' => '',
+            'crypto_type' => null,
+            'explorer_url' => null,
+            'core_tx_check' => null,
+            'bank_receipt_only' => true,
+        ]];
+
+        $lines = DealArbitrationTxProofCatalog::formatDigestLines($proofs);
+        $this->assertStringContainsString('receipt_confirmation', $lines);
+        $this->assertStringContainsString('buyer bank receipt', $lines);
+    }
 }

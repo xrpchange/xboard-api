@@ -97,7 +97,7 @@ Before calling the provider, the controller attaches (non-authoritative) context
 - **`exchange_rules_digest`** — full contents of **`resources/prompts/arbiter_exchange_rules.md`** (fallback English line if file missing; hard safety cap in code).  
 - **`deal_machine_state`** — `DealChatTagSequenceValidator::computeStateForLot($lot)` (same reducer as `deal_tag` validation).  
 - **`recent_chat_digest`** — last N messages visible to the **requester** (same `deleted_by_*` filters as `GET …/chat-messages`), one line per message with truncated `body` / `deal_tag` (format: `id=N side=… tag={…} body=…`).
-- **`declared_transactions_digest`** — all chat rows whose `deal_tag.t` is `buyer_crypto_tx`, `seller_transfer_tx`, or `deal_completed_seller` (`crypto_payout_tx`), including stored **`core_tx_check`** when the message was accepted. Built by `App\Support\DealArbitrationTxProofCatalog`. Same block is appended in operator escalation mail and in `ArbiterDealContextPlainText`.
+- **`declared_transactions_digest`** — chat rows whose `deal_tag.t` is `buyer_crypto_tx`, `receipt_confirmation` (buyer bank receipt PDFs), `seller_transfer_tx`, or `deal_completed_seller` (`crypto_payout_tx`), including stored **`core_tx_check`** when the message was accepted. Built by `App\Support\DealArbitrationTxProofCatalog`. Same block is appended in operator escalation mail (both image-only and policy/manual paths, including `provider_unavailable`) and in `ArbiterDealContextPlainText`.
 
 Enforcement of progression and payouts remains **server-side only**; the digest steers the model toward questions and conservative verdicts.
 
@@ -109,11 +109,11 @@ When `ARBITER_OPERATOR_ESCALATION_EMAIL` is set, `ArbiterOperatorEscalationMail`
 |---------|---------|
 | **Check transfer (Core)** | Green button — signed GET `/arbiter/operator/{lot}/verify-tx/{message_id}`. One page: pass/fail verdict, prior check at send time, optional explorer link. Uses **sandbox** or **production** Core URL from the API host (`sandbox.api.*` → `CORE_URL`; `api.*` → `CORE_PRODUCTION_URL`). |
 | **Block explorer** | Blue button — `config/xboard.php` → `tx_explorer_url_templates.production` or `.sandbox` (`{tx}` by Core `crypto_type`). Sandbox deals open testnet explorers (e.g. Blockstream testnet, Nile Tronscan, Amoy Polygonscan). |
-| **Open receipt** | Bank-only `seller_transfer_tx` with `receipt_links` — direct HTTPS links to PDFs; no on-chain id. |
+| **Open receipt** | Bank-only proofs: buyer `receipt_confirmation` or seller `seller_transfer_tx` with `receipt_links` and no on-chain id — direct HTTPS links to PDFs. |
 
 Mail shows an environment pill (**Production** / **Sandbox**) and **Verified when sent** status from `deal_tag.core_tx_check`. Operator does not copy tx ids — clicks buttons in the email only.
 
-Bank-only second leg (`seller_transfer_tx` with `receipt_links` and no `tx_number`) is listed as **bank receipt proof** — receipt buttons only.
+Buyer fiat leg (`receipt_confirmation`) and bank-only second leg (`seller_transfer_tx` with `receipt_links` and no `tx_number`) are listed as **bank receipt proof** — receipt buttons only.
 
 `Compensate buyer` / `Deny buyer` links remain acknowledgment-only (no payout automation); operator uses explorer/Core results plus full chat digest to decide.
 
@@ -178,6 +178,70 @@ ARBITER_GIGACHAT_AUTHORIZATION_KEY=<from Sber studio>
 ```
 
 PHPUnit uses `ARBITER_PRIMARY_PROVIDER=stub` (see `phpunit.xml`).
+
+---
+
+## GigaChat TLS: Russian Trusted CA (production Linux)
+
+Sber **GigaChat** OAuth and API use TLS certificates issued under the **Russian Trusted** chain (Ministry of Digital Development). Default Ubuntu/Debian **`ca-certificates`** bundles (Mozilla) **do not** include that root. Outbound `curl` / Laravel `Http` then fail with:
+
+```text
+cURL error 60: SSL certificate problem: self-signed certificate in certificate chain
+… for https://ngw.devices.sberbank.ru:9443/api/v2/oauth
+```
+
+Laravel logs: `[arbiter] provider_failed` → `primary_provider_failed` → chat `reason_code=provider_unavailable` (operator escalation email when `ARBITER_OPERATOR_ESCALATION_EMAIL` is set).
+
+**Certbot / Let’s Encrypt** on the same host only covers **inbound** HTTPS for your vhosts (`api.*`, `mail.*`, etc.). It does **not** add trust for **outbound** calls to `*.devices.sberbank.ru`. Fix the **system trust store**, not Certbot.
+
+### Certificate chain (typical)
+
+| Depth | CN |
+|-------|-----|
+| Root | Russian Trusted Root CA |
+| Intermediate | Russian Trusted Sub CA |
+| Leaf | `ngw.devices.sberbank.ru` / `gigachat.devices.sberbank.ru` |
+
+### Install on Debian/Ubuntu (recommended)
+
+Run on the **API** server as root (paths survive reboots; `update-ca-certificates` merges into `/etc/ssl/certs/`):
+
+```bash
+sudo mkdir -p /usr/local/share/ca-certificates/russian-trusted
+cd /tmp
+curl -fsSL -o russian_trusted_root_ca.cer \
+  https://gu-st.ru/content/Other/doc/russian_trusted_root_ca.cer
+curl -fsSL -o russian_trusted_sub_ca.cer \
+  https://gu-st.ru/content/Other/doc/russian_trusted_sub_ca.cer
+
+# DER → PEM if needed (gu-st.ru serves DER)
+sudo openssl x509 -inform der -in russian_trusted_root_ca.cer \
+  -out /usr/local/share/ca-certificates/russian-trusted/russian_trusted_root_ca.crt
+sudo openssl x509 -inform der -in russian_trusted_sub_ca.cer \
+  -out /usr/local/share/ca-certificates/russian-trusted/russian_trusted_sub_ca.crt
+
+sudo update-ca-certificates
+```
+
+Official distribution page (Russian): [Госуслуги — корневые и промежуточные сертификаты](https://www.gosuslugi.ru/crt). GOST 2021 variants on `gu-st.ru` may 404; the two files above are enough for the current Sber leaf chain (verified 2026-06).
+
+### Verify after install
+
+```bash
+# TLS must succeed (HTTP 405 on GET without POST body is OK)
+curl -sS -o /dev/null -w "oauth ssl_verify=%{ssl_verify_result} http=%{http_code}\n" \
+  --max-time 15 https://ngw.devices.sberbank.ru:9443/api/v2/oauth
+
+# 401 without Bearer is OK — means TLS passed
+curl -sS -o /dev/null -w "api ssl_verify=%{ssl_verify_result} http=%{http_code}\n" \
+  --max-time 15 https://gigachat.devices.sberbank.ru/api/v1/models
+```
+
+`ssl_verify=0` = success. From `/var/www/xboard-api`, OAuth via Laravel with production config should return HTTP **200** and a non-empty `access_token` while `ARBITER_GIGACHAT_VERIFY_SSL` stays **true** (default when `APP_ENV=production`).
+
+### When *not* to disable verify
+
+Prefer **installing the CA** over `ARBITER_GIGACHAT_VERIFY_SSL=false`. Use `false` only as a temporary workaround on hosts where you cannot update the trust store (e.g. some local XAMPP setups). Production (`server@xrpchange.site`, `/var/www/xboard-api`) was fixed by adding Russian Trusted CAs (2026-06); **`verify_ssl` left enabled**.
 
 ---
 
@@ -302,10 +366,13 @@ curl -sS -X POST "https://sandbox.api.xdexboard.com/api/v1/exchange-lots/{id}/ar
 
 ### 5) Primary LLM unreachable
 
-- **Setup:** invalid or empty `ARBITER_GIGACHAT_AUTHORIZATION_KEY` while `ARBITER_PRIMARY_PROVIDER=gigachat` (no other LLM is tried).  
+- **Setup:** any failure of the sole primary provider while `ARBITER_PRIMARY_PROVIDER=gigachat` (no other LLM is tried). Common causes:
+  - invalid or empty `ARBITER_GIGACHAT_AUTHORIZATION_KEY`;
+  - **TLS:** `cURL error 60` to `ngw.devices.sberbank.ru` — missing **Russian Trusted** CAs on the host (see *GigaChat TLS: Russian Trusted CA* above);
+  - OAuth/API timeout or empty model response.
 - **Expect:** HTTP 200, `manual_review`, `reason_code` = `provider_unavailable`. Chat `deal_tag` includes **`operator_escalation_email_sent`** (`true` when escalation mail actually sent, else `false`).  
 - **Operator mail:** With `ARBITER_OPERATOR_ESCALATION_EMAIL` set, **`Mail::assertSent(ArbiterOperatorEscalationMail::class)`** in a feature test should see `policyReasonCode = provider_unavailable`.  
-- **Logs:** `[arbiter] provider_failed` (primary), then `[arbiter] primary_provider_failed`.
+- **Logs:** `[arbiter] provider_failed` (primary, includes `error` message), then `[arbiter] primary_provider_failed`.
 
 ### 6) `dispute-status` still returns row
 
@@ -324,5 +391,5 @@ curl -sS -X POST "https://sandbox.api.xdexboard.com/api/v1/exchange-lots/{id}/ar
 
 - Rotate keys in `.env` only; restart PHP / `php artisan config:clear` after changes.  
 - **RU connectivity:** Production stack is **GigaChat only**; ensure OAuth + API endpoints are reachable from the server.  
-- **GigaChat TLS:** non-production defaults to **no certificate verify** for Sber OAuth + chat (see `ARBITER_GIGACHAT_VERIFY_SSL` above). On production, set `ARBITER_GIGACHAT_VERIFY_SSL=true` when the host trust store is correct; if Sber is still unreachable with verify on, set `false` explicitly (weaker transport security).  
+- **GigaChat TLS:** On production, keep **`ARBITER_GIGACHAT_VERIFY_SSL` enabled** (default when `APP_ENV=production`) and install **Russian Trusted** root + sub CA on the API host — see *GigaChat TLS: Russian Trusted CA* above. Certbot does not fix outbound Sber TLS. Non-production defaults to **no verify** when unset (XAMPP / dev). Use `ARBITER_GIGACHAT_VERIFY_SSL=false` only as a last resort where the trust store cannot be updated.  
 - Do not log raw prompts if they may contain PII; current info logs avoid message bodies beyond client-provided fields in structured keys—trim further if needed for compliance.
