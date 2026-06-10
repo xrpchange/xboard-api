@@ -26,7 +26,7 @@
     @endif
     <form method="post" action="{{ $formAction }}">
         @csrf
-        <button type="submit" @if($action === 'deny_buyer') class="warn" @endif>Confirm: {{ e($confirmLabel) }}</button>
+        <button type="submit" @if($action === 'deny_buyer') class="warn" @endif @if($action === 'compensate_buyer') onclick="this.disabled=true; this.form.submit();" @endif>Confirm: {{ e($confirmLabel) }}</button>
     </form>
 </body>
 </html>

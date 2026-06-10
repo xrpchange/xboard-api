@@ -45,6 +45,8 @@ class DealReservationPayoutToBuyerServiceTest extends TestCase
             $table->string('seller_lot_email')->nullable();
             $table->text('wallet_address')->nullable();
             $table->boolean('aml')->default(false);
+            $table->string('buyer_seen_ip')->nullable();
+            $table->boolean('buyer_ip_share_with_seller')->default(false);
             $table->timestamps();
         });
         Schema::create('transactions', function (Blueprint $table): void {
@@ -81,10 +83,10 @@ class DealReservationPayoutToBuyerServiceTest extends TestCase
         Mail::fake();
         Http::fake([
             'https://core.test/api/deal-payout-to-buyer-from-reservation' => Http::response([
-                'data' => ['transaction_id' => 'onchain_tx_99'],
-            ], 200),
-            'https://core.test/api/complete-reservation' => Http::response([
-                'data' => ['service_fee_collected' => true],
+                'data' => [
+                    'transaction_id' => 'onchain_tx_99',
+                    'reservation_completed' => true,
+                ],
             ], 200),
         ]);
 
@@ -134,11 +136,14 @@ class DealReservationPayoutToBuyerServiceTest extends TestCase
             return $request->url() === 'https://core.test/api/deal-payout-to-buyer-from-reservation'
                 && $request['destination_address'] === '4BuyerXmrAddressExample';
         });
-        Http::assertSent(function ($request) {
-            return $request->url() === 'https://core.test/api/complete-reservation'
-                && $request['exchange_lot_id'] === '1'
-                && $request['crypto_type'] === 'xmr'
-                && str_contains((string) $request['escrow_token'], '4SellerEscrowTokenAddress');
-        });
+
+        $buyerCompletion = DB::table('deal_chat_messages')
+            ->where('exchange_lot_id', $lot->id)
+            ->where('deal_tag', 'like', '%deal_completed_buyer%')
+            ->first();
+        $this->assertNotNull($buyerCompletion);
+
+        $lot->refresh();
+        $this->assertNull($lot->buyer_lot_email);
     }
 }

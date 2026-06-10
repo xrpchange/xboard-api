@@ -7,6 +7,9 @@ use App\Models\DealDispute;
 use App\Models\ExchangeLot;
 use App\Services\Deal\DealChatImapWakeMailer;
 use App\Services\Deal\DealReservationPayoutToBuyerService;
+use App\Support\ApiDeploymentEnvironment;
+use App\Support\CryptoTxExplorerUrl;
+use App\Support\DealEscrowCryptoType;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -33,6 +36,18 @@ final class ArbiterOperatorSignedActionService
      */
     public function compensateBuyer(ExchangeLot $lot): array
     {
+        $existing = $this->reservationPayoutToBuyer->findExistingForcedReservationPayout($lot);
+        if ($existing !== null) {
+            $verdictResult = $this->applyDisputeVerdict($lot, 'compensate_buyer', 'favor_buyer', $existing, skipChat: true);
+
+            return [
+                'ok' => true,
+                'payout' => $existing,
+                'already_compensated' => true,
+                ...$verdictResult,
+            ];
+        }
+
         $payout = $this->reservationPayoutToBuyer->execute($lot, 'operator_signed_compensate_buyer');
         if (! $payout['success']) {
             Log::warning('[arbiter] operator_compensate_buyer_payout_failed', [
@@ -51,11 +66,12 @@ final class ArbiterOperatorSignedActionService
             ];
         }
 
-        $verdictResult = $this->applyDisputeVerdict($lot, 'compensate_buyer', 'favor_buyer', $payout);
+        $verdictResult = $this->applyDisputeVerdict($lot, 'compensate_buyer', 'favor_buyer', $payout, skipChat: false);
 
         return [
             'ok' => true,
             'payout' => $payout,
+            'already_compensated' => false,
             ...$verdictResult,
         ];
     }
@@ -68,6 +84,7 @@ final class ArbiterOperatorSignedActionService
         string $action,
         string $verdict,
         ?array $payout = null,
+        bool $skipChat = false,
     ): array {
         $verdict = strtolower(trim($verdict));
         if (! in_array($verdict, ['favor_buyer', 'favor_seller'], true)) {
@@ -101,30 +118,37 @@ final class ArbiterOperatorSignedActionService
             }
         }
 
-        $body = $this->operatorChatBody($verdict, $payout, $alreadyClosed);
+        $body = $this->operatorChatBody($lot, $verdict, $payout, $alreadyClosed);
 
-        $tag = json_encode([
-            't' => 'operator_mail_reply',
-            'lot_id' => (string) $lot->id,
-            'operator_action' => $action,
-            'operator_verdict' => $verdict,
-            'dispute_closed' => ! $alreadyClosed,
-            'crypto_payout_tx' => is_array($payout) ? ($payout['crypto_tx_id'] ?? null) : null,
-            'laravel_transaction_id' => is_array($payout) ? ($payout['transaction_id'] ?? null) : null,
-        ], JSON_UNESCAPED_UNICODE);
+        if (! $skipChat) {
+            $explorerUrl = $this->explorerUrlForOperatorPayout($lot, $payout);
+            $tagPayload = [
+                't' => 'operator_mail_reply',
+                'lot_id' => (string) $lot->id,
+                'operator_action' => $action,
+                'operator_verdict' => $verdict,
+                'dispute_closed' => ! $alreadyClosed,
+                'crypto_payout_tx' => is_array($payout) ? ($payout['crypto_tx_id'] ?? null) : null,
+                'laravel_transaction_id' => is_array($payout) ? ($payout['transaction_id'] ?? null) : null,
+            ];
+            if ($explorerUrl !== null) {
+                $tagPayload['explorer_url'] = $explorerUrl;
+            }
+            $tag = json_encode($tagPayload, JSON_UNESCAPED_UNICODE);
 
-        DealChatMessage::create([
-            'exchange_lot_id' => $lot->id,
-            'sender_side' => 'exchange_operator',
-            'from_email' => null,
-            'to_email' => null,
-            'body' => $body,
-            'deal_tag' => $tag !== false ? $tag : null,
-        ]);
+            DealChatMessage::create([
+                'exchange_lot_id' => $lot->id,
+                'sender_side' => 'exchange_operator',
+                'from_email' => null,
+                'to_email' => null,
+                'body' => $body,
+                'deal_tag' => $tag !== false ? $tag : null,
+            ]);
 
-        $this->enforceMaxMessagesPerDeal($lot->id);
-        $lot->refresh();
-        $this->dealChatImapWakeMailer->pokeMailboxesAfterServerChatWrite($lot);
+            $this->enforceMaxMessagesPerDeal($lot->id);
+            $lot->refresh();
+            $this->dealChatImapWakeMailer->pokeMailboxesAfterServerChatWrite($lot);
+        }
 
         Log::info('[arbiter] operator_signed_dispute_verdict', [
             'lot_id' => $lot->id,
@@ -158,7 +182,33 @@ final class ArbiterOperatorSignedActionService
     /**
      * @param  array{success: bool, error: ?string, crypto_tx_id: ?string, transaction_id: ?int}|null  $payout
      */
-    private function operatorChatBody(string $verdict, ?array $payout, bool $disputeWasAlreadyClosed): string
+    /**
+     * @param  array{success: bool, error: ?string, crypto_tx_id: ?string, transaction_id: ?int}|null  $payout
+     */
+    private function explorerUrlForOperatorPayout(ExchangeLot $lot, ?array $payout): ?string
+    {
+        $tx = is_array($payout) ? trim((string) ($payout['crypto_tx_id'] ?? '')) : '';
+        if ($tx === '' || $tx === 'unknown') {
+            return null;
+        }
+
+        try {
+            $cryptoType = DealEscrowCryptoType::sellerCoreType($lot);
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+
+        $environment = (bool) $lot->is_test
+            ? ApiDeploymentEnvironment::SANDBOX
+            : ApiDeploymentEnvironment::PRODUCTION;
+
+        return CryptoTxExplorerUrl::forTx($cryptoType, $tx, $environment);
+    }
+
+    /**
+     * @param  array{success: bool, error: ?string, crypto_tx_id: ?string, transaction_id: ?int}|null  $payout
+     */
+    private function operatorChatBody(ExchangeLot $lot, string $verdict, ?array $payout, bool $disputeWasAlreadyClosed): string
     {
         if ($verdict === 'favor_seller') {
             return 'Exchange operator decision: favor seller. The dispute for this lot is closed.';
@@ -166,7 +216,13 @@ final class ArbiterOperatorSignedActionService
 
         $tx = is_array($payout) ? trim((string) ($payout['crypto_tx_id'] ?? '')) : '';
         if ($tx !== '') {
-            return 'Exchange operator decision: favor buyer. Seller escrow paid out to buyer address on file. Crypto tx: '.$tx.'.';
+            $body = 'Exchange operator decision: favor buyer. Seller escrow paid out to buyer address on file. Crypto tx: '.$tx.'.';
+            $explorerUrl = $this->explorerUrlForOperatorPayout($lot, $payout);
+            if ($explorerUrl !== null) {
+                $body .= ' Verify on-chain: '.$explorerUrl;
+            }
+
+            return $body;
         }
 
         if ($disputeWasAlreadyClosed) {

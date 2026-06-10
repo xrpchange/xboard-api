@@ -9,6 +9,7 @@ use App\Models\ExchangeLot;
 use App\Services\Arbiter\ArbiterOperatorSignedActionService;
 use App\Services\Deal\DealChatImapWakeMailer;
 use App\Services\Deal\DealInternalMailRateLimitService;
+use App\Services\Deal\DealReservationPayoutToBuyerService;
 use App\Support\PublicHttpsUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,6 +27,7 @@ final class ArbiterOperatorActionController extends Controller
         private readonly DealChatImapWakeMailer $dealChatImapWakeMailer,
         private readonly DealInternalMailRateLimitService $dealInternalMailRateLimit,
         private readonly ArbiterOperatorSignedActionService $operatorSignedActions,
+        private readonly DealReservationPayoutToBuyerService $reservationPayoutToBuyer,
     ) {}
 
     public function handle(Request $request, string $lot, string $action): View|RedirectResponse
@@ -81,6 +83,23 @@ final class ArbiterOperatorActionController extends Controller
             ->orderByDesc('id')
             ->first();
 
+        if ($action === 'compensate_buyer') {
+            $existing = $this->reservationPayoutToBuyer->findExistingForcedReservationPayout($lotModel);
+            if ($existing !== null) {
+                return view('arbiter.operator_decision_done', [
+                    'lotId' => (string) $lotModel->id,
+                    'transactionId' => $existing['transaction_id'] ?? $lotModel->primaryDealTransactionId(),
+                    'action' => 'compensate_buyer',
+                    'verdict' => 'favor_buyer',
+                    'disputesClosed' => 0,
+                    'alreadyClosed' => $activeDispute === null,
+                    'body' => 'This lot was already compensated from seller escrow. No further payout was submitted.',
+                    'cryptoTxId' => $existing['crypto_tx_id'] ?? null,
+                    'alreadyCompensated' => true,
+                ]);
+            }
+        }
+
         $meta = match ($action) {
             'compensate_buyer' => [
                 'title' => 'Compensate buyer',
@@ -134,6 +153,7 @@ final class ArbiterOperatorActionController extends Controller
             'alreadyClosed' => $result['already_closed'],
             'body' => $result['body'],
             'cryptoTxId' => $result['payout']['crypto_tx_id'] ?? null,
+            'alreadyCompensated' => (bool) ($result['already_compensated'] ?? false),
         ]);
     }
 

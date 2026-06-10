@@ -10,7 +10,11 @@ use App\Services\DealAmlAdminAlertService;
 use App\Services\DealAmlPersistenceService;
 use App\Services\EscrowTokenValidationService;
 use App\Services\LotMailboxService;
+use App\Support\ApiDeploymentEnvironment;
+use App\Support\CryptoTxExplorerUrl;
 use App\Support\DealEscrowCryptoType;
+use App\Support\DealSaleTransactionCompletion;
+use App\Support\DealTerminalLotClosure;
 use App\Support\SellerEscrowReservedAmount;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -32,17 +36,65 @@ class DealReservationPayoutToBuyerService
     ) {}
 
     /**
-     * @return array{success: bool, error: ?string, crypto_tx_id: ?string, transaction_id: ?int}
+     * @return array{success: bool, error: ?string, crypto_tx_id: ?string, transaction_id: ?int, already_completed?: bool}|null
+     */
+    public function findExistingForcedReservationPayout(ExchangeLot $lot): ?array
+    {
+        $transaction = Transaction::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->where('tx_type', 'sale')
+            ->where('status', 'completed')
+            ->whereNotNull('seller_crypto_payout_tx_hash')
+            ->where('seller_crypto_payout_tx_hash', '!=', '')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($transaction === null) {
+            return null;
+        }
+
+        $hasReservationPayoutTag = DealChatMessage::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->where('deal_tag', 'like', '%"arbiter_reservation_payout":true%')
+            ->exists();
+
+        if (! $hasReservationPayoutTag) {
+            return null;
+        }
+
+        return [
+            'success' => true,
+            'error' => null,
+            'crypto_tx_id' => (string) $transaction->seller_crypto_payout_tx_hash,
+            'transaction_id' => (int) $transaction->id,
+            'already_completed' => true,
+        ];
+    }
+
+    /**
+     * @return array{success: bool, error: ?string, crypto_tx_id: ?string, transaction_id: ?int, already_completed?: bool}
      */
     public function execute(ExchangeLot $lot, string $payoutContext): array
     {
         $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
         if ($buyerEmail === '') {
+            $existing = $this->findExistingForcedReservationPayout($lot);
+            if ($existing !== null) {
+                return $existing;
+            }
+
             return ['success' => false, 'error' => 'no_buyer', 'crypto_tx_id' => null, 'transaction_id' => null];
         }
 
+        if ($this->isForcedReservationPayoutContext($payoutContext)) {
+            $existing = $this->findExistingForcedReservationPayout($lot);
+            if ($existing !== null) {
+                return $existing;
+            }
+        }
+
         try {
-            /** @var array{success: bool, error: ?string, crypto_tx_id: ?string, transaction_id: ?int} $out */
+            /** @var array{success: bool, error: ?string, crypto_tx_id: ?string, transaction_id: ?int, already_completed?: bool} $out */
             $out = DB::transaction(function () use ($lot, $buyerEmail, $payoutContext): array {
                 $transaction = Transaction::query()
                     ->where('exchange_lot_id', $lot->id)
@@ -54,6 +106,13 @@ class DealReservationPayoutToBuyerService
                     ->first();
 
                 if ($transaction === null) {
+                    if ($this->isForcedReservationPayoutContext($payoutContext)) {
+                        $existing = $this->findExistingForcedReservationPayout($lot);
+                        if ($existing !== null) {
+                            return $existing;
+                        }
+                    }
+
                     return ['success' => false, 'error' => 'no_pending_tx', 'crypto_tx_id' => null, 'transaction_id' => null];
                 }
 
@@ -63,6 +122,7 @@ class DealReservationPayoutToBuyerService
                         'error' => null,
                         'crypto_tx_id' => (string) $transaction->seller_crypto_payout_tx_hash,
                         'transaction_id' => (int) $transaction->id,
+                        'already_completed' => true,
                     ];
                 }
 
@@ -170,29 +230,45 @@ class DealReservationPayoutToBuyerService
                     $body,
                 );
 
-                $this->tryCompleteSellerReservationAfterPayout(
-                    $lot,
-                    $sellerEscrowTokenForAml,
-                    $cryptoType,
-                    $coreUrl,
-                    $coreKey,
-                    $payoutContext,
-                );
+                $reservationCompleted = ($body['data']['reservation_completed'] ?? null) === true;
+                if (! $reservationCompleted) {
+                    $completionError = is_string($body['data']['reservation_completion_error'] ?? null)
+                        ? (string) $body['data']['reservation_completion_error']
+                        : 'reservation_not_completed';
+                    Log::error('[deal-payout] reservation_payout_to_buyer: Core did not complete reservation', [
+                        'lot_id' => $lot->id,
+                        'transaction_id' => $transaction->id,
+                        'payout_context' => $payoutContext,
+                        'error' => $completionError,
+                    ]);
+                }
 
-                $tagJson = json_encode([
+                $explorerUrl = $this->explorerUrlForLotPayout($lot, $cryptoType, $cryptoTxId);
+                $sellerChatBody = $this->sellerPayoutChatBody($cryptoTxId, $explorerUrl);
+                $forcedClosure = $this->isForcedReservationPayoutContext($payoutContext);
+
+                $tagPayload = [
                     't' => 'deal_completed_seller',
                     'lot_id' => (int) $lot->id,
                     'crypto_payout_tx' => $cryptoTxId,
                     'laravel_transaction_id' => $transaction->id,
                     'arbiter_reservation_payout' => true,
                     'payout_context' => $payoutContext,
-                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                ];
+                if ($forcedClosure) {
+                    $tagPayload['operator_forced_completion'] = true;
+                }
+                if ($explorerUrl !== null) {
+                    $tagPayload['explorer_url'] = $explorerUrl;
+                    $tagPayload['crypto_type'] = $cryptoType;
+                }
+                $tagJson = json_encode($tagPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
                 try {
                     $this->sendDealEmail(
                         to: $buyerEmail,
                         subject: 'Deal completed',
-                        body: 'Seller escrow paid out to buyer address on file (reservation execution). Deal completed.',
+                        body: $sellerChatBody,
                         tagJson: $tagJson,
                     );
                 } catch (\Throwable $e) {
@@ -212,9 +288,13 @@ class DealReservationPayoutToBuyerService
                     'seller',
                     $sellerEmailForChat ?? config('mail.from.address', 'noreply@xdexboard.com'),
                     $buyerEmail,
-                    'Seller escrow paid out to buyer address on file (reservation execution). Deal completed.',
+                    $sellerChatBody,
                     $tagJson,
                 );
+
+                if ($forcedClosure) {
+                    $this->finalizeForcedReservationDealClosure($lot, $transaction, $explorerUrl);
+                }
 
                 $lot->refresh();
                 $this->dealChatImapWakeMailer->pokeMailboxesAfterServerChatWrite($lot);
@@ -239,55 +319,86 @@ class DealReservationPayoutToBuyerService
         }
     }
 
-    private function tryCompleteSellerReservationAfterPayout(
+    private function isForcedReservationPayoutContext(string $payoutContext): bool
+    {
+        return in_array($payoutContext, [
+            'operator_signed_compensate_buyer',
+            'arbiter_reservation_payout_to_buyer',
+        ], true);
+    }
+
+    private function finalizeForcedReservationDealClosure(
         ExchangeLot $lot,
-        string $sellerEscrowToken,
-        string $cryptoType,
-        string $coreUrl,
-        string $coreKey,
-        string $payoutContext,
+        Transaction $transaction,
+        ?string $explorerUrl,
     ): void {
-        $sellerEscrowToken = trim($sellerEscrowToken);
-        if ($sellerEscrowToken === '') {
-            Log::info('[deal-payout] complete-reservation skipped (no seller escrow token on lot)', [
-                'lot_id' => $lot->id,
-                'payout_context' => $payoutContext,
-            ]);
+        if ($this->lotHasForcedBuyerCompletionTag($lot)) {
+            DealTerminalLotClosure::releaseLotBuyerBinding($lot);
 
             return;
         }
 
-        try {
-            $req = Http::timeout((int) config('services.core.timeout', 10));
-            if ($coreKey !== '') {
-                $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
-            }
-            $resp = $req->post(rtrim($coreUrl, '/').'/api/complete-reservation', [
-                'exchange_lot_id' => (string) $lot->id,
-                'escrow_token' => $sellerEscrowToken,
-                'crypto_type' => $cryptoType,
-                'aml_required' => (bool) $lot->aml,
-            ]);
-            if ($resp->successful()) {
-                Log::info('[deal-payout] complete-reservation OK', [
-                    'lot_id' => $lot->id,
-                    'payout_context' => $payoutContext,
-                ]);
-            } else {
-                Log::warning('[deal-payout] complete-reservation non-success', [
-                    'lot_id' => $lot->id,
-                    'payout_context' => $payoutContext,
-                    'status' => $resp->status(),
-                    'body' => $resp->body(),
-                ]);
-            }
-        } catch (\Throwable $e) {
-            Log::warning('[deal-payout] complete-reservation failed', [
-                'lot_id' => $lot->id,
-                'payout_context' => $payoutContext,
-                'error' => $e->getMessage(),
-            ]);
+        DealSaleTransactionCompletion::markPendingSaleTransactionsCompleted($lot);
+        DealTerminalLotClosure::releaseLotBuyerBinding($lot);
+
+        $buyerTagPayload = [
+            't' => 'deal_completed_buyer',
+            'lot_id' => (int) $lot->id,
+            'laravel_transaction_id' => $transaction->id,
+            'operator_forced_completion' => true,
+        ];
+        if ($explorerUrl !== null) {
+            $buyerTagPayload['explorer_url'] = $explorerUrl;
         }
+        $buyerTagJson = json_encode($buyerTagPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $buyerBody = 'Exchange operator closed this deal after escrow payout to the buyer address on file.';
+        if ($explorerUrl !== null) {
+            $buyerBody .= ' Verify on-chain: '.$explorerUrl;
+        }
+
+        $this->insertDealChatMessage(
+            $lot,
+            'exchange_operator',
+            null,
+            null,
+            $buyerBody,
+            $buyerTagJson !== false ? $buyerTagJson : null,
+        );
+    }
+
+    private function lotHasForcedBuyerCompletionTag(ExchangeLot $lot): bool
+    {
+        return DealChatMessage::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->where('deal_tag', 'like', '%deal_completed_buyer%')
+            ->where('deal_tag', 'like', '%operator_forced_completion%')
+            ->exists();
+    }
+
+    private function sellerPayoutChatBody(string $cryptoTxId, ?string $explorerUrl): string
+    {
+        $body = 'Seller escrow paid out to buyer address on file (reservation execution). Deal completed.';
+        if ($cryptoTxId !== '' && $cryptoTxId !== 'unknown') {
+            $body .= ' Crypto tx: '.$cryptoTxId.'.';
+        }
+        if ($explorerUrl !== null) {
+            $body .= ' Verify on-chain: '.$explorerUrl;
+        }
+
+        return $body;
+    }
+
+    private function explorerUrlForLotPayout(ExchangeLot $lot, string $cryptoType, string $cryptoTxId): ?string
+    {
+        if ($cryptoTxId === '' || $cryptoTxId === 'unknown') {
+            return null;
+        }
+
+        $environment = (bool) $lot->is_test
+            ? ApiDeploymentEnvironment::SANDBOX
+            : ApiDeploymentEnvironment::PRODUCTION;
+
+        return CryptoTxExplorerUrl::forTx($cryptoType, $cryptoTxId, $environment);
     }
 
     /**

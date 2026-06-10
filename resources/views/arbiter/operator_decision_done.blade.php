@@ -16,7 +16,9 @@
     <p>Lot <strong>{{ e($lotId) }}</strong>@if (!empty($transactionId)) · transaction <strong>{{ e($transactionId) }}</strong>@endif.</p>
 
     <div class="ok">
-        @if (!empty($cryptoTxId))
+        @if (!empty($alreadyCompensated))
+            <p>This lot was <strong>already compensated</strong> from seller escrow. No duplicate payout was submitted.</p>
+        @elseif (!empty($cryptoTxId))
             <p>Escrow payout submitted. Crypto tx: <strong>{{ e($cryptoTxId) }}</strong>.</p>
         @endif
         @if ($alreadyClosed)
