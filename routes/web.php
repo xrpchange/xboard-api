@@ -26,7 +26,7 @@ Route::get('/open-deal', [OpenDealController::class, 'show'])->name('deal.open')
 /** Signed links from operator escalation mail (lot + action bound in signature). POST used for reply form submit. */
 Route::match(['get', 'post'], '/arbiter/operator/{lot}/{action}', [ArbiterOperatorActionController::class, 'handle'])
     ->whereNumber('lot')
-    ->where('action', 'reply|compensate_buyer|deny_buyer')
+    ->where('action', 'reply|compensate_buyer|deny_buyer|block_buyer_internal_mail|block_seller_internal_mail')
     ->middleware('signed')
     ->name('arbiter.operator.action');
 

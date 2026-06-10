@@ -62,6 +62,7 @@ class ExchangeLotController extends Controller
         private DealWebPushNotifier $dealWebPushNotifier,
         private StartDealBuyerEscrowValidation $startDealBuyerEscrowValidation,
         private DealInternalMailRateLimitService $dealInternalMailRateLimit,
+        private \App\Services\Deal\DealReservationPayoutToBuyerService $dealReservationPayoutToBuyer,
     ) {}
 
     /**
@@ -4330,197 +4331,27 @@ class ExchangeLotController extends Controller
     }
 
     /**
-     * @return array{0: string, 1: string}
-     */
-    private function resolveCoreUrlAndKeyForArbiterPayout(ExchangeLot $lot): array
-    {
-        $raw = trim((string) ($lot->wallet_address ?? ''));
-        if ($raw !== '' && str_starts_with($raw, '{')) {
-            try {
-                return $this->escrowTokenValidation->getCoreUrlAndKeyForToken($raw);
-            } catch (\Throwable) {
-                // fall through to default Core
-            }
-        }
-
-        return [
-            rtrim((string) config('services.core.url', ''), '/'),
-            (string) config('services.core.key', ''),
-        ];
-    }
-
-    /**
      * Payout buyer from seller escrow using Core reservations row (API key). Used when arbiter verdict is favor_buyer.
      *
      * @return array{success: bool, error: ?string, crypto_tx_id: ?string}
      */
     private function tryArbiterReservationPayoutToBuyer(ExchangeLot $lot): array
     {
-        $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
-        if ($buyerEmail === '') {
-            return ['success' => false, 'error' => 'no_buyer', 'crypto_tx_id' => null];
+        $result = $this->dealReservationPayoutToBuyer->execute($lot, 'arbiter_reservation_payout_to_buyer');
+        if ($result['success']) {
+            $tagArr = [
+                't' => 'deal_completed_seller',
+                'lot_id' => (int) $lot->id,
+                'crypto_payout_tx' => $result['crypto_tx_id'],
+            ];
+            $this->syncDisputeStateFromDealTag($lot, 'seller', $tagArr);
         }
 
-        try {
-            /** @var array{success: bool, error: ?string, crypto_tx_id: ?string} $out */
-            $out = DB::transaction(function () use ($lot, $buyerEmail): array {
-                $transaction = Transaction::query()
-                    ->where('exchange_lot_id', $lot->id)
-                    ->where('buyer_lot_email', $buyerEmail)
-                    ->where('tx_type', 'sale')
-                    ->where('status', 'pending')
-                    ->orderByDesc('id')
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($transaction === null) {
-                    return ['success' => false, 'error' => 'no_pending_tx', 'crypto_tx_id' => null];
-                }
-
-                if (! empty($transaction->seller_crypto_payout_tx_hash)) {
-                    return [
-                        'success' => true,
-                        'error' => null,
-                        'crypto_tx_id' => (string) $transaction->seller_crypto_payout_tx_hash,
-                    ];
-                }
-
-                $dest = trim((string) ($transaction->crypto_address ?? ''));
-                if ($dest === '') {
-                    return ['success' => false, 'error' => 'buyer_crypto_address_missing', 'crypto_tx_id' => null];
-                }
-
-                try {
-                    $cryptoType = self::coreCryptoTypeForSellerEscrow($lot);
-                } catch (\InvalidArgumentException $e) {
-                    return ['success' => false, 'error' => $e->getMessage(), 'crypto_tx_id' => null];
-                }
-
-                $amount = \App\Support\SellerEscrowReservedAmount::resolve($lot, $cryptoType);
-                if ($amount === null || $amount <= 0) {
-                    return ['success' => false, 'error' => 'invalid_payout_amount', 'crypto_tx_id' => null];
-                }
-
-                [$coreUrl, $coreKey] = $this->resolveCoreUrlAndKeyForArbiterPayout($lot);
-                $timeout = (int) config('services.core.payout_timeout', 120);
-                $payload = [
-                    'exchange_lot_id' => (string) $lot->id,
-                    'laravel_transaction_id' => $transaction->id,
-                    'destination_address' => $dest,
-                    'amount' => $amount,
-                    'crypto_type' => $cryptoType,
-                    'native_amount' => 0.0,
-                    'aml_required' => (bool) $lot->aml,
-                ];
-
-                $req = Http::timeout($timeout)->asJson();
-                if ($coreKey !== '') {
-                    $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
-                }
-                $endpoint = rtrim($coreUrl, '/').'/api/deal-payout-to-buyer-from-reservation';
-                Log::info('[exchange-lots] arbiterReservationPayout: core start', [
-                    'lot_id' => $lot->id,
-                    'transaction_id' => $transaction->id,
-                    'endpoint' => $endpoint,
-                ]);
-                $resp = $req->post($endpoint, $payload);
-                $responseBody = $resp->json();
-                $sellerEscrowTokenForAml = trim((string) ($lot->wallet_address ?? ''));
-                if (! $resp->successful()) {
-                    $body = is_array($responseBody) ? $responseBody : [];
-                    $msg = (string) ($body['message'] ?? $resp->body());
-                    $this->persistPayoutAmlAndAlertOperatorIfNeeded(
-                        $lot,
-                        $transaction,
-                        'arbiter_reservation_payout_to_buyer',
-                        'seller',
-                        $sellerEscrowTokenForAml,
-                        $cryptoType,
-                        $coreUrl,
-                        $coreKey,
-                        $resp->status(),
-                        $body !== [] ? $body : ['raw' => (string) $resp->body()],
-                    );
-
-                    return [
-                        'success' => false,
-                        'error' => 'core_http_'.$resp->status().':'.$msg,
-                        'crypto_tx_id' => null,
-                    ];
-                }
-
-                $body = is_array($responseBody) ? $responseBody : [];
-                $cryptoTxId = '';
-                if (isset($body['data']['transaction_id'])) {
-                    $cryptoTxId = trim((string) $body['data']['transaction_id']);
-                }
-                if ($cryptoTxId === '') {
-                    $cryptoTxId = 'unknown';
-                }
-
-                $transaction->seller_crypto_payout_tx_hash = $cryptoTxId;
-                $transaction->status = 'completed';
-                $this->persistPayoutAmlAndAlertOperatorIfNeeded(
-                    $lot,
-                    $transaction,
-                    'arbiter_reservation_payout_to_buyer',
-                    'seller',
-                    $sellerEscrowTokenForAml,
-                    $cryptoType,
-                    $coreUrl,
-                    $coreKey,
-                    $resp->status(),
-                    $body,
-                );
-
-                $tagJson = json_encode([
-                    't' => 'deal_completed_seller',
-                    'lot_id' => (int) $lot->id,
-                    'crypto_payout_tx' => $cryptoTxId,
-                    'laravel_transaction_id' => $transaction->id,
-                    'arbiter_reservation_payout' => true,
-                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-
-                try {
-                    $this->sendDealEmail(
-                        to: $buyerEmail,
-                        subject: 'Deal completed',
-                        fromAddress: config('mail.from.address', 'noreply@xdexboard.com'),
-                        fromName: config('mail.from.name', 'XBoard'),
-                        body: 'Seller escrow paid out to buyer address on file (reservation execution). Deal completed.',
-                        tagJson: $tagJson
-                    );
-                } catch (\Throwable $e) {
-                    Log::warning('[exchange-lots] arbiterReservationPayout: mailbox event send failed', [
-                        'lot_id' => $lot->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-
-                $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot)) ?? $lot->seller_lot_email;
-                $this->insertDealChatMessage(
-                    $lot,
-                    'seller',
-                    $sellerEmailForChat ?? config('mail.from.address', 'noreply@xdexboard.com'),
-                    $buyerEmail,
-                    'Seller escrow paid out to buyer address on file (reservation execution). Deal completed.',
-                    $tagJson
-                );
-                $tagArr = json_decode($tagJson, true);
-                $this->syncDisputeStateFromDealTag($lot, 'seller', is_array($tagArr) ? $tagArr : null);
-
-                return ['success' => true, 'error' => null, 'crypto_tx_id' => $cryptoTxId];
-            });
-
-            return $out;
-        } catch (\Throwable $e) {
-            Log::warning('[exchange-lots] arbiterReservationPayout: failed', [
-                'lot_id' => $lot->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return ['success' => false, 'error' => $e->getMessage(), 'crypto_tx_id' => null];
-        }
+        return [
+            'success' => $result['success'],
+            'error' => $result['error'],
+            'crypto_tx_id' => $result['crypto_tx_id'],
+        ];
     }
 
     /**

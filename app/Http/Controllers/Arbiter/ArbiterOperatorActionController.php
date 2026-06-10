@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Arbiter;
 
 use App\Http\Controllers\Controller;
 use App\Models\DealChatMessage;
+use App\Models\DealDispute;
 use App\Models\ExchangeLot;
+use App\Services\Arbiter\ArbiterOperatorSignedActionService;
 use App\Services\Deal\DealChatImapWakeMailer;
 use App\Services\Deal\DealInternalMailRateLimitService;
 use App\Support\PublicHttpsUrl;
@@ -16,13 +18,14 @@ use Illuminate\View\View;
 
 /**
  * Signed links from operator escalation mail (lot + action + expiry in URL).
- * reply: GET shows a form; POST inserts a deal_chat_messages row visible in the app chat.
+ * reply: GET form + POST chat row; compensate_buyer: Core payout + close dispute; deny_buyer: close dispute favor seller.
  */
 final class ArbiterOperatorActionController extends Controller
 {
     public function __construct(
         private readonly DealChatImapWakeMailer $dealChatImapWakeMailer,
         private readonly DealInternalMailRateLimitService $dealInternalMailRateLimit,
+        private readonly ArbiterOperatorSignedActionService $operatorSignedActions,
     ) {}
 
     public function handle(Request $request, string $lot, string $action): View|RedirectResponse
@@ -34,39 +37,125 @@ final class ArbiterOperatorActionController extends Controller
         ]);
 
         if ($request->isMethod('get')) {
-            if ($action === 'reply') {
-                return view('arbiter.operator_reply_form', [
+            return match ($action) {
+                'reply' => view('arbiter.operator_reply_form', [
                     'lotId' => $lot,
                     'action' => $action,
                     'formAction' => $this->secureRequestUrl($request),
-                ]);
-            }
-            if (in_array($action, ['block_buyer_internal_mail', 'block_seller_internal_mail'], true)) {
-                return view('arbiter.operator_block_internal_mail_form', [
+                ]),
+                'compensate_buyer', 'deny_buyer' => $this->operatorDecisionForm($request, $lot, $action),
+                'block_buyer_internal_mail', 'block_seller_internal_mail' => view('arbiter.operator_block_internal_mail_form', [
                     'lotId' => $lot,
                     'action' => $action,
                     'participant' => $action === 'block_buyer_internal_mail' ? 'buyer' : 'seller',
                     'formAction' => $this->secureRequestUrl($request),
-                ]);
-            }
-
-            return view('arbiter.operator_action_ack', [
-                'lotId' => $lot,
-                'action' => $action,
-            ]);
+                ]),
+                default => abort(404, 'Unknown operator action'),
+            };
         }
 
-        if ($request->isMethod('post') && $action === 'reply') {
-            return $this->storeOperatorReply($request, $lot);
-        }
-        if ($request->isMethod('post') && $action === 'block_buyer_internal_mail') {
-            return $this->blockParticipantInternalMail($lot, 'buyer');
-        }
-        if ($request->isMethod('post') && $action === 'block_seller_internal_mail') {
-            return $this->blockParticipantInternalMail($lot, 'seller');
+        if ($request->isMethod('post')) {
+            return match ($action) {
+                'reply' => $this->storeOperatorReply($request, $lot),
+                'compensate_buyer' => $this->applyCompensateBuyer($lot),
+                'deny_buyer' => $this->applyOperatorDecision($lot, 'deny_buyer', 'favor_seller'),
+                'block_buyer_internal_mail' => $this->blockParticipantInternalMail($lot, 'buyer'),
+                'block_seller_internal_mail' => $this->blockParticipantInternalMail($lot, 'seller'),
+                default => abort(405),
+            };
         }
 
         abort(405);
+    }
+
+    private function operatorDecisionForm(Request $request, string $lot, string $action): View
+    {
+        $lotModel = ExchangeLot::query()->find((int) $lot);
+        if ($lotModel === null) {
+            abort(404, 'Lot not found');
+        }
+
+        $activeDispute = DealDispute::query()
+            ->where('exchange_lot_id', $lotModel->id)
+            ->whereIn('status', ['opened', 'in_review'])
+            ->orderByDesc('id')
+            ->first();
+
+        $meta = match ($action) {
+            'compensate_buyer' => [
+                'title' => 'Compensate buyer',
+                'summary' => 'Pay the buyer from the seller escrow reservation (Core) to the crypto address on file for this deal, close the dispute with verdict favor buyer, and post the outcome to deal chat.',
+                'confirmLabel' => 'Pay buyer from reservation and close dispute',
+            ],
+            'deny_buyer' => [
+                'title' => 'Deny buyer',
+                'summary' => 'Close the active dispute with verdict favor seller. Participants will see an operator decision in deal chat. This link does not move funds.',
+                'confirmLabel' => 'Close dispute — favor seller',
+            ],
+            default => abort(404),
+        };
+
+        return view('arbiter.operator_decision_form', [
+            'lotId' => (string) $lotModel->id,
+            'transactionId' => $lotModel->primaryDealTransactionId(),
+            'action' => $action,
+            'title' => $meta['title'],
+            'summary' => $meta['summary'],
+            'confirmLabel' => $meta['confirmLabel'],
+            'hasActiveDispute' => $activeDispute !== null,
+            'formAction' => $this->secureRequestUrl($request),
+        ]);
+    }
+
+    private function applyCompensateBuyer(string $lot): View
+    {
+        $lotModel = ExchangeLot::query()->find((int) $lot);
+        if ($lotModel === null) {
+            abort(404, 'Lot not found');
+        }
+
+        $result = $this->operatorSignedActions->compensateBuyer($lotModel);
+        if (! $result['ok']) {
+            return view('arbiter.operator_decision_failed', [
+                'lotId' => (string) $lotModel->id,
+                'transactionId' => $lotModel->primaryDealTransactionId(),
+                'action' => 'compensate_buyer',
+                'errorCode' => $result['payout']['error'] ?? 'payout_failed',
+                'transactionIdAttempted' => $result['payout']['transaction_id'] ?? null,
+            ]);
+        }
+
+        return view('arbiter.operator_decision_done', [
+            'lotId' => (string) $lotModel->id,
+            'transactionId' => $lotModel->primaryDealTransactionId(),
+            'action' => 'compensate_buyer',
+            'verdict' => $result['verdict'],
+            'disputesClosed' => $result['disputes_closed'],
+            'alreadyClosed' => $result['already_closed'],
+            'body' => $result['body'],
+            'cryptoTxId' => $result['payout']['crypto_tx_id'] ?? null,
+        ]);
+    }
+
+    private function applyOperatorDecision(string $lot, string $action, string $verdict): View
+    {
+        $lotModel = ExchangeLot::query()->find((int) $lot);
+        if ($lotModel === null) {
+            abort(404, 'Lot not found');
+        }
+
+        $result = $this->operatorSignedActions->applyDisputeVerdict($lotModel, $action, $verdict);
+
+        return view('arbiter.operator_decision_done', [
+            'lotId' => (string) $lotModel->id,
+            'transactionId' => $lotModel->primaryDealTransactionId(),
+            'action' => $action,
+            'verdict' => $result['verdict'],
+            'disputesClosed' => $result['disputes_closed'],
+            'alreadyClosed' => $result['already_closed'],
+            'body' => $result['body'],
+            'cryptoTxId' => null,
+        ]);
     }
 
     private function storeOperatorReply(Request $request, string $lot): RedirectResponse|View
