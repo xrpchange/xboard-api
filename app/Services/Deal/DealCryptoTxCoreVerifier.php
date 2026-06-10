@@ -112,7 +112,7 @@ final class DealCryptoTxCoreVerifier
             'strict_checks' => true,
         ];
         $expectedAddress = $this->expectedAddress($lot, $tagType);
-        if ($expectedAddress !== null && $expectedAddress !== '') {
+        if ($expectedAddress !== null && $expectedAddress !== '' && self::supportsExpectedAddressCheck($cryptoType)) {
             $payload['expected_address'] = $expectedAddress;
         }
         $expectedAmount = $this->expectedAmount($lot, $tagType);
@@ -181,7 +181,9 @@ final class DealCryptoTxCoreVerifier
             'status' => $data['status'] ?? null,
             'is_confirmed' => $data['is_confirmed'] ?? null,
             'confirmations' => $data['confirmations'] ?? null,
-            'checks' => is_array($data['checks'] ?? null) ? $data['checks'] : [],
+            'checks' => self::normalizeCoreChecks(is_array($data['checks'] ?? null) ? $data['checks'] : []),
+            'observed' => is_array($data['observed'] ?? null) ? $data['observed'] : [],
+            'expected' => is_array($data['expected'] ?? null) ? $data['expected'] : [],
             'crypto_type' => $cryptoType,
             'transaction_id' => $txRef,
             'deployment_environment' => ApiDeploymentEnvironment::current(),
@@ -191,7 +193,7 @@ final class DealCryptoTxCoreVerifier
             'verified' => $verified,
             'verification' => $verification,
             'error' => $verified ? null : [
-                'message' => 'Transaction id was not verified on-chain by Core.',
+                'message' => self::buildNotVerifiedMessage($data),
                 'error_code' => 'crypto_tx_not_verified',
             ],
         ];
@@ -357,5 +359,51 @@ final class DealCryptoTxCoreVerifier
         }
 
         return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $checks
+     * @return array<string, mixed>
+     */
+    private static function supportsExpectedAddressCheck(string $cryptoType): bool
+    {
+        // Monero hides recipient addresses on-chain; only tx existence + amount are verifiable.
+        return strtolower(trim($cryptoType)) !== 'xmr';
+    }
+
+    private static function normalizeCoreChecks(array $checks): array
+    {
+        if (array_key_exists('confirmations_enough', $checks) && ! array_key_exists('confirmations_ok', $checks)) {
+            $checks['confirmations_ok'] = $checks['confirmations_enough'];
+        }
+
+        return $checks;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data  Core verify-external-payment `data` payload
+     */
+    private static function buildNotVerifiedMessage(array $data): string
+    {
+        if (($data['is_confirmed'] ?? null) === false) {
+            return 'Transaction was found but is not confirmed on-chain.';
+        }
+
+        $checks = is_array($data['checks'] ?? null) ? $data['checks'] : [];
+        $parts = [];
+        if (($checks['address_matches'] ?? null) === false) {
+            $parts[] = 'recipient address does not match the deal';
+        }
+        if (($checks['amount_matches'] ?? null) === false) {
+            $parts[] = 'amount does not match the deal';
+        }
+        if (($checks['confirmations_enough'] ?? null) === false) {
+            $parts[] = 'not enough confirmations';
+        }
+        if ($parts !== []) {
+            return 'Transaction found on-chain, but '.implode('; ', $parts).'.';
+        }
+
+        return 'Transaction id was not verified on-chain by Core.';
     }
 }
