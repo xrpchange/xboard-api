@@ -57,6 +57,21 @@ class DealInternalMailRateLimitServiceTest extends TestCase
         $this->assertSame(300, (int) $row->sent_count);
     }
 
+    public function test_long_lot_mailbox_local_part_is_accepted_for_counter(): void
+    {
+        Config::set('deal.internal_mail_daily_limit', 2);
+        $service = new DealInternalMailRateLimitService;
+
+        $longLocal = 'xmr_'.str_repeat('a', 200);
+        $email = $longLocal.'@mail.xdexboard.com';
+
+        $this->assertFalse((bool) filter_var($email, FILTER_VALIDATE_EMAIL));
+        $this->assertSame($email, $service->normalizeMailboxEmail($email));
+
+        $service->recordSuccessfulSend($email);
+        $this->assertSame(1, $service->sentCountToday($email));
+    }
+
     public function test_clear_today_for_mailbox_resets_counter(): void
     {
         Config::set('deal.internal_mail_daily_limit', 300);

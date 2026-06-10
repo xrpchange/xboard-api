@@ -6632,11 +6632,11 @@ class ExchangeLotController extends Controller
 
         $normalized = $this->dealInternalMailRateLimit->normalizeMailboxEmail($senderLotMailboxEmail);
         if ($normalized === null) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Invalid or missing sender deal mailbox for internal mail.',
-                'error_code' => 'invalid_sender_mailbox',
-            ], 400);
+            Log::warning('[exchange-lots] internal mail limit check skipped: unparseable sender mailbox', [
+                'email_len' => strlen(trim((string) $senderLotMailboxEmail)),
+            ]);
+
+            return null;
         }
 
         if ($this->dealInternalMailRateLimit->isDailyLimitReached($normalized)) {
