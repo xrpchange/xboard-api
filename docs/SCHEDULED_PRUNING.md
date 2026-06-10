@@ -14,7 +14,7 @@ Both are registered in **`bootstrap/app.php`** and run once per day when the Lar
 
 ### `transactions:prune` and lot accounting (`sold_crypto_amount`)
 
-Old `transactions` rows are deleted in small batches with per-model `delete()`, so model cleanup (for example receipt file deletion) still runs. **`exchange_lots.sold_crypto_amount` is now accumulated when a `sale` transaction becomes `completed`, not during pruning.** Pruning only removes old transaction rows after their amounts were already reflected on the lot. **Remaining crypto on a partially sold lot** should therefore be derived from the lot field directly (for example `sell_amount - sold_crypto_amount`, per your product rules).
+Old `transactions` rows are deleted in small batches with per-model `delete()`, so model cleanup (for example receipt file deletion) still runs. **`exchange_lots.sold_crypto_amount` and `completed_deals_count` are accumulated when a `sale` transaction becomes `completed`, not during pruning.** Pruning only removes old transaction rows after their amounts were already reflected on the lot. **`completed_deals_count` / `bad_deals_count` are not decremented when old transactions are pruned** — see `docs/EXCHANGE_LOT_DEAL_COUNTERS.md`. **Remaining crypto on a partially sold lot** should therefore be derived from the lot field directly (for example `sell_amount - sold_crypto_amount`, per your product rules).
 
 ### Manual run
 

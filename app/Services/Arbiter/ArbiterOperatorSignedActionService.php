@@ -10,6 +10,7 @@ use App\Services\Deal\DealReservationPayoutToBuyerService;
 use App\Support\ApiDeploymentEnvironment;
 use App\Support\CryptoTxExplorerUrl;
 use App\Support\DealEscrowCryptoType;
+use App\Support\ExchangeLotDealCounters;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -67,6 +68,7 @@ final class ArbiterOperatorSignedActionService
         }
 
         $verdictResult = $this->applyDisputeVerdict($lot, 'compensate_buyer', 'favor_buyer', $payout, skipChat: false);
+        ExchangeLotDealCounters::incrementBadDeal((int) $lot->id);
 
         return [
             'ok' => true,
