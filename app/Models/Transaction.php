@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Services\CoreReservationCleanupService;
 use App\Services\ReceiptAttachmentStorage;
+use App\Support\ExchangeLotDealCounters;
 use App\Support\SellerEscrowReservedAmount;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -179,5 +180,6 @@ class Transaction extends Model
         DB::table('exchange_lots')
             ->where('id', $lotId)
             ->increment('sold_crypto_amount', $amount);
+        ExchangeLotDealCounters::incrementCompletedDeal($lotId);
     }
 } 

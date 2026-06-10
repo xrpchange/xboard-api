@@ -32,6 +32,8 @@ use App\Support\DealChatTagSequenceValidator;
 use App\Support\DisputeArbiterParticipantPolicy;
 use App\Support\DealChatMessageLimits;
 use App\Support\DealEscrowCryptoType;
+use App\Support\EscrowTokenLotLimit;
+use App\Support\ExchangeLotDealCounters;
 use App\Support\StartDealBuyerEscrowValidation;
 use App\Support\DealSaleTransactionCompletion;
 use App\Support\DealSellerOpenLinks;
@@ -1158,6 +1160,10 @@ class ExchangeLotController extends Controller
                 'success' => false,
                 'errors' => ['wallet_address' => [$validation['error'] ?? 'Escrow token validation failed. Token may be fake or invalid.']],
             ], 422);
+        }
+
+        if (EscrowTokenLotLimit::isLimitReached($validated['wallet_hash'])) {
+            return EscrowTokenLotLimit::limitReachedResponse($validated['wallet_hash']);
         }
 
         // Store group hashes (SHA256) instead of plain text; null if no group
@@ -5168,6 +5174,7 @@ class ExchangeLotController extends Controller
         if ($verdict === 'favor_buyer' && $arbiterStatus === 'in_review') {
             $payoutOk = $autoCorePayout && ! empty($payoutResult['success']);
             if ($payoutOk) {
+                ExchangeLotDealCounters::incrementBadDeal((int) $lot->id);
                 $disputeClosed = true;
             } elseif ($autoCorePayout && empty($payoutResult['success'])) {
                 $dispute->arbiter_verdict = $verdict;
