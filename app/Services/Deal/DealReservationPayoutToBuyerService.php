@@ -321,17 +321,17 @@ class DealReservationPayoutToBuyerService
     private function formatCoreHttpError(int $status, array $body, string $rawBody): string
     {
         if ($status === 502 || $status === 504) {
-            return 'core_gateway_'.$status.': Core gateway error (no JSON body). Check Core/nginx logs and PHP-FPM stderr volume.';
+            return 'Core gateway error (no JSON body). Check Core/nginx logs and PHP-FPM stderr volume.';
         }
         if (isset($body['message']) && is_string($body['message']) && trim($body['message']) !== '') {
-            return 'core_http_'.$status.':'.trim($body['message']);
+            return trim($body['message']);
         }
         $plain = trim(preg_replace('/\s+/', ' ', strip_tags($rawBody)) ?? '');
         if (strlen($plain) > 240) {
             $plain = substr($plain, 0, 240).'...';
         }
 
-        return 'core_http_'.$status.':'.($plain !== '' ? $plain : 'unknown');
+        return $plain !== '' ? $plain : 'unknown';
     }
 
     /**
