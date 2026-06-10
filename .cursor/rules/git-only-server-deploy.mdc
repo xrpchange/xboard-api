@@ -1,0 +1,28 @@
+# Git-only server deploy (xboard-api)
+
+**Never copy PHP/Laravel source to production with `scp`, `rsync`, or manual file paste.**
+
+## Correct workflow
+
+1. Commit on `main`.
+2. `git push origin main`
+3. On `server@xrpchange.site`:
+   ```bash
+   bash /var/www/xboard-api/scripts/server-git-pull-xboard-api.sh
+   ```
+
+The script checks out `origin/main`, runs `composer install`, `migrate --force`, config/route cache.
+
+## Forbidden
+
+- `scp app/… server@…:/var/www/xboard-api/…`
+- Patching controllers/services on the server outside git
+- Deploy “fixes” without push + pull
+
+## Verify after deploy
+
+```bash
+cd /var/www/xboard-api && git rev-parse --short HEAD && git status --short
+```
+
+HEAD must match the pushed commit; working tree must be **clean**.
