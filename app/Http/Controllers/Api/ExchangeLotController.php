@@ -2275,6 +2275,9 @@ class ExchangeLotController extends Controller
                 body: $body,
                 tagJson: $tagJson
             );
+            if ($messageType !== 'start_deal') {
+                $this->recordInternalMailSent($buyerSenderMailbox !== '' ? $buyerSenderMailbox : null);
+            }
             if ($messageType === 'start_deal') {
                 $sellerNotificationEmail = $lot->seller_notification_email ? trim((string) $lot->seller_notification_email) : null;
                 if (! $sellerNotificationEmail || ! filter_var($sellerNotificationEmail, FILTER_VALIDATE_EMAIL)) {
@@ -2928,6 +2931,7 @@ class ExchangeLotController extends Controller
                     body: $body,
                     tagJson: $tagJson
                 );
+                $this->recordInternalMailSent($sellerEmail);
                 $this->storeReceiptLinksInLatestTransaction($lot, $customDealTagData);
             } catch (\Throwable $e) {
                 Log::warning('[exchange-lots] sendMessageToBuyer: failed to send mail', [
@@ -3624,6 +3628,7 @@ class ExchangeLotController extends Controller
                     body: $body,
                     tagJson: $tagJson
                 );
+                $this->recordInternalMailSent($buyerEmail);
             } catch (\Throwable $e) {
                 Log::warning('[exchange-lots] buyerSetCryptoDestination: failed to send seller mail', [
                     'lot_id' => $lot->id,
@@ -4778,6 +4783,7 @@ class ExchangeLotController extends Controller
                 $message->getHeaders()->addTextHeader('X-XBoard-Deal-Tag', $tagJson);
                 HighDeliveryPriority::apply($message);
             });
+            $this->recordInternalMailSent($sellerSenderMailbox);
         } catch (\Throwable $e) {
             Log::warning('[exchange-lots] sendPaymentDetails: failed to send mail', [
                 'lot_id' => $lot->id,
@@ -6624,22 +6630,31 @@ class ExchangeLotController extends Controller
             return null;
         }
 
-        if (! $this->dealInternalMailRateLimit->reserveSendSlot($senderLotMailboxEmail)) {
-            $normalized = $this->dealInternalMailRateLimit->normalizeMailboxEmail($senderLotMailboxEmail);
-            $sentToday = $normalized !== null
-                ? $this->dealInternalMailRateLimit->sentCountToday($normalized)
-                : $this->dealInternalMailRateLimit->dailyLimit();
+        $normalized = $this->dealInternalMailRateLimit->normalizeMailboxEmail($senderLotMailboxEmail);
+        if ($normalized === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or missing sender deal mailbox for internal mail.',
+                'error_code' => 'invalid_sender_mailbox',
+            ], 400);
+        }
 
+        if ($this->dealInternalMailRateLimit->isDailyLimitReached($normalized)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Daily internal mail limit reached for this deal mailbox.',
                 'error_code' => 'deal_internal_mail_daily_limit_reached',
                 'daily_limit' => $this->dealInternalMailRateLimit->dailyLimit(),
-                'sent_today' => $sentToday,
+                'sent_today' => $this->dealInternalMailRateLimit->sentCountToday($normalized),
             ], 422);
         }
 
         return null;
+    }
+
+    private function recordInternalMailSent(?string $senderLotMailboxEmail): void
+    {
+        $this->dealInternalMailRateLimit->recordSuccessfulSend($senderLotMailboxEmail);
     }
 
     private function sendDealEmail(

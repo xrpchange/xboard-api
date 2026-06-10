@@ -48,27 +48,44 @@ final class DealInternalMailRateLimitService
     }
 
     /**
-     * Reserve one send slot atomically. Returns false when the daily cap is reached.
+     * True when the sender has already reached the daily cap (check only — does not increment).
      */
-    public function reserveSendSlot(?string $senderLotMailboxEmail): bool
+    public function isDailyLimitReached(?string $senderLotMailboxEmail): bool
     {
         if (! $this->isEnabled()) {
-            return true;
+            return false;
         }
 
         $normalized = $this->normalizeMailboxEmail($senderLotMailboxEmail);
         if ($normalized === null) {
-            Log::warning(self::LOG_TAG.' reserve skipped: invalid sender mailbox', [
+            return false;
+        }
+
+        return $this->sentCountToday($normalized) >= $this->dailyLimit();
+    }
+
+    /**
+     * Count one successfully delivered internal deal mail after SMTP accepted the message.
+     */
+    public function recordSuccessfulSend(?string $senderLotMailboxEmail): void
+    {
+        if (! $this->isEnabled()) {
+            return;
+        }
+
+        $normalized = $this->normalizeMailboxEmail($senderLotMailboxEmail);
+        if ($normalized === null) {
+            Log::warning(self::LOG_TAG.' record skipped: invalid sender mailbox', [
                 'email_len' => strlen(trim((string) $senderLotMailboxEmail)),
             ]);
 
-            return false;
+            return;
         }
 
         $limit = $this->dailyLimit();
         $day = $this->utcDay();
 
-        return DB::transaction(function () use ($normalized, $day, $limit): bool {
+        DB::transaction(function () use ($normalized, $day, $limit): void {
             $row = DB::table('deal_internal_mail_daily_counters')
                 ->where('email', $normalized)
                 ->where('day', $day)
@@ -76,7 +93,14 @@ final class DealInternalMailRateLimitService
                 ->first();
 
             if ($row !== null && (int) $row->sent_count >= $limit) {
-                return false;
+                Log::warning(self::LOG_TAG.' record after cap (race)', [
+                    'email' => $normalized,
+                    'day' => $day,
+                    'sent_count' => (int) $row->sent_count,
+                    'limit' => $limit,
+                ]);
+
+                return;
             }
 
             if ($row === null) {
@@ -97,8 +121,6 @@ final class DealInternalMailRateLimitService
                         'updated_at' => now()->utc(),
                     ]);
             }
-
-            return true;
         });
     }
 
@@ -154,6 +176,22 @@ final class DealInternalMailRateLimitService
         ]);
 
         return true;
+    }
+
+    /**
+     * Reset counter for support (today only). Returns rows deleted.
+     */
+    public function clearTodayForMailbox(?string $senderLotMailboxEmail): int
+    {
+        $normalized = $this->normalizeMailboxEmail($senderLotMailboxEmail);
+        if ($normalized === null) {
+            return 0;
+        }
+
+        return DB::table('deal_internal_mail_daily_counters')
+            ->where('email', $normalized)
+            ->where('day', $this->utcDay())
+            ->delete();
     }
 
     private function utcDay(): string

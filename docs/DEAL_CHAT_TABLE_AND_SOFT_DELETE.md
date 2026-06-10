@@ -60,7 +60,7 @@ Email-based inserts use the same `body`, `deal_tag`, and sender/recipient as the
 |-------|--------|---------|
 | Max body length (characters) | `DEAL_CHAT_MAX_MESSAGE_LENGTH` | **1000** — validated on `send-message*` / payment-details APIs; client caps input to the same value. |
 | Max rows per lot | `DEAL_CHAT_MAX_MESSAGES` | **1000** — oldest rows pruned after insert. |
-| Internal mail sends per lot mailbox per **UTC day** | `DEAL_INTERNAL_MAIL_DAILY_LIMIT` | **300** — counted in `deal_internal_mail_daily_counters` when buyer/seller sends internal deal SMTP (`sendMessageToSeller` except **`start_deal`**, `sendMessageToBuyer`, `sendPaymentDetails`, `buyerSetCryptoDestination`). **422** `deal_internal_mail_daily_limit_reached`. Not applied to **`start_deal`**, AI arbiter, operator replies, or automated payout completion mails. |
+| Internal mail sends per lot mailbox per **UTC day** | `DEAL_INTERNAL_MAIL_DAILY_LIMIT` | **300** — incremented in `deal_internal_mail_daily_counters` **only after successful SMTP** for buyer/seller internal deal mail (`sendMessageToSeller` except **`start_deal`**, `sendMessageToBuyer`, `sendPaymentDetails`, `buyerSetCryptoDestination`). Failed sends and validation errors do not consume the cap. **422** `deal_internal_mail_daily_limit_reached`. Support reset: `php artisan deal:internal-mail-counter:clear {email}`. Not applied to **`start_deal`**, AI arbiter, operator replies, or automated payout completion mails. |
 
 **Operator anti-flood (24h UTC):** signed links in arbiter escalation mail (`block_buyer_internal_mail` / `block_seller_internal_mail`) set `sent_count` to the daily limit for that participant’s deal mailbox — no separate ban flag. Counter resets on the next UTC calendar day.
 

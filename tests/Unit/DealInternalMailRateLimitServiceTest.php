@@ -29,14 +29,16 @@ class DealInternalMailRateLimitServiceTest extends TestCase
         });
     }
 
-    public function test_reserve_send_slot_stops_at_daily_limit(): void
+    public function test_record_successful_send_stops_at_daily_limit(): void
     {
         Config::set('deal.internal_mail_daily_limit', 2);
         $service = new DealInternalMailRateLimitService;
 
-        $this->assertTrue($service->reserveSendSlot('buyer-lot@mail.test'));
-        $this->assertTrue($service->reserveSendSlot('buyer-lot@mail.test'));
-        $this->assertFalse($service->reserveSendSlot('buyer-lot@mail.test'));
+        $this->assertFalse($service->isDailyLimitReached('buyer-lot@mail.test'));
+        $service->recordSuccessfulSend('buyer-lot@mail.test');
+        $this->assertFalse($service->isDailyLimitReached('buyer-lot@mail.test'));
+        $service->recordSuccessfulSend('buyer-lot@mail.test');
+        $this->assertTrue($service->isDailyLimitReached('buyer-lot@mail.test'));
         $this->assertSame(2, $service->sentCountToday('buyer-lot@mail.test'));
     }
 
@@ -46,12 +48,25 @@ class DealInternalMailRateLimitServiceTest extends TestCase
         $service = new DealInternalMailRateLimitService;
 
         $this->assertTrue($service->exhaustForUtcDay('Seller.Lot@mail.test'));
-        $this->assertFalse($service->reserveSendSlot('seller.lot@mail.test'));
+        $this->assertTrue($service->isDailyLimitReached('seller.lot@mail.test'));
 
         $row = DB::table('deal_internal_mail_daily_counters')
             ->where('email', 'seller.lot@mail.test')
             ->first();
         $this->assertNotNull($row);
         $this->assertSame(300, (int) $row->sent_count);
+    }
+
+    public function test_clear_today_for_mailbox_resets_counter(): void
+    {
+        Config::set('deal.internal_mail_daily_limit', 300);
+        $service = new DealInternalMailRateLimitService;
+
+        $service->exhaustForUtcDay('reset-me@mail.test');
+        $this->assertTrue($service->isDailyLimitReached('reset-me@mail.test'));
+
+        $deleted = $service->clearTodayForMailbox('reset-me@mail.test');
+        $this->assertSame(1, $deleted);
+        $this->assertFalse($service->isDailyLimitReached('reset-me@mail.test'));
     }
 }
