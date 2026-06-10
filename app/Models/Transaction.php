@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\CoreReservationCleanupService;
 use App\Services\ReceiptAttachmentStorage;
 use App\Support\SellerEscrowReservedAmount;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -148,6 +149,8 @@ class Transaction extends Model
         });
 
         static::deleting(function (Transaction $transaction): void {
+            app(CoreReservationCleanupService::class)->deleteReservationsForTransaction($transaction);
+
             $links = $transaction->receipt_links_json;
             if (is_array($links) && count($links) > 0) {
                 ReceiptAttachmentStorage::deleteFilesFromReceiptLinks($links);

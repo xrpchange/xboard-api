@@ -140,6 +140,7 @@ Route::middleware(['escrow.token'])->group(function () {
 | Create reservation | `ExchangeLotController::sendPaymentDetails` (seller token) | `POST /api/reservations` |
 | Set transaction ID on reservation | `ExchangeLotController::sendPaymentDetails` (seller token) | `POST /api/reservations/set-transaction-id` |
 | Cancel reservation (buyer) | `ExchangeLotController::buyerCancelDeal` (buyer token) | `POST /api/cancel-reservation-by-transaction` |
+| Delete reservations by API transaction id | `Transaction::deleting` → `CoreReservationCleanupService` | `POST /api/delete-reservations-by-transaction-id` |
 
 All of these use `getCoreUrlAndKeyForToken($escrowToken)` so the request goes to the same Core (and same salt) as where the token was created.
 
