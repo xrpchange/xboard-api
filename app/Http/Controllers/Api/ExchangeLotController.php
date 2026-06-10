@@ -4858,15 +4858,8 @@ class ExchangeLotController extends Controller
      */
     private function authorizeDealChatParticipant(Request $request, ExchangeLot $lot): array|JsonResponse
     {
-        $tokenData = $request->input('escrow_token_data', []);
-        $requesterWallet = is_array($tokenData) ? ($tokenData['wallet_address'] ?? '') : '';
-        $tokenHash = is_array($tokenData) && isset($tokenData['token_hash']) ? trim((string) $tokenData['token_hash']) : '';
-        $lot->load(['cryptoCurrency']);
-        $lotWalletRaw = $lot->wallet_address !== null ? (json_decode((string) $lot->wallet_address, true)['wallet_address'] ?? $lot->wallet_address) : null;
-        $requesterWalletStr = $this->normalizeWalletAddressForComparison($requesterWallet);
-        $lotWalletStr = $lotWalletRaw !== null ? $this->normalizeWalletAddressForComparison($lotWalletRaw) : '';
-        $isSeller = $requesterWalletStr !== '' && $lotWalletStr !== '' && hash_equals($lotWalletStr, $requesterWalletStr);
-        $isBuyer = $tokenHash !== '' && $lot->buyer_escrow_token_hash !== null && strcasecmp(trim((string) $lot->buyer_escrow_token_hash), $tokenHash) === 0;
+        $isSeller = $this->requesterIsSellerForLot($request, $lot);
+        $isBuyer = $this->requesterIsBuyerForLot($request, $lot);
         if (! $isSeller && ! $isBuyer) {
             return response()->json(['success' => false, 'message' => 'Not authorized to read this chat.'], 403);
         }
