@@ -55,6 +55,15 @@ final class DealEscrowCryptoType
         return $lot->cryptoCurrency;
     }
 
+    public static function coreNetworkFromCryptoType(string $cryptoType): ?string
+    {
+        if (preg_match('/^(usdt|usdc|dai)_(stellar|polygon|tron)$/', strtolower(trim($cryptoType)), $m)) {
+            return $m[2];
+        }
+
+        return null;
+    }
+
     private static function coreTypeFromCurrencyRow(object $row): string
     {
         $code = strtolower(trim((string) ($row->code ?? '')));
