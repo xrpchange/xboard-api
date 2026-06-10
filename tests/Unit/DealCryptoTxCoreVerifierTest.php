@@ -76,4 +76,42 @@ class DealCryptoTxCoreVerifierTest extends TestCase
         $this->assertFalse($result['verified']);
         $this->assertSame('bank_receipt_not_on_chain', $result['error']['error_code'] ?? null);
     }
+
+    public function test_build_not_verified_message_lists_failed_checks(): void
+    {
+        $method = new \ReflectionMethod(DealCryptoTxCoreVerifier::class, 'buildNotVerifiedMessage');
+        $method->setAccessible(true);
+        $message = $method->invoke(null, [
+            'is_confirmed' => true,
+            'checks' => [
+                'address_matches' => false,
+                'amount_matches' => false,
+            ],
+        ]);
+
+        $this->assertStringContainsString('recipient address does not match', $message);
+        $this->assertStringContainsString('amount does not match', $message);
+    }
+
+    public function test_xmr_skips_expected_address_check(): void
+    {
+        $method = new \ReflectionMethod(DealCryptoTxCoreVerifier::class, 'supportsExpectedAddressCheck');
+        $method->setAccessible(true);
+        $this->assertFalse($method->invoke(null, 'xmr'));
+        $this->assertTrue($method->invoke(null, 'usdt_tron'));
+        $this->assertTrue($method->invoke(null, 'btc'));
+    }
+
+    public function test_normalize_core_checks_maps_confirmations_enough(): void
+    {
+        $method = new \ReflectionMethod(DealCryptoTxCoreVerifier::class, 'normalizeCoreChecks');
+        $method->setAccessible(true);
+        $normalized = $method->invoke(null, [
+            'confirmations_enough' => true,
+            'amount_matches' => true,
+        ]);
+
+        $this->assertTrue($normalized['confirmations_ok'] ?? false);
+        $this->assertTrue($normalized['confirmations_enough'] ?? false);
+    }
 }
