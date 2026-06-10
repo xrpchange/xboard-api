@@ -16,6 +16,7 @@ use App\Models\Node;
 use App\Models\Transaction;
 use App\Services\Arbiter\ArbiterOperatorEscalationNotifier;
 use App\Services\Arbiter\ArbiterService;
+use App\Services\Deal\DealCryptoTxCoreVerifier;
 use App\Services\Deal\DealInternalMailRateLimitService;
 use App\Services\Deal\DealWebPushNotifier;
 use App\Services\DealAmlAdminAlertService;
@@ -63,6 +64,7 @@ class ExchangeLotController extends Controller
         private StartDealBuyerEscrowValidation $startDealBuyerEscrowValidation,
         private DealInternalMailRateLimitService $dealInternalMailRateLimit,
         private \App\Services\Deal\DealReservationPayoutToBuyerService $dealReservationPayoutToBuyer,
+        private DealCryptoTxCoreVerifier $dealCryptoTxCoreVerifier,
     ) {}
 
     /**
@@ -4851,7 +4853,10 @@ class ExchangeLotController extends Controller
     /**
      * Get deal chat messages for the lot. Requester must be seller or buyer (validated by escrow token).
      */
-    public function chatMessages(Request $request, ExchangeLot $lot): JsonResponse
+    /**
+     * @return array{0: bool, 1: bool}|JsonResponse
+     */
+    private function authorizeDealChatParticipant(Request $request, ExchangeLot $lot): array|JsonResponse
     {
         $tokenData = $request->input('escrow_token_data', []);
         $requesterWallet = is_array($tokenData) ? ($tokenData['wallet_address'] ?? '') : '';
@@ -4865,6 +4870,17 @@ class ExchangeLotController extends Controller
         if (! $isSeller && ! $isBuyer) {
             return response()->json(['success' => false, 'message' => 'Not authorized to read this chat.'], 403);
         }
+
+        return [$isSeller, $isBuyer];
+    }
+
+    public function chatMessages(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        $auth = $this->authorizeDealChatParticipant($request, $lot);
+        if ($auth instanceof JsonResponse) {
+            return $auth;
+        }
+        [$isSeller, $isBuyer] = $auth;
         $query = DealChatMessage::where('exchange_lot_id', $lot->id);
         if ($isSeller) {
             $query->whereNull('deleted_by_seller_at');
@@ -4887,6 +4903,51 @@ class ExchangeLotController extends Controller
             'success' => true,
             'server_time' => $this->toUtcIso8601(now()),
             'messages' => $messages,
+        ]);
+    }
+
+    /**
+     * Re-run Core on-chain verification for a deal chat message that carries a crypto tx id/hash.
+     * Same participant auth as chatMessages.
+     */
+    public function verifyChatMessageCryptoTx(Request $request, ExchangeLot $lot, int $message): JsonResponse
+    {
+        $auth = $this->authorizeDealChatParticipant($request, $lot);
+        if ($auth instanceof JsonResponse) {
+            return $auth;
+        }
+
+        $messageId = (int) $message;
+        if ($messageId <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'message id is required.',
+                'error_code' => 'validation_error',
+            ], 422);
+        }
+
+        $result = $this->dealCryptoTxCoreVerifier->verifyChatMessage($lot, $messageId);
+        $payload = $this->dealCryptoTxCoreVerifier->apiPayloadFromResult($lot, $result);
+        $error = is_array($payload['error'] ?? null) ? $payload['error'] : null;
+
+        if ($error !== null && ($result['verified'] ?? false) !== true) {
+            $status = match ((string) ($error['error_code'] ?? '')) {
+                'message_not_found', 'no_deal_tag', 'not_crypto_tx_tag' => 404,
+                'core_not_configured', 'core_crypto_tx_verify_transport_failed' => 502,
+                default => 422,
+            };
+
+            return response()->json([
+                'success' => false,
+                'data' => $payload,
+                'message' => (string) ($error['message'] ?? 'Verification failed.'),
+                'error_code' => (string) ($error['error_code'] ?? 'crypto_tx_not_verified'),
+            ], $status);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $payload,
         ]);
     }
 

@@ -192,6 +192,7 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
         Route::post('/{lot}/seller-crypto-payout-to-buyer', [ExchangeLotController::class, 'sellerCryptoPayoutToBuyer']);
         Route::post('/{lot}/buyer-cancel-deal', [ExchangeLotController::class, 'buyerCancelDealCompat']);
         Route::get('/{lot}/chat-messages', [ExchangeLotController::class, 'chatMessages']);
+        Route::post('/{lot}/chat-messages/{message}/verify-crypto-tx', [ExchangeLotController::class, 'verifyChatMessageCryptoTx']);
         Route::get('/{lot}/dispute-status', [ExchangeLotController::class, 'disputeStatus']);
         Route::post('/{lot}/arbiter-message', [ExchangeLotController::class, 'requestArbiterMessage']);
         Route::get('/{lot}/deal-message-status', [ExchangeLotController::class, 'dealMessageStatus']);
