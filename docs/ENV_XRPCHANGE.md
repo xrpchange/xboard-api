@@ -27,6 +27,26 @@ cp .env.xrpchange.example .env.xrpchange
 
 Остальные ключи — по необходимости, как в основном `.env`. Выбор Core URL по `environment` токена: `docs/ESCROW_TOKEN_AUTHENTICATION.md`.
 
+## Миграции и сиды (CLI на этом ПК)
+
+Веб-запросы к `api.xrpchange.site` подхватывают `.env.xrpchange` через `APP_ENV` в Apache. **Artisan** по умолчанию читает только `.env` — для БД второго узла (`xboard2` и т.п.) указывайте окружение явно:
+
+```bash
+cd xboard-api
+php artisan migrate --env=xrpchange
+# при необходимости:
+php artisan db:seed --env=xrpchange
+```
+
+Проверка: в выводе migrate не должно быть таблиц из «основной» схемы, если вы мигрируете только эмулятор; `DB_DATABASE` в `.env.xrpchange` должен отличаться от `.env` (например `xboard` vs `xboard2`).
+
+После добавления миграций в репозиторий прогоняйте **оба** окружения при локальной разработке dual-exchange:
+
+```bash
+php artisan migrate          # .env → xboard (xdexboard)
+php artisan migrate --env=xrpchange   # .env.xrpchange → xboard2 (xrpchange.site)
+```
+
 ## Apache (пример, local)
 
 ```apache
