@@ -157,7 +157,16 @@ Mail shows an environment pill (**Production** / **Sandbox**) and **Verified whe
 
 Buyer fiat leg (`receipt_confirmation`) and bank-only second leg (`seller_transfer_tx` with `receipt_links` and no `tx_number`) are listed as **bank receipt proof** — receipt buttons only.
 
-`Compensate buyer` / `Deny buyer` links remain acknowledgment-only (no payout automation); operator uses explorer/Core results plus full chat digest to decide.
+**Compensate buyer** / **Deny buyer** — signed GET shows a confirmation form; signed POST (same URL, CSRF) runs only from the mail link:
+
+| Button | POST effect |
+|--------|-------------|
+| **Compensate buyer** | `DealReservationPayoutToBuyerService` → Core `POST /api/deal-payout-to-buyer-from-reservation` (seller reservation, buyer `crypto_address` on pending sale), then best-effort `POST /api/complete-reservation` with seller token from `exchange_lots.wallet_address` (same as `seller-crypto-payout-to-buyer`). On success: `deal_completed_seller` chat row + close `deal_disputes` (`favor_buyer`, `human_admin`) + operator summary in chat. On Core payout failure: error page, dispute **stays open**. |
+| **Deny buyer** | Close active disputes (`favor_seller`) + operator chat row — **no** payout. |
+
+Implementation: `ArbiterOperatorSignedActionService`, `DealReservationPayoutToBuyerService`, `ArbiterOperatorActionController`. Same Core payout path as `ARBITER_AUTO_CORE_PAYOUT_ON_FAVOR_BUYER` / arbiter AI `favor_buyer`.
+
+**Block buyer/seller internal mail** — signed GET form + POST sets the participant lot mailbox daily counter to the cap for the UTC day (`DealInternalMailRateLimitService::exhaustForUtcDay`).
 
 ### Receipt PDF (text for all; binary only when text exists)
 
@@ -337,7 +346,7 @@ Prefer **installing the CA** over `ARBITER_GIGACHAT_VERIFY_SSL=false`. Use `fals
 | `ARBITER_RESOLVE_ON_FAVOR_BUYER` | `true` | When LLM `verdict` is `favor_buyer` and `arbiter_status` is `in_review`, close `deal_disputes` so seller can use normal crypto payout (unless auto Core payout is on and fails). |
 | `ARBITER_RESOLVE_ON_FAVOR_SELLER` | `true` | Same for `favor_seller`. |
 | `ARBITER_FORCE_CLOSE_BUYER_DISPUTE_ON_FAVOR_SELLER` | `true` | If enabled, AI verdict `favor_seller` closes buyer-opened disputes even when generic `ARBITER_RESOLVE_ON_FAVOR_SELLER` is disabled. |
-| `ARBITER_AUTO_CORE_PAYOUT_ON_FAVOR_BUYER` | `false` | When `true`, after `favor_buyer` Laravel calls Core `POST /api/deal-payout-to-buyer-from-reservation` (seller token loaded from `reservations` / `test_reservations`; same `X-Core-Key` as other API-only Core calls). |
+| `ARBITER_AUTO_CORE_PAYOUT_ON_FAVOR_BUYER` | `false` | When `true`, after `favor_buyer` Laravel calls Core `POST /api/deal-payout-to-buyer-from-reservation` (seller token loaded from `reservations` / `test_reservations`; same `X-Core-Key` as other API-only Core calls), then best-effort `complete-reservation`. |
 | `ARBITER_GIGACHAT_AUTHORIZATION_KEY` | *(empty)* | Sber **authorization key** (see studio quickstart): paste Base64 value only, or full `Basic …` / `Bearer …` header value. |
 | `ARBITER_GIGACHAT_SCOPE` | `GIGACHAT_API_PERS` | OAuth scope (`GIGACHAT_API_B2B` / `GIGACHAT_API_CORP` for legal entities per Sber docs). |
 | `ARBITER_GIGACHAT_OAUTH_URL` | `https://ngw.devices.sberbank.ru:9443/api/v2/oauth` | Token endpoint. |
