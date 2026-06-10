@@ -26,8 +26,32 @@ final class DealCryptoTxCoreVerifier
      *   error: array{message:string,error_code:string}|null
      * }
      */
+    /**
+     * @param  array<string, mixed>  $dealTagData
+     * @return array<string, mixed>
+     */
+    public function normalizeCryptoProofTag(array $dealTagData): array
+    {
+        $tagType = trim((string) ($dealTagData['t'] ?? ''));
+        if ($tagType === 'deal_completed_seller') {
+            return array_merge($dealTagData, [
+                't' => 'seller_transfer_tx',
+                'tx_number' => trim((string) ($dealTagData['crypto_payout_tx'] ?? '')),
+            ]);
+        }
+        if ($tagType === 'operator_mail_reply' && trim((string) ($dealTagData['crypto_payout_tx'] ?? '')) !== '') {
+            return array_merge($dealTagData, [
+                't' => 'seller_transfer_tx',
+                'tx_number' => trim((string) $dealTagData['crypto_payout_tx']),
+            ]);
+        }
+
+        return $dealTagData;
+    }
+
     public function verifyDealTag(ExchangeLot $lot, array $dealTagData): array
     {
+        $dealTagData = $this->normalizeCryptoProofTag($dealTagData);
         $tagType = trim((string) ($dealTagData['t'] ?? ''));
         if (! in_array($tagType, ['buyer_crypto_tx', 'seller_transfer_tx'], true)) {
             return [
@@ -214,22 +238,75 @@ final class DealCryptoTxCoreVerifier
             ];
         }
 
-        if (($tag['t'] ?? '') === 'deal_completed_seller') {
-            $tag = array_merge($tag, [
-                't' => 'seller_transfer_tx',
-                'tx_number' => (string) ($tag['crypto_payout_tx'] ?? ''),
-            ]);
-        }
-
-        $result = $this->verifyDealTag($lot, $tag);
+        $storedCheck = is_array($tag['core_tx_check'] ?? null) ? $tag['core_tx_check'] : null;
+        $normalizedTag = $this->normalizeCryptoProofTag($tag);
+        $result = $this->verifyDealTag($lot, $normalizedTag);
 
         return array_merge($result, [
             'proof' => [
                 'message_id' => (int) $row->id,
                 'sender_side' => (string) ($row->sender_side ?? ''),
                 'tag_type' => (string) ($tag['t'] ?? ''),
+                'tx_id' => $this->txRefFromTag($normalizedTag),
+                'stored_core_tx_check' => $storedCheck,
             ],
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $tag
+     */
+    public function txRefFromTag(array $tag): string
+    {
+        $tag = $this->normalizeCryptoProofTag($tag);
+        $tagType = trim((string) ($tag['t'] ?? ''));
+
+        return trim((string) match ($tagType) {
+            'buyer_crypto_tx' => $tag['tx_ref'] ?? $tag['transaction_id'] ?? '',
+            'seller_transfer_tx' => $tag['tx_number'] ?? $tag['transaction_id'] ?? $tag['tx_ref'] ?? '',
+            default => '',
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $result  output of verifyChatMessage
+     * @return array<string, mixed>
+     */
+    public function apiPayloadFromResult(ExchangeLot $lot, array $result): array
+    {
+        $proof = is_array($result['proof'] ?? null) ? $result['proof'] : [];
+        $verification = is_array($result['verification'] ?? null) ? $result['verification'] : [];
+        $txId = trim((string) ($proof['tx_id'] ?? $verification['transaction_id'] ?? ''));
+        $cryptoType = trim((string) ($verification['crypto_type'] ?? ''));
+        if ($cryptoType === '') {
+            try {
+                $cryptoType = match ((string) ($proof['tag_type'] ?? '')) {
+                    'buyer_crypto_tx' => DealEscrowCryptoType::buyerCoreType($lot),
+                    default => DealEscrowCryptoType::sellerCoreType($lot),
+                };
+            } catch (\InvalidArgumentException) {
+                $cryptoType = '';
+            }
+        }
+
+        $environment = (bool) $lot->is_test
+            ? ApiDeploymentEnvironment::SANDBOX
+            : ApiDeploymentEnvironment::PRODUCTION;
+        $explorerUrl = $txId !== '' && $cryptoType !== ''
+            ? \App\Support\CryptoTxExplorerUrl::forTx($cryptoType, $txId, $environment)
+            : null;
+
+        return [
+            'verified' => (bool) ($result['verified'] ?? false),
+            'transaction_id' => $txId !== '' ? $txId : null,
+            'crypto_type' => $cryptoType !== '' ? $cryptoType : null,
+            'explorer_url' => $explorerUrl,
+            'verification' => $verification,
+            'stored_check' => is_array($proof['stored_core_tx_check'] ?? null) ? $proof['stored_core_tx_check'] : null,
+            'message_id' => isset($proof['message_id']) ? (int) $proof['message_id'] : null,
+            'tag_type' => $proof['tag_type'] ?? null,
+            'error' => is_array($result['error'] ?? null) ? $result['error'] : null,
+        ];
     }
 
     private function expectedAddress(ExchangeLot $lot, string $tagType): ?string
