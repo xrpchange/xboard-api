@@ -36,11 +36,15 @@ class ArbiterOperatorEscalationMail extends Mailable
         $requesterSide = is_string($this->digest['requester_side'] ?? null)
             ? (string) $this->digest['requester_side']
             : null;
+        $dealTransactionId = isset($this->digest['deal_transaction_id'])
+            ? trim((string) $this->digest['deal_transaction_id'])
+            : null;
         $subject = ArbiterOperatorEscalationDigest::emailSubject(
             $this->lotId,
             $this->mailEscalationKind,
             $this->policyReasonCode,
             $requesterSide,
+            $dealTransactionId !== '' ? $dealTransactionId : null,
         );
 
         return new Envelope(

@@ -29,6 +29,7 @@ final class ArbiterDealContextPlainText
             'Dispute context:',
             '- requester_side: '.(string) ($context['requester_side'] ?? 'unknown'),
             '- lot_id: '.(string) ($context['lot_id'] ?? ''),
+            '- deal_transaction_id: '.(string) ($context['deal_transaction_id'] ?? 'not_set'),
             '- message: '.(string) ($context['message'] ?? ''),
             '- bank_timezone: '.($bankTimezone !== '' ? $bankTimezone : 'not_provided'),
             '- payment_time_raw: '.($originalTime !== '' ? $originalTime : 'not_provided'),
