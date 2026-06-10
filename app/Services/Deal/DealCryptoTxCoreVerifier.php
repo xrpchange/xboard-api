@@ -120,14 +120,15 @@ final class DealCryptoTxCoreVerifier
             $payload['expected_amount'] = $expectedAmount;
         }
 
-        $coreCfg = ApiDeploymentEnvironment::coreHttpConfig();
+        $deploymentEnvironment = self::deploymentEnvironmentForLot($lot);
+        $coreCfg = ApiDeploymentEnvironment::coreHttpConfig($deploymentEnvironment);
         $coreUrl = $coreCfg['url'];
         if ($coreUrl === '') {
             return [
                 'verified' => false,
                 'verification' => [],
                 'error' => [
-                    'message' => 'Core API URL is not configured for '.ApiDeploymentEnvironment::label().'.',
+                    'message' => 'Core API URL is not configured for '.ApiDeploymentEnvironment::label($deploymentEnvironment).'.',
                     'error_code' => 'core_not_configured',
                 ],
             ];
@@ -186,7 +187,8 @@ final class DealCryptoTxCoreVerifier
             'expected' => is_array($data['expected'] ?? null) ? $data['expected'] : [],
             'crypto_type' => $cryptoType,
             'transaction_id' => $txRef,
-            'deployment_environment' => ApiDeploymentEnvironment::current(),
+            'deployment_environment' => $deploymentEnvironment,
+            'blockchain_network' => self::blockchainNetworkId($cryptoType, $deploymentEnvironment),
         ];
 
         return [
@@ -365,6 +367,39 @@ final class DealCryptoTxCoreVerifier
      * @param  array<string, mixed>  $checks
      * @return array<string, mixed>
      */
+    public static function deploymentEnvironmentForLot(ExchangeLot $lot): string
+    {
+        return (bool) $lot->is_test
+            ? ApiDeploymentEnvironment::SANDBOX
+            : ApiDeploymentEnvironment::PRODUCTION;
+    }
+
+    public static function blockchainNetworkId(string $cryptoType, string $deploymentEnvironment): ?string
+    {
+        $type = strtolower(trim($cryptoType));
+        $sandbox = $deploymentEnvironment === ApiDeploymentEnvironment::SANDBOX;
+        if ($type === 'btc') {
+            return $sandbox ? 'btc_testnet' : 'btc_mainnet';
+        }
+        if ($type === 'xmr') {
+            return $sandbox ? 'xmr_stagenet' : 'xmr_mainnet';
+        }
+        if ($type === 'xrp') {
+            return $sandbox ? 'xrp_testnet' : 'xrp_mainnet';
+        }
+        if (str_contains($type, 'tron')) {
+            return $sandbox ? 'tron_nile' : 'tron_mainnet';
+        }
+        if (str_contains($type, 'polygon')) {
+            return $sandbox ? 'polygon_amoy' : 'polygon_mainnet';
+        }
+        if (str_contains($type, 'stellar')) {
+            return $sandbox ? 'stellar_testnet' : 'stellar_mainnet';
+        }
+
+        return null;
+    }
+
     private static function supportsExpectedAddressCheck(string $cryptoType): bool
     {
         // Monero hides recipient addresses on-chain; only tx existence + amount are verifiable.
