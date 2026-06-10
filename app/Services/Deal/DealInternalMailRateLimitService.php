@@ -22,14 +22,31 @@ final class DealInternalMailRateLimitService
         return $this->dailyLimit() > 0;
     }
 
+    /**
+     * Normalize lot mailbox email for counter keying.
+     *
+     * Do not use FILTER_VALIDATE_EMAIL: RFC local-part length (64) rejects real lot mailboxes
+     * (e.g. xmr_{primary} can exceed 200 characters in local_part).
+     */
     public function normalizeMailboxEmail(?string $email): ?string
     {
         $normalized = strtolower(trim((string) $email));
-        if ($normalized === '' || ! filter_var($normalized, FILTER_VALIDATE_EMAIL)) {
+        if ($normalized === '') {
             return null;
         }
 
-        return $normalized;
+        if (! str_contains($normalized, '@')) {
+            return null;
+        }
+
+        [$localPart, $domain] = explode('@', $normalized, 2);
+        $localPart = trim($localPart);
+        $domain = trim($domain);
+        if ($localPart === '' || $domain === '' || str_contains($localPart, '@') || str_contains($domain, '@')) {
+            return null;
+        }
+
+        return $localPart.'@'.$domain;
     }
 
     public function sentCountToday(string $email): int
