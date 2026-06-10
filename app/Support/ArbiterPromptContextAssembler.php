@@ -42,6 +42,7 @@ final class ArbiterPromptContextAssembler
             'deal_milestones_digest' => DealArbitrationMilestonesDigest::forLot($lot),
             'recent_chat_digest' => self::buildChatDigest($lot, $side),
             'declared_transactions_digest' => DealArbitrationTxProofCatalog::formatDigestLines($txProofs),
+            'deal_transaction_id' => $lot->primaryDealTransactionId(),
         ];
     }
 

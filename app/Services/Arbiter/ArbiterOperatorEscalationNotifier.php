@@ -110,6 +110,7 @@ final class ArbiterOperatorEscalationNotifier
             $lot = ExchangeLot::query()->find($lotId);
             if ($lot !== null) {
                 $context['tx_proofs'] = DealArbitrationTxProofCatalog::forLot($lot, $environment);
+                $context['deal_transaction_id'] = $lot->primaryDealTransactionId();
             }
         } catch (\Throwable $e) {
             Log::warning('[arbiter] tx_proofs_catalog_skip', [

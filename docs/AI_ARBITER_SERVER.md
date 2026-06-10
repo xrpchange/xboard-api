@@ -82,7 +82,7 @@ Each side (buyer/seller) in an active dispute cycle:
 
 1. Must post **at least one chat message** as that side before the arbiter button works (`422` + `dispute_participant_comment_required`).
 2. **First** press in the cycle → **AI** (`arbiter_message`, consumes invocation budget when cap enabled) — **skipped when `ARBITER_AI_ENABLED=false`** (goes straight to step 3).
-3. **Second** press (after their AI reply, before operator answers in chat) — **or first press when AI is disabled** → **no LLM**; `ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('participant_requested_review', …)` and a **system** chat row with `deal_tag.t = operator_escalation_requested` (`requested_by`, `operator_escalation_email_sent`). Operator email subject includes **Buyer** or **Seller** (who pressed).
+3. **Second** press (after their AI reply, before operator answers in chat) — **or first press when AI is disabled** → **no LLM**; `ArbiterOperatorEscalationNotifier::notifyPolicyManualReview('participant_requested_review', …)` and a **system** chat row with `deal_tag.t = operator_escalation_requested` (`requested_by`, `operator_escalation_email_sent`). Operator email subject includes **lot id**, **deal transaction id** (`transactions.id` for the active buyer leg when known), and **Buyer** or **Seller** (who pressed), e.g. `[XBoard] Dispute lot 12 tx 456 — Buyer requested operator review`.
 4. Further presses until `operator_mail_reply` → `422` + `arbiter_wait_for_operator_reply`.
 5. Cycle resets after the latest `operator_mail_reply` (or from `deal_disputes.opened_at` if none).
 

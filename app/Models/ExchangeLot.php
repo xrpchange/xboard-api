@@ -199,6 +199,17 @@ class ExchangeLot extends Model
         return $query->orderByDesc('id')->first();
     }
 
+    /**
+     * Laravel {@see Transaction} id for the active deal leg (latest row for this lot / current buyer).
+     * Same selection as {@see latestReceiptTransaction()}.
+     */
+    public function primaryDealTransactionId(): ?int
+    {
+        $tx = $this->latestReceiptTransaction();
+
+        return $tx !== null ? (int) $tx->id : null;
+    }
+
     public function dealChatMessages(): HasMany
     {
         return $this->hasMany(DealChatMessage::class);

@@ -27,6 +27,7 @@ final class ArbiterOperatorEscalationDigest
         };
 
         $lotId = trim((string) ($context['lot_id'] ?? ''));
+        $dealTransactionId = trim((string) ($context['deal_transaction_id'] ?? ''));
         $message = trim((string) ($context['message'] ?? ''));
         $dealState = trim((string) ($context['deal_machine_state'] ?? ''));
         $chatDigest = trim((string) ($context['recent_chat_digest'] ?? ''));
@@ -63,6 +64,7 @@ final class ArbiterOperatorEscalationDigest
         $facts = [
             ['label' => 'Deal environment', 'value' => $envLabel],
             ['label' => 'Dispute lot', 'value' => $lotId !== '' ? $lotId : '—'],
+            ['label' => 'Deal transaction', 'value' => $dealTransactionId !== '' ? $dealTransactionId : '—'],
             [
                 'label' => $policyReasonCode === 'participant_requested_review' ? 'Requested by' : 'Opened by',
                 'value' => $sideLabel,
@@ -127,6 +129,7 @@ final class ArbiterOperatorEscalationDigest
             'reason_label' => $reasonLabel,
             'policy_reason_code' => $mailEscalationKind === 'policy_manual' ? trim($policyReasonCode) : '',
             'requester_side' => $side,
+            'deal_transaction_id' => $dealTransactionId,
             'deployment_environment_label' => $envLabel,
             'facts' => $facts,
             'sections' => $sections,
@@ -258,10 +261,11 @@ final class ArbiterOperatorEscalationDigest
         string $mailEscalationKind,
         string $policyReasonCode,
         ?string $requesterSide = null,
+        ?string $dealTransactionId = null,
     ): string {
-        $lot = trim($lotId) !== '' ? trim($lotId) : '?';
+        $ref = self::disputeRefLabel($lotId, $dealTransactionId);
         if ($mailEscalationKind === 'image_only_receipt') {
-            return '[XBoard] Dispute on lot '.$lot.' — receipt needs human review';
+            return '[XBoard] '.$ref.' — receipt needs human review';
         }
         if ($policyReasonCode === 'participant_requested_review') {
             $side = match (strtolower(trim((string) $requesterSide))) {
@@ -270,10 +274,18 @@ final class ArbiterOperatorEscalationDigest
                 default => 'Participant',
             };
 
-            return '[XBoard] Dispute on lot '.$lot.' — '.$side.' requested operator review';
+            return '[XBoard] '.$ref.' — '.$side.' requested operator review';
         }
 
-        return '[XBoard] Dispute on lot '.$lot.' — '.self::policySubjectFragment($policyReasonCode);
+        return '[XBoard] '.$ref.' — '.self::policySubjectFragment($policyReasonCode);
+    }
+
+    public static function disputeRefLabel(string $lotId, ?string $dealTransactionId = null): string
+    {
+        $lot = trim($lotId) !== '' ? trim($lotId) : '?';
+        $tx = trim((string) ($dealTransactionId ?? ''));
+
+        return $tx !== '' ? 'Dispute lot '.$lot.' tx '.$tx : 'Dispute on lot '.$lot;
     }
 
     private static function policySubjectFragment(string $code): string
