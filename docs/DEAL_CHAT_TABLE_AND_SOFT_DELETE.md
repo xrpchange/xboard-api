@@ -60,9 +60,46 @@ Email-based inserts use the same `body`, `deal_tag`, and sender/recipient as the
 |-------|--------|---------|
 | Max body length (characters) | `DEAL_CHAT_MAX_MESSAGE_LENGTH` | **1000** — validated on `send-message*` / payment-details APIs; client caps input to the same value. |
 | Max rows per lot | `DEAL_CHAT_MAX_MESSAGES` | **1000** — oldest rows pruned after insert. |
-| Internal mail sends per lot mailbox per **UTC day** | `DEAL_INTERNAL_MAIL_DAILY_LIMIT` | **300** — incremented in `deal_internal_mail_daily_counters` **only after successful SMTP** for buyer/seller internal deal mail (`sendMessageToSeller` except **`start_deal`**, `sendMessageToBuyer`, `sendPaymentDetails`, `buyerSetCryptoDestination`). Failed sends and validation errors do not consume the cap. **422** `deal_internal_mail_daily_limit_reached`. Support reset: `php artisan deal:internal-mail-counter:clear {email}`. Not applied to **`start_deal`**, AI arbiter, operator replies, or automated payout completion mails. |
+| Internal mail sends per lot mailbox per **UTC day** | `DEAL_INTERNAL_MAIL_DAILY_LIMIT` | **300** — incremented in `deal_internal_mail_daily_counters` **only after successful SMTP** for buyer/seller internal deal mail (`sendMessageToSeller` except **`start_deal`**, `sendMessageToBuyer`, `sendPaymentDetails`, `buyerSetCryptoDestination`). Failed sends and validation errors do not consume the cap. **422** `deal_internal_mail_daily_limit_reached`. Not applied to **`start_deal`**, AI arbiter, operator replies, or automated payout completion mails. |
 
 **Operator anti-flood (24h UTC):** signed links in arbiter escalation mail (`block_buyer_internal_mail` / `block_seller_internal_mail`) set `sent_count` to the daily limit for that participant’s deal mailbox — no separate ban flag. Counter resets on the next UTC calendar day.
+
+#### Support: reset internal mail counter (`deal:internal-mail-counter:clear`)
+
+Use when a participant hits **`deal_internal_mail_daily_limit_reached`** (HTTP **422**) but support must unblock the mailbox before the next UTC midnight — for example after a counting bug, a false-positive cap, or operator mistake.
+
+| Item | Detail |
+|------|--------|
+| **Command** | `php artisan deal:internal-mail-counter:clear {email}` |
+| **Class** | `App\Console\Commands\ClearDealInternalMailCounterCommand` |
+| **Argument `{email}`** | **Sender lot mailbox** email (normalized to lowercase). This is the mailbox whose **outbound** internal deal mail is capped — not `seller_notification_email` / `buyer_notification_email`. |
+| **Scope** | Deletes the row in `deal_internal_mail_daily_counters` for `{email}` and **today’s UTC calendar day** only (`day` = `YYYY-MM-DD` in UTC). Does not change limits for other days or other mailboxes. |
+| **Exit** | `0` — row deleted, or no row for today (already clear). `1` — invalid email argument. |
+
+**Which email to pass**
+
+| Side sending internal mail | Typical `{email}` source |
+|----------------------------|--------------------------|
+| Seller → buyer (`sendMessageToBuyer`, `sendPaymentDetails`) | Seller lot mailbox: `lot_mailboxes` for the lot’s `wallet_address`, else `exchange_lots.seller_lot_email` |
+| Buyer → seller (`sendMessageToSeller`, `buyerSetCryptoDestination`) | Buyer lot mailbox: `exchange_lots.buyer_lot_email` |
+
+**Production example** (xdexboard API on `server@xrpchange.site`):
+
+```bash
+ssh server@xrpchange.site 'cd /var/www/xboard-api && php artisan deal:internal-mail-counter:clear "seller-lot-abc@mail.xdexboard.com"'
+```
+
+**Inspect before/after** (optional, MySQL):
+
+```sql
+SELECT email, day, sent_count, last_sent_at
+FROM deal_internal_mail_daily_counters
+WHERE email = 'seller-lot-abc@mail.xdexboard.com'
+ORDER BY day DESC
+LIMIT 5;
+```
+
+**Caution:** Clearing also removes an **operator block** implemented via `block_*_internal_mail` (that path sets `sent_count` to the daily limit for the UTC day). If the block was intentional, do not clear — wait until UTC midnight or re-apply the operator action.
 
 External notification email uses a separate counter (`email_test_counters`, `MAIL_TEST_EMAIL_DAILY_LIMIT`, default **30** per recipient per **UTC day**). Applies to `seller_notification_email` / `buyer_notification_email` on `start_deal` and `send-test-notification-email`. **Not** mailbox verification codes (separate `verification_code_email_limit_exceeded`).
 
@@ -105,6 +142,7 @@ So the server marks the chat as cleared **for that side only** when the user cle
 
 - **Create table:** `database/migrations/2026_03_14_000001_create_deal_chat_messages_table.php` — creates the table (including legacy `deleted_at` from `softDeletes()`).
 - **Per-side columns:** `database/migrations/2026_03_15_000001_add_deleted_by_seller_buyer_to_deal_chat_messages.php` — adds `deleted_by_seller_at` and `deleted_by_buyer_at`.
+- **Internal mail daily counters:** `database/migrations/2026_06_09_000001_create_deal_internal_mail_daily_counters_table.php` — `email`, `day` (UTC date), `sent_count`; unique `(email, day)`.
 
 Run: `php artisan migrate`.
 
