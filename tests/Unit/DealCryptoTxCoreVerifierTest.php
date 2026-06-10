@@ -93,6 +93,21 @@ class DealCryptoTxCoreVerifierTest extends TestCase
         $this->assertStringContainsString('amount does not match', $message);
     }
 
+    public function test_deployment_environment_follows_lot_is_test(): void
+    {
+        $sandboxLot = new \App\Models\ExchangeLot(['is_test' => true]);
+        $prodLot = new \App\Models\ExchangeLot(['is_test' => false]);
+
+        $this->assertSame('sandbox', DealCryptoTxCoreVerifier::deploymentEnvironmentForLot($sandboxLot));
+        $this->assertSame('production', DealCryptoTxCoreVerifier::deploymentEnvironmentForLot($prodLot));
+    }
+
+    public function test_blockchain_network_id_for_usdt_tron_sandbox(): void
+    {
+        $network = DealCryptoTxCoreVerifier::blockchainNetworkId('usdt_tron', 'sandbox');
+        $this->assertSame('tron_nile', $network);
+    }
+
     public function test_xmr_skips_expected_address_check(): void
     {
         $method = new \ReflectionMethod(DealCryptoTxCoreVerifier::class, 'supportsExpectedAddressCheck');
