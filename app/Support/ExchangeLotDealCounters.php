@@ -26,7 +26,8 @@ final class ExchangeLotDealCounters
     }
 
     /**
-     * Dispute resolved in buyer favor with seller-escrow compensation (operator or auto payout).
+     * Operator paid buyer from seller escrow reservation after dispute (compensate_buyer / AI auto payout).
+     * Not incremented on deny_buyer (favor_seller) — that increments buyer email bad_deals_count instead.
      */
     public static function incrementBadDeal(int $lotId): void
     {

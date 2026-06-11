@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\Transaction;
+use App\Support\BuyerExternalEmailReputation;
 use App\Services\SandboxVirtualBankService;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -83,6 +84,14 @@ class ExchangeLotResource extends JsonResource
             [$share, $ip] = self::buyerConnectionInfoForSeller($this->resource);
             $out['buyer_ip_share_with_seller'] = $share;
             $out['buyer_last_seen_ip'] = ($share && $ip !== null && $ip !== '') ? (string) $ip : null;
+
+            $buyerReputation = BuyerExternalEmailReputation::countsForEmail(
+                is_string($this->buyer_notification_email) ? $this->buyer_notification_email : null
+            );
+            if ($buyerReputation !== null) {
+                $out['buyer_completed_deals_count'] = $buyerReputation['completed_deals_count'];
+                $out['buyer_bad_deals_count'] = $buyerReputation['bad_deals_count'];
+            }
         }
 
         return $out;

@@ -10,6 +10,7 @@ use App\Services\Deal\DealReservationPayoutToBuyerService;
 use App\Support\ApiDeploymentEnvironment;
 use App\Support\CryptoTxExplorerUrl;
 use App\Support\DealEscrowCryptoType;
+use App\Support\BuyerExternalEmailReputation;
 use App\Support\ExchangeLotDealCounters;
 use Illuminate\Support\Facades\Log;
 
@@ -117,6 +118,10 @@ final class ArbiterOperatorSignedActionService
                 $dispute->last_activity_at = now();
                 $dispute->save();
                 $closedCount++;
+            }
+
+            if ($verdict === 'favor_seller' && $closedCount > 0) {
+                BuyerExternalEmailReputation::incrementBadDealForLot($lot);
             }
         }
 
