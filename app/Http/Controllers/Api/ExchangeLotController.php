@@ -837,8 +837,12 @@ class ExchangeLotController extends Controller
             );
         }
 
-        // Sorting
-        $query->orderBy('created_at', 'desc');
+        // Sorting (public search; seller wallet_hash queries keep the same order)
+        [$sortBy, $sortDir] = \App\Support\ExchangeLotSearchSort::resolveFromRequest($request);
+        $query->orderBy($sortBy, $sortDir);
+        if ($sortBy !== 'id') {
+            $query->orderBy('id', $sortDir);
+        }
 
         Log::info('[exchange-lots] FILTERS', [
             'from_currency' => $request->filled('from_currency'),
@@ -856,7 +860,8 @@ class ExchangeLotController extends Controller
             'wallet_hashes_count' => count($hashes),
         ]);
 
-        $lots = $query->paginate($request->get('per_page', 20));
+        $perPage = \App\Support\ExchangeLotSearchSort::perPageFromRequest($request);
+        $lots = $query->paginate($perPage);
         $items = $lots->items();
         Log::info('[exchange-lots] RESPONSE', [
             'returned_count' => count($items),
@@ -888,6 +893,15 @@ class ExchangeLotController extends Controller
         return response()->json([
             'success' => true,
             'data' => \App\Http\Resources\ExchangeLotResource::collection($lots->items()),
+            'meta' => [
+                'current_page' => $lots->currentPage(),
+                'per_page' => $lots->perPage(),
+                'total' => $lots->total(),
+                'last_page' => $lots->lastPage(),
+                'has_more' => $lots->hasMorePages(),
+                'sort_by' => $sortBy,
+                'sort_dir' => $sortDir,
+            ],
         ]);
     }
 
