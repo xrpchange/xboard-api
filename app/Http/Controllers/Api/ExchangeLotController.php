@@ -3073,6 +3073,7 @@ class ExchangeLotController extends Controller
                 'error_code' => 'no_buyer_in_deal',
             ], 400);
         }
+        $awaitingAmicableCloseAfterCryptoPayout = DealSaleTransactionCompletion::lotHasCompletedCryptoPayoutSaleWithBuyerStillBound($lot);
         $pendingExists = Transaction::query()
             ->where('exchange_lot_id', $lot->id)
             ->where('buyer_lot_email', $buyerEmail)
@@ -3080,7 +3081,6 @@ class ExchangeLotController extends Controller
             ->where('status', 'pending')
             ->exists();
         if (! $pendingExists) {
-            $awaitingAmicableCloseAfterCryptoPayout = DealSaleTransactionCompletion::lotHasCompletedCryptoPayoutSaleWithBuyerStillBound($lot);
             if (! $awaitingAmicableCloseAfterCryptoPayout) {
                 $completedExists = Transaction::query()
                     ->where('exchange_lot_id', $lot->id)
@@ -3141,12 +3141,13 @@ class ExchangeLotController extends Controller
                     'error_code' => 'seller_completion_duplicate',
                 ], 409);
             }
+            // LOT-002: seller crypto payout posts deal_completed_seller + crypto_payout_tx but the lot
+            // stays open until buyer confirms or seller posts deal_completed_seller_timeout.
             if ($t === 'deal_completed_seller' && ! empty($d['crypto_payout_tx'])) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Deal already completed via seller crypto payout.',
-                    'error_code' => 'seller_completion_already_finalized',
-                ], 403);
+                if ($buyerReceivesCrypto) {
+                    $anchor = $row->created_at;
+                }
+                continue;
             }
             if ($t === 'seller_received_funds') {
                 $lastTimeoutMinutesFromSellerFunds = isset($d['timeout_minutes']) ? (int) $d['timeout_minutes'] : null;
@@ -3174,6 +3175,17 @@ class ExchangeLotController extends Controller
             ->where('status', 'pending')
             ->orderByDesc('id')
             ->first();
+        if ($transaction === null && $awaitingAmicableCloseAfterCryptoPayout) {
+            $transaction = Transaction::query()
+                ->where('exchange_lot_id', $lot->id)
+                ->where('buyer_lot_email', $buyerEmail)
+                ->where('tx_type', 'sale')
+                ->where('status', 'completed')
+                ->whereNotNull('seller_crypto_payout_tx_hash')
+                ->where('seller_crypto_payout_tx_hash', '!=', '')
+                ->orderByDesc('id')
+                ->first();
+        }
         $timeoutMinutes = (int) ($transaction?->transaction_timeout_minutes ?? 0);
         if ($timeoutMinutes <= 0) {
             $timeoutMinutes = (int) ($lastTimeoutMinutesFromSellerFunds ?? \App\Support\BuyerPaymentTimeoutMinutes::effectiveForLot(
