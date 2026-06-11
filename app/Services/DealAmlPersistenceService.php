@@ -41,6 +41,33 @@ class DealAmlPersistenceService
     }
 
     /**
+     * First seller AML screening at Core reservation (send-payment-details).
+     *
+     * @param  array<string, mixed>|null  $responseBody
+     */
+    public function handleReservationCoreResponse(
+        ExchangeLot $lot,
+        Transaction $transaction,
+        string $escrowTokenJson,
+        string $cryptoType,
+        ?string $network,
+        int $httpStatus,
+        ?array $responseBody,
+    ): void {
+        $this->handlePayoutCoreResponse(
+            $lot,
+            $transaction,
+            'seller_reservation',
+            'seller',
+            $escrowTokenJson,
+            $cryptoType,
+            $network,
+            $httpStatus,
+            $responseBody,
+        );
+    }
+
+    /**
      * @param  array<string, mixed>|null  $responseBody
      */
     public function handlePayoutCoreResponse(
