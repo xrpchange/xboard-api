@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Services\CoreReservationCleanupService;
 use App\Services\ReceiptAttachmentStorage;
+use App\Support\BuyerExternalEmailReputation;
 use App\Support\ExchangeLotDealCounters;
 use App\Support\SellerEscrowReservedAmount;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -35,6 +36,7 @@ class Transaction extends Model
         'token',
         'exchange_lot_id',
         'buyer_lot_email',
+        'buyer_notification_email',
         'bank_id',
         'bank_details',
         'crypto_address',
@@ -181,5 +183,6 @@ class Transaction extends Model
             ->where('id', $lotId)
             ->increment('sold_crypto_amount', $amount);
         ExchangeLotDealCounters::incrementCompletedDeal($lotId);
+        BuyerExternalEmailReputation::incrementCompletedDealForTransaction($transaction);
     }
 } 

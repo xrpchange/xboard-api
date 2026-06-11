@@ -25,6 +25,7 @@ use App\Services\EscrowTokenValidationService;
 use App\Services\ReceiptAttachmentStorage;
 use App\Services\SandboxVirtualBankService;
 use App\Support\ArbiterPromptContextAssembler;
+use App\Support\BuyerExternalEmailReputation;
 use App\Support\ArbiterReceiptPdfResolver;
 use App\Support\ClientWebOrigin;
 use App\Support\DealBuyerEscrowTokenHash;
@@ -4575,6 +4576,9 @@ class ExchangeLotController extends Controller
             'amount' => $amount,
             'exchange_lot_id' => $lot->id,
             'buyer_lot_email' => $buyerEmail,
+            'buyer_notification_email' => BuyerExternalEmailReputation::normalizeEmail(
+                is_string($lot->buyer_notification_email) ? $lot->buyer_notification_email : null
+            ),
             'buyer_seen_ip' => $buyerSeenIpForSale,
             'buyer_ip_share_with_seller' => $buyerIpShareForSale,
             'bank_id' => $bankId,
@@ -6003,22 +6007,31 @@ class ExchangeLotController extends Controller
         string $resolution,
         ?string $arbiterVerdict = null
     ): void {
-        DealDispute::query()
+        $active = DealDispute::query()
             ->where('exchange_lot_id', $lot->id)
             ->whereIn('status', ['opened', 'in_review'])
-            ->get()
-            ->each(function (DealDispute $dispute) use ($resolvedBy, $resolution, $arbiterVerdict): void {
-                $dispute->status = 'closed';
-                $dispute->resolved_by = $resolvedBy;
-                $dispute->resolution = $resolution;
-                if ($arbiterVerdict !== null && $arbiterVerdict !== '') {
-                    $dispute->arbiter_verdict = $arbiterVerdict;
-                }
-                $dispute->resolved_at = now();
-                $dispute->closed_at = now();
-                $dispute->last_activity_at = now();
-                $dispute->save();
-            });
+            ->get();
+
+        if ($active->isEmpty()) {
+            return;
+        }
+
+        foreach ($active as $dispute) {
+            $dispute->status = 'closed';
+            $dispute->resolved_by = $resolvedBy;
+            $dispute->resolution = $resolution;
+            if ($arbiterVerdict !== null && $arbiterVerdict !== '') {
+                $dispute->arbiter_verdict = $arbiterVerdict;
+            }
+            $dispute->resolved_at = now();
+            $dispute->closed_at = now();
+            $dispute->last_activity_at = now();
+            $dispute->save();
+        }
+
+        if ($arbiterVerdict === 'favor_seller') {
+            BuyerExternalEmailReputation::incrementBadDealForLot($lot);
+        }
     }
 
     /**
