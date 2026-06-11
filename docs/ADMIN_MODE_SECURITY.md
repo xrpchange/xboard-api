@@ -36,3 +36,7 @@ Mutating routes live under the **escrow-token–protected** group and use the **
 ## Operational note
 
 Keeping **`admin_mode_password`** strong is still good practice (defense in depth, limiting who can learn `admin_email` or use read-only admin APIs). The **main guarantee** for not allowing unchecked server edits is the **mailbox verification + `admin_password`** layer on each write.
+
+## Core INI file permissions (Linux)
+
+Authorized writes end in Core `config/config.sandbox.ini` or `config/config.prod.ini`. On Linux, PHP-FPM runs as **`www-data`**; files owned only by the deploy user cause `Cannot write config file`. Fix and deploy checklist: **`xboard-core/docs/ADMIN_CONFIG_INI_PERMISSIONS.md`** (`scripts/fix-core-config-ini-permissions.sh`).
