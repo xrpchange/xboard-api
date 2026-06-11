@@ -48,6 +48,27 @@ final class DealSaleTransactionCompletion
     }
 
     /**
+     * LOT-002: after seller crypto payout the sale row is already {@code completed} while the lot
+     * still waits for {@code deal_completed_buyer} or {@code deal_completed_seller_timeout}.
+     */
+    public static function lotHasCompletedCryptoPayoutSaleWithBuyerStillBound(ExchangeLot $lot): bool
+    {
+        $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($buyerEmail === '') {
+            return false;
+        }
+
+        return Transaction::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->where('buyer_lot_email', $buyerEmail)
+            ->where('tx_type', 'sale')
+            ->where('status', 'completed')
+            ->whereNotNull('seller_crypto_payout_tx_hash')
+            ->where('seller_crypto_payout_tx_hash', '!=', '')
+            ->exists();
+    }
+
+    /**
      * @return int Number of rows updated
      */
     public static function markPendingSaleTransactionsCompleted(ExchangeLot $lot): int

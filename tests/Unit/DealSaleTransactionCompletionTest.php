@@ -4,6 +4,10 @@ namespace Tests\Unit;
 
 use App\Models\ExchangeLot;
 use App\Support\DealSaleTransactionCompletion;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
@@ -35,6 +39,88 @@ class DealSaleTransactionCompletionTest extends TestCase
         $lot = new ExchangeLot;
         $lot->id = $lotId;
         $this->assertSame($expected, DealSaleTransactionCompletion::dealTagIsSellerTimeoutCompletionForLot($tag, $lot));
+    }
+
+    public function test_spec_lot_002_crypto_payout_completed_sale_still_allows_seller_timeout_gate(): void
+    {
+        Config::set('database.default', 'sqlite');
+        Config::set('database.connections.sqlite.database', ':memory:');
+        DB::purge('sqlite');
+        DB::reconnect('sqlite');
+
+        Schema::create('exchange_lots', function (Blueprint $table): void {
+            $table->id();
+            $table->string('buyer_lot_email')->nullable();
+            $table->timestamps();
+        });
+        Schema::create('transactions', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('exchange_lot_id');
+            $table->string('buyer_lot_email')->nullable();
+            $table->string('tx_type');
+            $table->string('status');
+            $table->string('seller_crypto_payout_tx_hash')->nullable();
+            $table->timestamps();
+        });
+
+        $lotId = DB::table('exchange_lots')->insertGetId([
+            'buyer_lot_email' => 'buyer@mail.test',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('transactions')->insert([
+            'exchange_lot_id' => $lotId,
+            'buyer_lot_email' => 'buyer@mail.test',
+            'tx_type' => 'sale',
+            'status' => 'completed',
+            'seller_crypto_payout_tx_hash' => 'abc123',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $lot = ExchangeLot::query()->findOrFail($lotId);
+        $this->assertTrue(DealSaleTransactionCompletion::lotHasCompletedCryptoPayoutSaleWithBuyerStillBound($lot));
+    }
+
+    public function test_spec_lot_002_completed_sale_without_crypto_payout_is_not_open_amicable_close(): void
+    {
+        Config::set('database.default', 'sqlite');
+        Config::set('database.connections.sqlite.database', ':memory:');
+        DB::purge('sqlite');
+        DB::reconnect('sqlite');
+
+        Schema::create('exchange_lots', function (Blueprint $table): void {
+            $table->id();
+            $table->string('buyer_lot_email')->nullable();
+            $table->timestamps();
+        });
+        Schema::create('transactions', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('exchange_lot_id');
+            $table->string('buyer_lot_email')->nullable();
+            $table->string('tx_type');
+            $table->string('status');
+            $table->string('seller_crypto_payout_tx_hash')->nullable();
+            $table->timestamps();
+        });
+
+        $lotId = DB::table('exchange_lots')->insertGetId([
+            'buyer_lot_email' => 'buyer@mail.test',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('transactions')->insert([
+            'exchange_lot_id' => $lotId,
+            'buyer_lot_email' => 'buyer@mail.test',
+            'tx_type' => 'sale',
+            'status' => 'completed',
+            'seller_crypto_payout_tx_hash' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $lot = ExchangeLot::query()->findOrFail($lotId);
+        $this->assertFalse(DealSaleTransactionCompletion::lotHasCompletedCryptoPayoutSaleWithBuyerStillBound($lot));
     }
 
     /**

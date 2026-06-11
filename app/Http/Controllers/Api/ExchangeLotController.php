@@ -3080,25 +3080,28 @@ class ExchangeLotController extends Controller
             ->where('status', 'pending')
             ->exists();
         if (! $pendingExists) {
-            $completedExists = Transaction::query()
-                ->where('exchange_lot_id', $lot->id)
-                ->where('buyer_lot_email', $buyerEmail)
-                ->where('tx_type', 'sale')
-                ->where('status', 'completed')
-                ->exists();
-            if ($completedExists) {
+            $awaitingAmicableCloseAfterCryptoPayout = DealSaleTransactionCompletion::lotHasCompletedCryptoPayoutSaleWithBuyerStillBound($lot);
+            if (! $awaitingAmicableCloseAfterCryptoPayout) {
+                $completedExists = Transaction::query()
+                    ->where('exchange_lot_id', $lot->id)
+                    ->where('buyer_lot_email', $buyerEmail)
+                    ->where('tx_type', 'sale')
+                    ->where('status', 'completed')
+                    ->exists();
+                if ($completedExists) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This deal is already marked completed on the server.',
+                        'error_code' => 'seller_completion_sale_already_completed',
+                    ], 403);
+                }
+
                 return response()->json([
                     'success' => false,
-                    'message' => 'This deal is already marked completed on the server.',
-                    'error_code' => 'seller_completion_sale_already_completed',
+                    'message' => 'No pending sale transaction to complete.',
+                    'error_code' => 'seller_completion_no_pending_sale',
                 ], 403);
             }
-
-            return response()->json([
-                'success' => false,
-                'message' => 'No pending sale transaction to complete.',
-                'error_code' => 'seller_completion_no_pending_sale',
-            ], 403);
         }
         if ($this->lotHasActiveDispute($lot)) {
             return response()->json([
