@@ -115,11 +115,15 @@ final class StartDealBuyerEscrowValidation
         if ($coreKey !== '') {
             $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
         }
-        $resp = $req->post(rtrim($coreUrl, '/').'/api/escrow-tokens/reservation-requirements', [
+        $requirementsPayload = [
             'escrow_token' => $buyerEscrowPublicPart,
             'reserved_amount' => $reservedAmount,
             'reservation_side' => 'buyer',
-        ]);
+        ];
+        if ((bool) $lot->aml) {
+            $requirementsPayload['aml_required'] = true;
+        }
+        $resp = $req->post(rtrim($coreUrl, '/').'/api/escrow-tokens/reservation-requirements', $requirementsPayload);
 
         $json = $resp->json();
         if (! $resp->successful() || ! is_array($json)) {

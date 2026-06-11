@@ -4480,6 +4480,7 @@ class ExchangeLotController extends Controller
 
         $sellerEscrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
         $coreSellerCryptoType = null;
+        $reservationResponseBody = null;
 
         // First create reservation in Core (reserves amount on escrow token). Server error (e.g. insufficient balance) is returned to client.
         // Use Core URL from token environment (EscrowTokenValidationService) so sandbox/prod and salt match token creation.
@@ -4519,6 +4520,9 @@ class ExchangeLotController extends Controller
             if (! empty($lot->buyer_escrow_token_hash)) {
                 $reservationPayload['buyer_escrow_token_hash'] = $lot->buyer_escrow_token_hash;
             }
+            if ((bool) $lot->aml) {
+                $reservationPayload['aml_required'] = true;
+            }
             $reservationResponse = $req->asJson()->post($coreUrl.'/api/reservations', $reservationPayload);
             if (! $reservationResponse->successful()) {
                 $body = $reservationResponse->json();
@@ -4528,7 +4532,20 @@ class ExchangeLotController extends Controller
                     'lot_id' => $lot->id,
                     'status' => $reservationResponse->status(),
                     'message' => $message,
+                    'error_code' => $errorCode,
                 ]);
+                if ($errorCode === 'AML_PROVIDER_UNAVAILABLE' && is_array($body)) {
+                    $this->dealAmlAdminAlert->notifyProviderFailure(
+                        (int) $lot->id,
+                        0,
+                        'seller_reservation',
+                        'seller',
+                        $coreUrl,
+                        $coreKey,
+                        $reservationResponse->status(),
+                        $body,
+                    );
+                }
 
                 return response()->json([
                     'success' => false,
@@ -4536,6 +4553,7 @@ class ExchangeLotController extends Controller
                     'error_code' => $errorCode,
                 ], $reservationResponse->status() >= 500 ? 502 : $reservationResponse->status());
             }
+            $reservationResponseBody = $reservationResponse->json();
         }
 
         $txHash = 'pd-'.$lot->id.'-'.now()->format('YmdHis').'-'.bin2hex(random_bytes(4));
@@ -4596,6 +4614,18 @@ class ExchangeLotController extends Controller
                     'transaction_id' => $transaction->id,
                     'error' => $e->getMessage(),
                 ]);
+            }
+
+            if ((bool) $lot->aml && isset($reservationResponseBody) && is_array($reservationResponseBody)) {
+                $this->dealAmlPersistence->handleReservationCoreResponse(
+                    $lot,
+                    $transaction,
+                    $sellerEscrowToken,
+                    (string) $coreSellerCryptoType,
+                    null,
+                    201,
+                    $reservationResponseBody,
+                );
             }
         }
 
