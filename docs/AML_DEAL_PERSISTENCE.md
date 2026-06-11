@@ -92,7 +92,7 @@ AML_ADMIN_ALERT_EMAIL=
 }
 ```
 
-- **`buyer_screening` / `seller_screening`** — last result per side on **this** transaction (not overwritten by the other side).
+- **`buyer_screening` / `seller_screening`** — last result per side on **this** transaction (not overwritten by the other side). When Core serves a cached wallet screen, `last_aml` may include `cache_hit: true` and `last_incoming_tx_hash` (see **xboard-core** `docs/AML_WALLET_SCREEN_CACHE.md`).
 - **`token_charges`** — AML reserve debits for **user-fault** failed checks only (idempotent `charge_key`). Used to increase `aml_fee` while the deal is open.
 
 ## Write path
