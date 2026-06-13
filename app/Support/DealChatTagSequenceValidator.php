@@ -108,6 +108,7 @@ final class DealChatTagSequenceValidator
             'receipt_confirmation',
             'buyer_crypto_tx',
             'buyer_destination_details',
+            'buyer_compensation_destination',
             'deal_completed_buyer',
         ];
         if (! in_array($t, $allowedBuyer, true)) {
@@ -292,7 +293,7 @@ final class DealChatTagSequenceValidator
     private static function applyTagObjectToState(string $state, array $obj): string
     {
         $t = isset($obj['t']) ? trim((string) $obj['t']) : '';
-        if (self::isDisputeTag($t)) {
+        if (self::isDisputeTag($t) || $t === BuyerCompensationDestinationSupport::TAG) {
             return $state;
         }
         switch ($t) {
@@ -391,6 +392,9 @@ final class DealChatTagSequenceValidator
             }
 
             return null;
+        }
+        if ($t === BuyerCompensationDestinationSupport::TAG) {
+            return self::validateBuyerDisputeTagForState($state);
         }
         if ($t === 'deal_completed_buyer') {
             if ($state !== self::STATE_WAIT_BUYER_COMPLETE) {

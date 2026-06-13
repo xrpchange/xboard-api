@@ -10,6 +10,7 @@ use App\Services\Arbiter\ArbiterOperatorSignedActionService;
 use App\Services\Deal\DealChatImapWakeMailer;
 use App\Services\Deal\DealInternalMailRateLimitService;
 use App\Services\Deal\DealReservationPayoutToBuyerService;
+use App\Support\BuyerCompensationDestinationSupport;
 use App\Support\PublicHttpsUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -100,10 +101,15 @@ final class ArbiterOperatorActionController extends Controller
             }
         }
 
+        $compensationDestination = null;
+        if ($action === 'compensate_buyer') {
+            $compensationDestination = BuyerCompensationDestinationSupport::resolveLatestFromChat($lotModel);
+        }
+
         $meta = match ($action) {
             'compensate_buyer' => [
                 'title' => 'Compensate buyer',
-                'summary' => 'Pay the buyer from the seller escrow reservation (Core) to the crypto address on file for this deal, close the dispute with verdict favor buyer, and post the outcome to deal chat.',
+                'summary' => 'Pay the buyer from the seller escrow reservation (Core) to the wallet address the buyer declared in deal chat (buyer_compensation_destination tag). Close the dispute with verdict favor buyer and post the outcome to deal chat.',
                 'confirmLabel' => 'Pay buyer from reservation and close dispute',
             ],
             'deny_buyer' => [
@@ -122,6 +128,7 @@ final class ArbiterOperatorActionController extends Controller
             'summary' => $meta['summary'],
             'confirmLabel' => $meta['confirmLabel'],
             'hasActiveDispute' => $activeDispute !== null,
+            'compensationDestination' => $compensationDestination,
             'formAction' => $this->secureRequestUrl($request),
         ]);
     }
