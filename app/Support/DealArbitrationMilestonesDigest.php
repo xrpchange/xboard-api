@@ -20,6 +20,7 @@ final class DealArbitrationMilestonesDigest
         'buyer_crypto_tx',
         'seller_received_funds',
         'buyer_destination_details',
+        'buyer_compensation_destination',
         'seller_transfer_tx',
         'deal_completed_seller',
         'deal_completed_buyer',

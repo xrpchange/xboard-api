@@ -25,6 +25,7 @@ use App\Services\EscrowTokenValidationService;
 use App\Services\ReceiptAttachmentStorage;
 use App\Services\SandboxVirtualBankService;
 use App\Support\ArbiterPromptContextAssembler;
+use App\Support\BuyerCompensationDestinationSupport;
 use App\Support\BuyerExternalEmailReputation;
 use App\Support\ArbiterReceiptPdfResolver;
 use App\Support\ClientWebOrigin;
@@ -2229,6 +2230,16 @@ class ExchangeLotController extends Controller
                         'message' => $seqErr['message'],
                         'error_code' => $seqErr['error_code'],
                     ], 422);
+                }
+                if (($customDealTagData['t'] ?? '') === BuyerCompensationDestinationSupport::TAG) {
+                    $compErr = BuyerCompensationDestinationSupport::validateAndEnrichIncomingTag($lot, $customDealTagData);
+                    if ($compErr !== null) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => $compErr['message'],
+                            'error_code' => $compErr['error_code'],
+                        ], 422);
+                    }
                 }
                 $coreTxCheck = $this->verifyCryptoTxDealTagViaCore($lot, $customDealTagData);
                 if (($coreTxCheck['error'] ?? null) !== null) {
@@ -7035,6 +7046,16 @@ class ExchangeLotController extends Controller
         $receiptTimeCheck = $this->validateReceiptTimeWindowForDispute($lot, $senderSide);
         if ($receiptTimeCheck !== null) {
             return $receiptTimeCheck;
+        }
+
+        if ($tagType === 'dispute_requested_by_buyer'
+            && ! BuyerCompensationDestinationSupport::hasBuyerCompensationDestinationInChat($lot)
+        ) {
+            return [
+                'message' => 'Buyer must declare a compensation wallet in deal chat before opening a dispute.',
+                'error_code' => 'buyer_compensation_destination_required',
+                'status' => 422,
+            ];
         }
 
         return null;

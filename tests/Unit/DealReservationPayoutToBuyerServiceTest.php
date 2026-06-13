@@ -43,6 +43,7 @@ class DealReservationPayoutToBuyerServiceTest extends TestCase
             $table->decimal('sold_crypto_amount', 20, 8)->default(0);
             $table->string('buyer_lot_email')->nullable();
             $table->string('seller_lot_email')->nullable();
+            $table->unsignedInteger('completed_deals_count')->default(0);
             $table->text('wallet_address')->nullable();
             $table->boolean('aml')->default(false);
             $table->string('buyer_seen_ip')->nullable();
@@ -119,7 +120,25 @@ class DealReservationPayoutToBuyerServiceTest extends TestCase
             'buyer_lot_email' => 'buyer-lot@test.local',
             'tx_type' => 'sale',
             'status' => 'pending',
-            'crypto_address' => '4BuyerXmrAddressExample',
+            'crypto_address' => '4SellerWrongAddressShouldNotBeUsed',
+        ]);
+
+        DB::table('deal_chat_messages')->insert([
+            'exchange_lot_id' => $lot->id,
+            'sender_side' => 'buyer',
+            'from_email' => 'buyer-lot@test.local',
+            'to_email' => 'seller@test.local',
+            'body' => 'Compensation wallet declared.',
+            'deal_tag' => json_encode([
+                't' => 'buyer_compensation_destination',
+                'lot_id' => $lot->id,
+                'tx_id' => 1,
+                'crypto' => 'xmr',
+                'address' => '4'.str_repeat('A', 94),
+                'set_by' => 'buyer',
+            ]),
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
         $service = app(DealReservationPayoutToBuyerService::class);
@@ -134,7 +153,7 @@ class DealReservationPayoutToBuyerServiceTest extends TestCase
 
         Http::assertSent(function ($request) {
             return $request->url() === 'https://core.test/api/deal-payout-to-buyer-from-reservation'
-                && $request['destination_address'] === '4BuyerXmrAddressExample';
+                && $request['destination_address'] === '4'.str_repeat('A', 94);
         });
 
         $buyerCompletion = DB::table('deal_chat_messages')

@@ -12,7 +12,9 @@ use App\Services\EscrowTokenValidationService;
 use App\Services\LotMailboxService;
 use App\Support\ApiDeploymentEnvironment;
 use App\Support\CryptoTxExplorerUrl;
+use App\Support\BuyerCompensationDestinationSupport;
 use App\Support\DealEscrowCryptoType;
+use App\Support\DealPayoutDestinationAddressValidation;
 use App\Support\DealSaleTransactionCompletion;
 use App\Support\DealTerminalLotClosure;
 use App\Support\SellerEscrowReservedAmount;
@@ -126,15 +128,40 @@ class DealReservationPayoutToBuyerService
                     ];
                 }
 
-                $dest = trim((string) ($transaction->crypto_address ?? ''));
-                if ($dest === '') {
-                    return ['success' => false, 'error' => 'buyer_crypto_address_missing', 'crypto_tx_id' => null, 'transaction_id' => (int) $transaction->id];
+                $compensation = BuyerCompensationDestinationSupport::resolveLatestFromChat($lot, (int) $transaction->id);
+                if ($compensation === null) {
+                    return [
+                        'success' => false,
+                        'error' => 'buyer_compensation_destination_missing',
+                        'crypto_tx_id' => null,
+                        'transaction_id' => (int) $transaction->id,
+                    ];
                 }
 
+                $dest = $compensation['address'];
                 try {
                     $cryptoType = DealEscrowCryptoType::sellerCoreType($lot);
                 } catch (\InvalidArgumentException $e) {
                     return ['success' => false, 'error' => $e->getMessage(), 'crypto_tx_id' => null, 'transaction_id' => (int) $transaction->id];
+                }
+
+                if (strtolower($compensation['crypto']) !== strtolower($cryptoType)) {
+                    return [
+                        'success' => false,
+                        'error' => 'buyer_compensation_destination_crypto_mismatch',
+                        'crypto_tx_id' => null,
+                        'transaction_id' => (int) $transaction->id,
+                    ];
+                }
+
+                $addrError = DealPayoutDestinationAddressValidation::validate($dest, $cryptoType);
+                if ($addrError !== null) {
+                    return [
+                        'success' => false,
+                        'error' => $addrError['error_code'],
+                        'crypto_tx_id' => null,
+                        'transaction_id' => (int) $transaction->id,
+                    ];
                 }
 
                 $amount = SellerEscrowReservedAmount::resolve($lot, $cryptoType);

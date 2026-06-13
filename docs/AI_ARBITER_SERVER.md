@@ -161,7 +161,7 @@ Buyer fiat leg (`receipt_confirmation`) and bank-only second leg (`seller_transf
 
 | Button | POST effect |
 |--------|-------------|
-| **Compensate buyer** | `DealReservationPayoutToBuyerService` → Core `POST /api/deal-payout-to-buyer-from-reservation` (seller reservation, buyer `crypto_address` on pending sale), then best-effort `POST /api/complete-reservation` with seller token from `exchange_lots.wallet_address` (same as `seller-crypto-payout-to-buyer`). On success: `deal_completed_seller` chat row + close `deal_disputes` (`favor_buyer`, `human_admin`) + operator summary in chat. On Core payout failure: error page, dispute **stays open**. |
+| **Compensate buyer** | `DealReservationPayoutToBuyerService` → Core `POST /api/deal-payout-to-buyer-from-reservation` to the address from the latest **`buyer_compensation_destination`** chat tag (buyer-declared external wallet), then best-effort `POST /api/complete-reservation` with seller token from `exchange_lots.wallet_address`. Operator form shows the declared address read-only; payout is **blocked** if the tag is missing. On success: `deal_completed_seller` chat row + close `deal_disputes` (`favor_buyer`, `human_admin`) + operator summary in chat. On Core payout failure: error page, dispute **stays open**. |
 | **Deny buyer** | Close active disputes (`favor_seller`) + operator chat row — **no** payout. |
 
 Implementation: `ArbiterOperatorSignedActionService`, `DealReservationPayoutToBuyerService`, `ArbiterOperatorActionController`. Same Core payout path as `ARBITER_AUTO_CORE_PAYOUT_ON_FAVOR_BUYER` / arbiter AI `favor_buyer`.

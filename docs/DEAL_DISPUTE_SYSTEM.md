@@ -83,6 +83,7 @@ Full setup, env vars, single-provider policy (no vendor failover), security, and
 - Receipt anti-duplicate: server computes/stores `sha256` for receipt files in `receipt_file_checksums` and rejects re-sending the same receipt checksum in deal chat (`duplicate_receipt_checksum`).
 - `receipt_file_checksums` is pruned by `receipt-checksums:prune` with the same TTL window as `deal_chat_messages`.
 - Receipt time sanity for dispute open: if receipt payment time is provided and is too far before deal start, server rejects dispute (`bank_receipt_time_too_old_for_deal`), with UTC grace window `DEAL_BANK_RECEIPT_DISPUTE_TIME_GRACE_HOURS` (default 12).
+- **Buyer compensation wallet:** `dispute_requested_by_buyer` is rejected (`buyer_compensation_destination_required`) until the buyer posted **`buyer_compensation_destination`** in deal chat with a validated external address for the seller escrow crypto asset (`DealPayoutDestinationAddressValidation`). Client sends the compensation tag immediately before the dispute tag.
 
 ### Crypto tx id verification via Core
 
