@@ -22,6 +22,7 @@ Check Laravel log line **`RefData: GET /banks sandbox_virtual_bank`**:
   - if `transactions.payment_details_set_by = buyer` -> recipient is `exchange_lots.seller_notification_email`.
 - Receipt recipient is determined by deal side (who set payment details), not by mailbox discovery.
 - **DKIM / sender checks:** documented in code via `SandboxVirtualBankService` and `PaymentVerificationController::verifySender` (virtual id + optional `X-XBoard-Sandbox-Test-Bank-Receipt` header).
+- **Mail.ru:** if notification email and IMAP are the same `@mail.ru` inbox, the provider may strip the PDF before IMAP fetch (DKIM can still look valid). Use another mailbox or contact Mail.ru — **`docs/MAILRU_RECEIPT_VERIFICATION.md`**.
 
 ## Configuration
 
