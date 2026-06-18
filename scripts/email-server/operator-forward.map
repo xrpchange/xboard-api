@@ -1,0 +1,2 @@
+# Deprecated: admin@ uses mailbox + operator-push-bcc.map (not forward-only).
+# Keep file empty or for other pure-forward aliases only.

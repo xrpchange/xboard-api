@@ -1,0 +1,3 @@
+# BCC copy when mail arrives at admin@ (primary stays in Maildir for Outlook/IMAP).
+# Change destination, then: sudo postmap /etc/postfix/operator-push-bcc.map && sudo postfix reload
+admin@xdexboard.com	tehnograny@yandex.ru

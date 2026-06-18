@@ -3,5 +3,6 @@
 # Add one line per address; postmap + postfix reload after changes.
 #
 # Example: public support mailbox (see docs/LOT_MAILBOX_AND_IMAP_CHAT.md «Ящик поддержки»).
-# Payment verification historically used check@ — removed; use another address + app config if needed.
+# Operator / representation forward: admin@ — see docs/OPERATOR_MAILBOX_ADMIN.md.
 support@xdexboard.com	OK
+admin@xdexboard.com	OK
