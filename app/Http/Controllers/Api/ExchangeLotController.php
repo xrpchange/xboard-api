@@ -19,11 +19,13 @@ use App\Services\Arbiter\ArbiterService;
 use App\Services\Deal\DealCryptoTxCoreVerifier;
 use App\Services\Deal\DealInternalMailRateLimitService;
 use App\Services\Deal\DealWebPushNotifier;
+use App\Services\Deal\TrainingDealOrchestrator;
 use App\Services\DealAmlAdminAlertService;
 use App\Services\DealAmlPersistenceService;
 use App\Services\EscrowTokenValidationService;
 use App\Services\ReceiptAttachmentStorage;
 use App\Services\SandboxVirtualBankService;
+use App\Support\ApiDeploymentEnvironment;
 use App\Support\ArbiterPromptContextAssembler;
 use App\Support\BuyerCompensationDestinationSupport;
 use App\Support\BuyerExternalEmailReputation;
@@ -69,6 +71,7 @@ class ExchangeLotController extends Controller
         private DealInternalMailRateLimitService $dealInternalMailRateLimit,
         private \App\Services\Deal\DealReservationPayoutToBuyerService $dealReservationPayoutToBuyer,
         private DealCryptoTxCoreVerifier $dealCryptoTxCoreVerifier,
+        private TrainingDealOrchestrator $trainingDealOrchestrator,
     ) {}
 
     /**
@@ -2314,6 +2317,9 @@ class ExchangeLotController extends Controller
                 $this->recordInternalMailSent($buyerSenderMailbox !== '' ? $buyerSenderMailbox : null);
             }
             if ($messageType === 'start_deal') {
+                $skipTrainingSellerExternal = (bool) ($lot->is_training ?? false)
+                    && ApiDeploymentEnvironment::current() === ApiDeploymentEnvironment::SANDBOX;
+                if (! $skipTrainingSellerExternal) {
                 $sellerNotificationEmail = $lot->seller_notification_email ? trim((string) $lot->seller_notification_email) : null;
                 if (! $sellerNotificationEmail || ! filter_var($sellerNotificationEmail, FILTER_VALIDATE_EMAIL)) {
                     $rollbackStartDealLock('seller_notification_email_missing_or_invalid');
@@ -2385,6 +2391,7 @@ class ExchangeLotController extends Controller
                         'message' => 'Cannot start deal: failed to send seller external notification email.',
                         'error_code' => 'seller_external_email_send_failed',
                     ], 502);
+                }
                 }
 
                 // Optional external notification for buyer: "you entered the deal, seller is notified", with deep links.
@@ -2478,6 +2485,7 @@ class ExchangeLotController extends Controller
             if ($completionError !== null) {
                 return $completionError;
             }
+            $this->maybeAdvanceTrainingDealAfterBuyerStep($lot, $customDealTagData);
             Log::info('[exchange-lots] sendMessageToSeller: mail sent successfully', [
                 'lot_id' => $lot->id,
                 'to' => $sellerEmail,
@@ -3696,6 +3704,11 @@ class ExchangeLotController extends Controller
             $body,
             $tagJson
         );
+
+        $destinationTag = json_decode($tagJson, true);
+        if (is_array($destinationTag)) {
+            $this->maybeAdvanceTrainingDealAfterBuyerStep($lot, $destinationTag);
+        }
 
         if ($paymentType === 'bank' && SandboxVirtualBankService::lotUsesVirtualSandboxBank($lot)) {
             $sandboxReceiptAmount = (float) ($transaction->amount ?? 0);
@@ -6245,6 +6258,21 @@ class ExchangeLotController extends Controller
                 'operator_escalation_email_sent' => $operatorEmailSent,
             ],
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $dealTagData
+     */
+    private function maybeAdvanceTrainingDealAfterBuyerStep(ExchangeLot $lot, ?array $dealTagData): void
+    {
+        try {
+            $this->trainingDealOrchestrator->advanceAfterBuyerAction($lot->fresh(), $dealTagData);
+        } catch (\Throwable $e) {
+            Log::warning('[training-deal] orchestrator hook failed', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function insertDealChatMessage(

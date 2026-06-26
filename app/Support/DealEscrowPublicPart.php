@@ -73,6 +73,22 @@ final class DealEscrowPublicPart
         return $hash !== '' ? strtolower($hash) : null;
     }
 
+    /** On-chain receive address from escrow public JSON (Stellar G…, Tron T…, etc.). */
+    public static function blockchainReceiveAddressFromJson(string $escrowTokenJson): ?string
+    {
+        $decoded = json_decode($escrowTokenJson, true);
+        if (! is_array($decoded)) {
+            return null;
+        }
+        $wa = $decoded['wallet_address'] ?? null;
+        if (! is_string($wa)) {
+            return null;
+        }
+        $trimmed = trim($wa);
+
+        return $trimmed !== '' ? $trimmed : null;
+    }
+
     private static function inferStablecoinNetworkFromBlockchainAddress(string $address): ?string
     {
         $w = trim($address);
