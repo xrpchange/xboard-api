@@ -75,6 +75,7 @@ class ExchangeLotResource extends JsonResource
             'seller_notification_email' => $this->seller_notification_email ? (string) $this->seller_notification_email : null,
             'buyer_notification_email' => $this->buyer_notification_email ? (string) $this->buyer_notification_email : null,
             'escrow_multisig_2_of_3_required' => (bool) ($this->escrow_multisig_2_of_3_required ?? false),
+            'is_training' => (bool) ($this->is_training ?? false),
             'created_at' => self::toUtcIso8601($this->created_at) ?? Carbon::now('UTC')->toIso8601String(),
             'updated_at' => self::toUtcIso8601($this->updated_at) ?? self::toUtcIso8601($this->created_at) ?? Carbon::now('UTC')->toIso8601String(),
             'expires_at' => self::toUtcIso8601($this->expires_at) ?? '',
