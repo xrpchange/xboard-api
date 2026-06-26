@@ -9,7 +9,9 @@ text = path.read_text(encoding="utf-8")
 bad = "<?php\n$cfg[ ' PmaAbsoluteUri ' ] =  ' https://xrpchange.site/phpmyadmin/ ' ;\n"
 text = text.replace(bad, "")
 
-line = "$cfg['PmaAbsoluteUri'] = 'https://xrpchange.site/phpmyadmin/';\n"
+line = "$cfg['PmaAbsoluteUri'] = 'https://xdexboard.com/phpmyadmin/';\n"
+if "xrpchange.site/phpmyadmin" in text:
+    text = text.replace("https://xrpchange.site/phpmyadmin/", "https://xdexboard.com/phpmyadmin/")
 if "PmaAbsoluteUri" not in text:
     text = text.rstrip() + "\n\n" + line
 
