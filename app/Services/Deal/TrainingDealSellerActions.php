@@ -61,16 +61,25 @@ final class TrainingDealSellerActions
         }
         $state = DealChatTagSequenceValidator::computeStateForLot($lot);
         if ($state !== DealChatTagSequenceValidator::STATE_DEAL_STARTED) {
+            Log::warning('[training-deal] payment_details: unexpected deal state', [
+                'lot_id' => $lot->id,
+                'state' => $state,
+            ]);
+
             return false;
         }
 
         $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
         if ($buyerEmail === '') {
+            Log::warning('[training-deal] payment_details: missing buyer_lot_email', ['lot_id' => $lot->id]);
+
             return false;
         }
 
         $sellerToken = $this->sellerEscrowToken();
         if ($sellerToken === null) {
+            Log::warning('[training-deal] payment_details: missing seller escrow token config', ['lot_id' => $lot->id]);
+
             return false;
         }
 

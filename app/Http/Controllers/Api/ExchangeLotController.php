@@ -2488,7 +2488,10 @@ class ExchangeLotController extends Controller
             if ($completionError !== null) {
                 return $completionError;
             }
-            $this->maybeAdvanceTrainingDealAfterBuyerStep($lot, $customDealTagData);
+            $this->maybeAdvanceTrainingDealAfterBuyerStep(
+                $lot,
+                $this->dealTagDataForTrainingOrchestrator($customDealTagData, $tagJson),
+            );
             Log::info('[exchange-lots] sendMessageToSeller: mail sent successfully', [
                 'lot_id' => $lot->id,
                 'to' => $sellerEmail,
@@ -6261,6 +6264,22 @@ class ExchangeLotController extends Controller
                 'operator_escalation_email_sent' => $operatorEmailSent,
             ],
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $customDealTagData
+     */
+    private function dealTagDataForTrainingOrchestrator(?array $customDealTagData, ?string $tagJson): ?array
+    {
+        if (is_array($customDealTagData)) {
+            return $customDealTagData;
+        }
+        if (! is_string($tagJson) || trim($tagJson) === '') {
+            return null;
+        }
+        $decoded = json_decode($tagJson, true);
+
+        return is_array($decoded) ? $decoded : null;
     }
 
     /**

@@ -39,6 +39,18 @@ class TrainingDealOrchestratorTest extends TestCase
     }
 
     /** @group spec-LOT-021 */
+    public function test_advance_accepts_start_deal_tag(): void
+    {
+        Config::set('training_deal.enabled', true);
+        Config::set('app.url', 'https://sandbox.api.xdexboard.com');
+
+        $lot = new ExchangeLot(['is_training' => true, 'id' => 99]);
+        $orch = $this->app->make(TrainingDealOrchestrator::class);
+        $orch->advanceAfterBuyerAction($lot, ['t' => 'start_deal', 'lot_id' => 99]);
+        $this->addToAssertionCount(1);
+    }
+
+    /** @group spec-LOT-021 */
     public function test_disabled_on_production_host_even_when_training_flag(): void
     {
         Config::set('training_deal.enabled', true);
