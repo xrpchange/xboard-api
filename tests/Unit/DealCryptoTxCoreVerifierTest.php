@@ -129,4 +129,27 @@ class DealCryptoTxCoreVerifierTest extends TestCase
         $this->assertTrue($normalized['confirmations_ok'] ?? false);
         $this->assertTrue($normalized['confirmations_enough'] ?? false);
     }
+
+    public function test_should_use_stored_training_tx_check_when_training_auto_verified(): void
+    {
+        $method = new \ReflectionMethod(DealCryptoTxCoreVerifier::class, 'shouldUseStoredTrainingTxCheck');
+        $method->setAccessible(true);
+
+        $trainingLot = new \App\Models\ExchangeLot(['is_training' => true]);
+        $regularLot = new \App\Models\ExchangeLot(['is_training' => false]);
+
+        $stored = [
+            'source' => 'training_deal_skip_onchain_verify',
+            'verified' => true,
+            'training_auto' => true,
+        ];
+
+        $this->assertTrue($method->invoke($this->verifier, $trainingLot, $stored));
+        $this->assertFalse($method->invoke($this->verifier, $regularLot, $stored));
+        $this->assertFalse($method->invoke($this->verifier, $trainingLot, null));
+        $this->assertFalse($method->invoke($this->verifier, $trainingLot, [
+            'verified' => true,
+            'training_auto' => false,
+        ]));
+    }
 }
