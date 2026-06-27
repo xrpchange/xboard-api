@@ -244,6 +244,11 @@ final class DealCryptoTxCoreVerifier
 
         $storedCheck = is_array($tag['core_tx_check'] ?? null) ? $tag['core_tx_check'] : null;
         $normalizedTag = $this->normalizeCryptoProofTag($tag);
+
+        if ($this->shouldUseStoredTrainingTxCheck($lot, $storedCheck)) {
+            return $this->resultFromStoredTrainingTxCheck($lot, $row, $tag, $normalizedTag, $storedCheck);
+        }
+
         $result = $this->verifyDealTag($lot, $normalizedTag);
 
         return array_merge($result, [
@@ -310,6 +315,101 @@ final class DealCryptoTxCoreVerifier
             'message_id' => isset($proof['message_id']) ? (int) $proof['message_id'] : null,
             'tag_type' => $proof['tag_type'] ?? null,
             'error' => is_array($result['error'] ?? null) ? $result['error'] : null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $storedCheck
+     */
+    private function shouldUseStoredTrainingTxCheck(ExchangeLot $lot, ?array $storedCheck): bool
+    {
+        if (! (bool) ($lot->is_training ?? false)) {
+            return false;
+        }
+        if (! is_array($storedCheck)) {
+            return false;
+        }
+
+        return ($storedCheck['training_auto'] ?? false) === true
+            && ($storedCheck['verified'] ?? false) === true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $tag
+     * @param  array<string, mixed>  $normalizedTag
+     * @param  array<string, mixed>  $storedCheck
+     * @return array{
+     *   verified: bool,
+     *   verification: array<string, mixed>,
+     *   error: array{message:string,error_code:string}|null,
+     *   proof: array<string, mixed>|null
+     * }
+     */
+    private function resultFromStoredTrainingTxCheck(
+        ExchangeLot $lot,
+        DealChatMessage $row,
+        array $tag,
+        array $normalizedTag,
+        array $storedCheck,
+    ): array {
+        $tagType = trim((string) ($tag['t'] ?? ''));
+        $txRef = $this->txRefFromTag($normalizedTag);
+
+        try {
+            $cryptoType = $tagType === 'buyer_crypto_tx'
+                ? DealEscrowCryptoType::buyerCoreType($lot)
+                : DealEscrowCryptoType::sellerCoreType($lot);
+        } catch (\InvalidArgumentException $e) {
+            return [
+                'verified' => false,
+                'verification' => [],
+                'error' => [
+                    'message' => $e->getMessage(),
+                    'error_code' => 'invalid_lot_crypto',
+                ],
+                'proof' => null,
+            ];
+        }
+
+        $deploymentEnvironment = self::deploymentEnvironmentForLot($lot);
+        $expectedAddress = $this->expectedAddress($lot, $tagType === 'buyer_crypto_tx' ? 'buyer_crypto_tx' : 'seller_transfer_tx');
+        $expectedAmount = $this->expectedAmount($lot, $tagType === 'buyer_crypto_tx' ? 'buyer_crypto_tx' : 'seller_transfer_tx');
+
+        $verification = [
+            'source' => (string) ($storedCheck['source'] ?? 'training_deal_skip_onchain_verify'),
+            'checked_at_utc' => (string) ($storedCheck['checked_at_utc'] ?? now()->utc()->toIso8601String()),
+            'verified' => true,
+            'training_auto' => true,
+            'status' => 'training_accepted',
+            'is_confirmed' => true,
+            'confirmations' => 1,
+            'checks' => [
+                'confirmations_ok' => true,
+                'address_matches' => null,
+                'amount_matches' => null,
+            ],
+            'observed' => [],
+            'expected' => array_filter([
+                'address' => $expectedAddress,
+                'amount' => $expectedAmount,
+            ], static fn ($value) => $value !== null && $value !== ''),
+            'crypto_type' => $cryptoType,
+            'transaction_id' => $txRef,
+            'deployment_environment' => $deploymentEnvironment,
+            'blockchain_network' => self::blockchainNetworkId($cryptoType, $deploymentEnvironment),
+        ];
+
+        return [
+            'verified' => true,
+            'verification' => $verification,
+            'error' => null,
+            'proof' => [
+                'message_id' => (int) $row->id,
+                'sender_side' => (string) ($row->sender_side ?? ''),
+                'tag_type' => $tagType,
+                'tx_id' => $txRef,
+                'stored_core_tx_check' => $storedCheck,
+            ],
         ];
     }
 
