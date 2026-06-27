@@ -46,4 +46,10 @@ return [
         'TRAINING_VIRTUAL_BANK_PAYMENT_DETAILS',
         'Sandbox virtual bank (training). Confirm payment using the practice receipt in your deal mailbox.'
     ),
+
+    /** Per-step buyer timer on synced training lots (minutes). */
+    'buyer_payment_timeout_minutes' => (int) env('TRAINING_BUYER_PAYMENT_TIMEOUT_MINUTES', 7),
+
+    /** Locked training lot with start_deal older than this is unlocked when training lots are listed in search. */
+    'abandoned_deal_minutes' => (int) env('TRAINING_ABANDONED_DEAL_MINUTES', 15),
 ];

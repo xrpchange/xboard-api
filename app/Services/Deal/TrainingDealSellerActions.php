@@ -799,6 +799,50 @@ final class TrainingDealSellerActions
         }
     }
 
+    /** Best-effort seller hold release when a training deal is abandoned (search unlock). */
+    public function deleteSellerCoreReservationForAbandonedDeal(ExchangeLot $lot): void
+    {
+        if (! $this->canAct($lot)) {
+            return;
+        }
+        $publicToken = $this->sellerEscrowPublicJson($lot);
+        if ($publicToken === null) {
+            return;
+        }
+        try {
+            $cryptoType = DealEscrowCryptoType::sellerCoreType($lot);
+        } catch (\InvalidArgumentException) {
+            return;
+        }
+
+        try {
+            [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($publicToken);
+            $req = Http::timeout((int) config('services.core.timeout', 10));
+            if ($coreKey !== '') {
+                $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+            }
+            $resp = $req->post(rtrim($coreUrl, '/').'/api/delete-reservation', [
+                'exchange_lot_id' => (string) $lot->id,
+                'escrow_token' => $publicToken,
+                'crypto_type' => $cryptoType,
+            ]);
+            if ($resp->successful()) {
+                Log::info('[training-deal] abandoned deal: seller delete-reservation OK', ['lot_id' => $lot->id]);
+            } else {
+                Log::warning('[training-deal] abandoned deal: seller delete-reservation failed', [
+                    'lot_id' => $lot->id,
+                    'status' => $resp->status(),
+                    'body' => $resp->body(),
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[training-deal] abandoned deal: seller delete-reservation exception', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     /**
      * Core reservations/transfers expect public part only; encrypted_part is uploaded separately.
      */

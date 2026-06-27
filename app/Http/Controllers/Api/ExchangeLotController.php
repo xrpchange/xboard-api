@@ -19,6 +19,7 @@ use App\Services\Arbiter\ArbiterService;
 use App\Services\Deal\DealCryptoTxCoreVerifier;
 use App\Services\Deal\DealInternalMailRateLimitService;
 use App\Services\Deal\DealWebPushNotifier;
+use App\Services\Deal\TrainingDealAbandonedLotRelease;
 use App\Services\Deal\TrainingDealOrchestrator;
 use App\Services\DealAmlAdminAlertService;
 use App\Services\DealAmlPersistenceService;
@@ -41,6 +42,7 @@ use App\Support\ExchangeLotDealCounters;
 use App\Support\StartDealBuyerEscrowValidation;
 use App\Support\DealSaleTransactionCompletion;
 use App\Support\DealSellerOpenLinks;
+use App\Support\DealStartedAtUtc;
 use App\Support\DealTerminalLotClosure;
 use App\Support\PublicHttpsUrl;
 use App\Support\SandboxTestReceiptPdf;
@@ -72,6 +74,7 @@ class ExchangeLotController extends Controller
         private \App\Services\Deal\DealReservationPayoutToBuyerService $dealReservationPayoutToBuyer,
         private DealCryptoTxCoreVerifier $dealCryptoTxCoreVerifier,
         private TrainingDealOrchestrator $trainingDealOrchestrator,
+        private TrainingDealAbandonedLotRelease $trainingDealAbandonedLotRelease,
     ) {}
 
     /**
@@ -808,7 +811,11 @@ class ExchangeLotController extends Controller
             $query->where('aml', true);
         }
         if ($request->has('is_training')) {
-            $query->where('is_training', filter_var($request->is_training, FILTER_VALIDATE_BOOL));
+            $trainingOnly = filter_var($request->is_training, FILTER_VALIDATE_BOOL);
+            $query->where('is_training', $trainingOnly);
+            if ($trainingOnly) {
+                $this->trainingDealAbandonedLotRelease->releaseStaleLockedLots();
+            }
         }
         $walletAddresses = $request->input('wallet_address') ?? $request->input('wallet_address[]');
         $hashes = [];
@@ -7253,7 +7260,7 @@ class ExchangeLotController extends Controller
             return null;
         }
 
-        $dealStartedAt = $this->dealStartedAtUtc($lot);
+        $dealStartedAt = DealStartedAtUtc::forLot($lot);
         if ($dealStartedAt === null) {
             return null;
         }
@@ -7331,43 +7338,6 @@ class ExchangeLotController extends Controller
         } catch (\Throwable) {
             return null;
         }
-    }
-
-    private function dealStartedAtUtc(ExchangeLot $lot): ?\Carbon\CarbonImmutable
-    {
-        $startTagRow = DealChatMessage::query()
-            ->where('exchange_lot_id', $lot->id)
-            ->whereNotNull('deal_tag')
-            ->orderBy('id')
-            ->get(['deal_tag', 'created_at']);
-        foreach ($startTagRow as $row) {
-            $raw = trim((string) ($row->deal_tag ?? ''));
-            if ($raw === '') {
-                continue;
-            }
-            $tag = json_decode($raw, true);
-            if (! is_array($tag) || trim((string) ($tag['t'] ?? '')) !== 'start_deal') {
-                continue;
-            }
-            try {
-                return \Carbon\CarbonImmutable::parse((string) $row->created_at)->utc();
-            } catch (\Throwable) {
-                break;
-            }
-        }
-
-        $tx = Transaction::query()
-            ->where('exchange_lot_id', $lot->id)
-            ->orderBy('id')
-            ->first(['created_at']);
-        if ($tx !== null && $tx->created_at !== null) {
-            try {
-                return \Carbon\CarbonImmutable::parse((string) $tx->created_at)->utc();
-            } catch (\Throwable) {
-            }
-        }
-
-        return null;
     }
 
     private function getCoreApiUrl(): string
