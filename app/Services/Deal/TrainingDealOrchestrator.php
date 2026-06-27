@@ -68,4 +68,43 @@ final class TrainingDealOrchestrator
         }
         $this->sellerActions->releaseSellerCoreReservation($lot);
     }
+
+    /**
+     * Practice deals: accept buyer/seller crypto tx tags without waiting for on-chain Core verify.
+     *
+     * @param  array<string, mixed>  $dealTagData
+     * @return array<string, mixed>
+     */
+    public function bypassCoreTxVerificationForTag(ExchangeLot $lot, array $dealTagData): array
+    {
+        if (! $this->isEnabledForLot($lot)) {
+            return $dealTagData;
+        }
+
+        $tagType = trim((string) ($dealTagData['t'] ?? ''));
+        if (! in_array($tagType, ['buyer_crypto_tx', 'seller_transfer_tx'], true)) {
+            return $dealTagData;
+        }
+
+        if ($tagType === 'seller_transfer_tx') {
+            $receiptLinks = $dealTagData['receipt_links'] ?? null;
+            if (is_array($receiptLinks) && count($receiptLinks) > 0) {
+                return $dealTagData;
+            }
+        }
+
+        $txRef = trim((string) ($dealTagData['tx_ref'] ?? $dealTagData['transaction_id'] ?? $dealTagData['tx_number'] ?? ''));
+        if ($txRef === '') {
+            return $dealTagData;
+        }
+
+        $dealTagData['core_tx_check'] = [
+            'source' => 'training_deal_skip_onchain_verify',
+            'checked_at_utc' => now('UTC')->toIso8601String(),
+            'verified' => true,
+            'training_auto' => true,
+        ];
+
+        return $dealTagData;
+    }
 }
