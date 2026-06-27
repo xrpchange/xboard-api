@@ -807,6 +807,9 @@ class ExchangeLotController extends Controller
         if ($request->filled('aml_max')) {
             $query->where('aml', true);
         }
+        if ($request->has('is_training')) {
+            $query->where('is_training', filter_var($request->is_training, FILTER_VALIDATE_BOOL));
+        }
         $walletAddresses = $request->input('wallet_address') ?? $request->input('wallet_address[]');
         $hashes = [];
         if (! empty($walletAddresses)) {

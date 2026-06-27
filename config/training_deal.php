@@ -1,21 +1,41 @@
 <?php
 
+$trainingSecret = static function (string $envKey, string $storageFile): ?string {
+    $fromEnv = env($envKey);
+    if (is_string($fromEnv) && trim($fromEnv) !== '') {
+        return trim($fromEnv);
+    }
+    $path = storage_path('app/'.$storageFile);
+    if (is_readable($path)) {
+        $contents = file_get_contents($path);
+
+        return is_string($contents) && trim($contents) !== '' ? trim($contents) : null;
+    }
+
+    return null;
+};
+
+$tokenJson = $trainingSecret('TRAINING_SELLER_ESCROW_TOKEN', 'training_seller_token.json');
+$publicJson = $trainingSecret('TRAINING_SELLER_ESCROW_PUBLIC_JSON', 'training_seller_public.json');
+if (($publicJson === null || $publicJson === '') && is_string($tokenJson) && $tokenJson !== '') {
+    $publicJson = \App\Support\TrainingDealEscrowTokenFormat::publicPartJson($tokenJson);
+}
+
 return [
     /*
     | Sandbox-only automated seller for lots with exchange_lots.is_training = true.
-    | Set TRAINING_DEAL_ENABLED=true and provide treasury seller tokens on sandbox API hosts.
+    | Secrets: env vars OR storage/app/training_seller_token.json (full export; gitignored).
     */
     'enabled' => filter_var(env('TRAINING_DEAL_ENABLED', false), FILTER_VALIDATE_BOOL),
 
-    /** Full seller escrow token JSON (public + encrypted) for Core reservations and payouts. */
-    'seller_escrow_token' => env('TRAINING_SELLER_ESCROW_TOKEN'),
+    /** Full seller escrow token JSON (export or {public_part, encrypted_part}) for Core. */
+    'seller_escrow_token' => $tokenJson,
 
-    /** Seller escrow public JSON only — stored on the lot as wallet_address when seeding. */
-    'seller_escrow_public_json' => env('TRAINING_SELLER_ESCROW_PUBLIC_JSON'),
+    /** Seller escrow public JSON — stored on the lot as wallet_address when seeding. */
+    'seller_escrow_public_json' => $publicJson,
 
     'seller_notification_email' => env('TRAINING_SELLER_NOTIFICATION_EMAIL', 'training-seller@xdexboard.com'),
 
-    /** Optional explicit node id; when empty, first active node is used. */
     'lot_node_id' => env('TRAINING_LOT_NODE_ID'),
 
     'lot_sell_amount' => (float) env('TRAINING_LOT_SELL_AMOUNT', 5),

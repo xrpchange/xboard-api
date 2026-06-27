@@ -8,6 +8,7 @@ use App\Models\CryptoCurrency;
 use App\Models\ExchangeLot;
 use App\Models\Node;
 use App\Support\DealEscrowPublicPart;
+use App\Support\TrainingDealEscrowTokenFormat;
 use Illuminate\Console\Command;
 
 /**
@@ -31,7 +32,13 @@ class SyncTrainingDealLotsCommand extends Command
 
         $publicJson = trim((string) config('training_deal.seller_escrow_public_json', ''));
         if ($publicJson === '' || ! str_starts_with($publicJson, '{')) {
-            $this->error('TRAINING_SELLER_ESCROW_PUBLIC_JSON must be seller escrow public JSON.');
+            $tokenRaw = trim((string) config('training_deal.seller_escrow_token', ''));
+            if ($tokenRaw !== '') {
+                $publicJson = TrainingDealEscrowTokenFormat::publicPartJson($tokenRaw) ?? '';
+            }
+        }
+        if ($publicJson === '' || ! str_starts_with($publicJson, '{')) {
+            $this->error('TRAINING_SELLER_ESCROW_PUBLIC_JSON or storage/app/training_seller_token.json required.');
 
             return self::FAILURE;
         }

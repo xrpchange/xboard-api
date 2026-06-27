@@ -15,6 +15,7 @@ use App\Support\DealChatTagSequenceValidator;
 use App\Support\DealEscrowCryptoType;
 use App\Support\DealEscrowPublicPart;
 use App\Support\SellerEscrowReservedAmount;
+use App\Support\TrainingDealEscrowTokenFormat;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -30,6 +31,7 @@ final class TrainingDealSellerActions
         private readonly LotMailboxService $lotMailboxService,
         private readonly EscrowTokenValidationService $escrowTokenValidation,
         private readonly DealWebPushNotifier $dealWebPushNotifier,
+        private readonly TrainingDealEscrowCoreUpload $escrowCoreUpload,
     ) {}
 
     public function sendCryptoPaymentDetails(ExchangeLot $lot): bool
@@ -213,6 +215,12 @@ final class TrainingDealSellerActions
 
             $amount = SellerEscrowReservedAmount::resolve($lot, $cryptoType);
             if ($amount === null || $amount <= 0) {
+                return false;
+            }
+
+            if (! $this->escrowCoreUpload->ensureSellerEncryptedPartUploaded($sellerToken)) {
+                Log::warning('[training-deal] seller_transfer: encrypted upload failed', ['lot_id' => $lot->id]);
+
                 return false;
             }
 
@@ -425,7 +433,7 @@ final class TrainingDealSellerActions
     {
         $token = trim((string) config('training_deal.seller_escrow_token', ''));
 
-        return $token !== '' ? $token : null;
+        return $token !== '' ? TrainingDealEscrowTokenFormat::normalizeForCore($token) : null;
     }
 
     private function sellerEscrowPublicJson(ExchangeLot $lot): ?string
@@ -433,6 +441,13 @@ final class TrainingDealSellerActions
         $fromConfig = trim((string) config('training_deal.seller_escrow_public_json', ''));
         if ($fromConfig !== '' && str_starts_with($fromConfig, '{')) {
             return $fromConfig;
+        }
+        $token = trim((string) config('training_deal.seller_escrow_token', ''));
+        if ($token !== '') {
+            $derived = TrainingDealEscrowTokenFormat::publicPartJson($token);
+            if ($derived !== null && str_starts_with($derived, '{')) {
+                return $derived;
+            }
         }
         $wa = trim((string) ($lot->wallet_address ?? ''));
 
