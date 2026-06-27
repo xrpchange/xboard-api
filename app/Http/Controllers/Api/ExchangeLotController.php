@@ -2320,6 +2320,7 @@ class ExchangeLotController extends Controller
                 $this->recordInternalMailSent($buyerSenderMailbox !== '' ? $buyerSenderMailbox : null);
             }
             if ($messageType === 'start_deal') {
+                $clientWebOriginRaw = $request->input('client_web_origin');
                 $skipTrainingSellerExternal = (bool) ($lot->is_training ?? false)
                     && ApiDeploymentEnvironment::current() === ApiDeploymentEnvironment::SANDBOX;
                 if (! $skipTrainingSellerExternal) {
@@ -2348,7 +2349,6 @@ class ExchangeLotController extends Controller
                         'error_code' => 'seller_external_email_daily_limit_reached',
                     ], 429);
                 }
-                $clientWebOriginRaw = $request->input('client_web_origin');
                 $links = $this->buildOpenDealEmailLinks($clientWebOriginRaw, $this->sellerOpenDealQueryParams($lot), $lot);
                 $clientWebUrl = $links['clientWebUrl'];
                 $webUrl = $links['appLandingUrl'];
