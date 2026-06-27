@@ -21,6 +21,7 @@
 Leg types for **`is_training`** lots: **first leg = `to_currency`**, **second leg = `from_currency`** (not the same as non-training §4.1 from/to). API: `TrainingDealLegSemantics`; client: `trainingBuyerFirstLeg*` / `trainingBuyerSecondLegReceivesCryptoOrNull`.
 
 - **Buyer:** real device; own Stellar USDT escrow token for crypto legs (Fund via Core in app). Lots are synced with **`aml=true`** so on crypto-first legs the deal screen shows **Send crypto to seller** (server payout via buyer escrow token) instead of manual tx-id entry only.
+- **Step timer:** synced training lots use **`buyer_payment_timeout_minutes = 7`** (per-step deal timer in the app).
 - **Seller:** treasury escrow token on the lot; **`TrainingDealOrchestrator`** on sandbox host only
 
 ## Orchestrator chain (buyer tags → seller auto-reply)
@@ -38,6 +39,8 @@ Leg types for **`is_training`** lots: **first leg = `to_currency`**, **second le
 3. `buyer_destination_details` → Core payout + seller `seller_transfer_tx` → **auto** `deal_completed_buyer` + lot release. Post-completion cleanup dialog as a regular deal.
 
 After completion, `DealTerminalLotClosure` clears buyer email fields and resets **`sold_crypto_amount` to 0** so public search lists the practice lot again; **`buyer_escrow_token_hash` stays** until the next `start_deal` so the buyer client can still load chat tags through `deal_completed_buyer`. `completed_deals_count` is kept as history. `training:sync-lots` also resets `sold_crypto_amount` on refresh.
+
+**Abandoned practice deals:** when the client lists training lots (`GET /exchange-lots?is_training=true`), the API unlocks lots whose **`start_deal`** is older than **15 minutes** (config `TRAINING_ABANDONED_DEAL_MINUTES`): clears buyer lock, resets `sold_crypto_amount`, best-effort Core seller `delete-reservation`. Same-buyer resume after that window starts a fresh session on the next `start_deal`.
 
 Validators are **not** relaxed for normal lots. On **`is_training`** sandbox lots, **`buyer_crypto_tx`** / **`seller_transfer_tx`** skip on-chain Core verify (tag gets `core_tx_check.verified=true`, `training_auto`); the orchestrator then posts **`seller_received_funds`** without waiting for testnet confirmations.
 
@@ -59,6 +62,8 @@ TRAINING_LOT_SELL_AMOUNT=5
 TRAINING_LOT_BUY_AMOUNTS=5
 TRAINING_LOT_NOTE_FIAT_CRYPTO=Training: USD to USDT (Stellar)
 TRAINING_LOT_NOTE_CRYPTO_FIAT=Training: USDT (Stellar) to USD
+TRAINING_BUYER_PAYMENT_TIMEOUT_MINUTES=7
+TRAINING_ABANDONED_DEAL_MINUTES=15
 ```
 
 Optional overrides instead of the token file:

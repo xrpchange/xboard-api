@@ -9,6 +9,7 @@ use App\Models\ExchangeLot;
 use App\Models\FiatCurrency;
 use App\Models\Node;
 use App\Services\SandboxVirtualBankService;
+use App\Support\BuyerPaymentTimeoutMinutes;
 use App\Support\DealEscrowPublicPart;
 use App\Support\TrainingDealEscrowTokenFormat;
 use Illuminate\Console\Command;
@@ -92,6 +93,9 @@ class SyncTrainingDealLotsCommand extends Command
             'test_group' => null,
             'seller_locale' => 'en',
             'aml' => true,
+            'buyer_payment_timeout_minutes' => BuyerPaymentTimeoutMinutes::normalize(
+                (int) config('training_deal.buyer_payment_timeout_minutes', 7)
+            ),
             'seller_notification_email' => config('training_deal.seller_notification_email'),
             'virtual_sandbox_bank_code' => SandboxVirtualBankService::bankCode(),
             'expires_at' => now('UTC')->addYear(),
