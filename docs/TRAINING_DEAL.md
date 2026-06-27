@@ -27,15 +27,13 @@
 
 1. `start_deal` → seller `payment_details` (virtual bank)
 2. `receipt_confirmation` → seller `seller_received_funds`
-3. `buyer_destination_details` → Core payout + seller `seller_transfer_tx`
-4. Buyer confirms `deal_completed_buyer` manually — API clears `buyer_lot_email` and **`buyer_escrow_token_hash`** on training lots, releases seller Core reservation, so the lot is open for the next practice session.
+3. `buyer_destination_details` → Core payout + seller `seller_transfer_tx` → **auto** `deal_completed_buyer` + lot release (no buyer button)
 
 **Crypto → fiat**
 
 1. `start_deal` → seller `payment_details` (Stellar address from treasury public JSON)
 2. `buyer_crypto_tx` → seller `seller_received_funds`
-3. `buyer_destination_details` → virtual bank receipt + seller `seller_transfer_tx`
-4. Buyer confirms `deal_completed_buyer` manually — API clears `buyer_lot_email` and **`buyer_escrow_token_hash`** on training lots, releases seller Core reservation, so the lot is open for the next practice session.
+3. `buyer_destination_details` → virtual bank receipt + seller `seller_transfer_tx` → **auto** `deal_completed_buyer` + lot release (no buyer button)
 
 Validators are **not** relaxed for normal lots. Orchestrator runs only when:
 

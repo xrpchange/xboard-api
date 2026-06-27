@@ -17,6 +17,8 @@ use App\Support\DealBuyerSecondLeg;
 use App\Support\DealChatTagSequenceValidator;
 use App\Support\DealEscrowCryptoType;
 use App\Support\DealEscrowPublicPart;
+use App\Support\DealSaleTransactionCompletion;
+use App\Support\DealTerminalLotClosure;
 use App\Support\SandboxTestReceiptPdf;
 use App\Support\SellerEscrowReservedAmount;
 use App\Support\TrainingDealEscrowTokenFormat;
@@ -516,7 +518,12 @@ final class TrainingDealSellerActions
             $tagJson = json_encode($tag, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             $body = 'Training seller: sandbox bank transfer sent (second leg). Check your inbox for the practice receipt.';
 
-            return $this->publishSellerChatMessage($lot, $buyerEmail, $body, $tagJson);
+            $sent = $this->publishSellerChatMessage($lot, $buyerEmail, $body, $tagJson);
+            if ($sent) {
+                $this->autoCompleteTrainingDealAfterSellerLastLeg($lot->fresh(), $buyerEmail);
+            }
+
+            return $sent;
         });
     }
 
@@ -573,7 +580,43 @@ final class TrainingDealSellerActions
         $tagJson = json_encode($tag, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $body = 'Training seller: second-leg crypto sent. Tx: '.$cryptoTxId;
 
-        return $this->publishSellerChatMessage($lot, $buyerEmail, $body, $tagJson);
+        $sent = $this->publishSellerChatMessage($lot, $buyerEmail, $body, $tagJson);
+        if ($sent) {
+            $this->autoCompleteTrainingDealAfterSellerLastLeg($lot->fresh(), $buyerEmail);
+        }
+
+        return $sent;
+    }
+
+    /**
+     * Training lots close without waiting for buyer deal_completed_buyer — practice sessions are disposable.
+     */
+    private function autoCompleteTrainingDealAfterSellerLastLeg(ExchangeLot $lot, string $buyerEmail): void
+    {
+        if (! $this->canAct($lot)) {
+            return;
+        }
+        if (trim((string) ($lot->buyer_lot_email ?? '')) === '') {
+            return;
+        }
+
+        $completedCount = DealSaleTransactionCompletion::markPendingSaleTransactionsCompleted($lot);
+        $completionTag = json_encode([
+            't' => 'deal_completed_buyer',
+            'lot_id' => (int) $lot->id,
+            'training_auto' => true,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $body = 'Training deal completed automatically after the seller finished the last step.';
+
+        $this->publishSellerChatMessage($lot, $buyerEmail, $body, $completionTag);
+
+        DealTerminalLotClosure::releaseLotBuyerBinding($lot);
+        $this->releaseSellerCoreReservation($lot->fresh());
+
+        Log::info('[training-deal] auto-completed after seller last leg', [
+            'lot_id' => $lot->id,
+            'sale_tx_updated' => $completedCount,
+        ]);
     }
 
     private function publishSellerChatMessage(ExchangeLot $lot, string $buyerEmail, string $body, string $tagJson): bool
