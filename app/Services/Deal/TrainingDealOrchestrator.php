@@ -52,7 +52,8 @@ final class TrainingDealOrchestrator
         ]);
 
         match ($t) {
-            'start_deal' => $this->sellerActions->sendCryptoPaymentDetails($lot),
+            'start_deal' => $this->sellerActions->sendFirstLegPaymentDetails($lot),
+            'receipt_confirmation' => $this->sellerActions->confirmSellerReceivedFunds($lot),
             'buyer_crypto_tx' => $this->sellerActions->confirmSellerReceivedFunds($lot),
             'buyer_destination_details' => $this->sellerActions->executeSellerTransfer($lot, $dealTagData),
             default => null,

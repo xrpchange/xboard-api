@@ -10,10 +10,14 @@ use App\Models\ExchangeLot;
 use App\Models\Transaction;
 use App\Services\EscrowTokenValidationService;
 use App\Services\LotMailboxService;
+use App\Services\SandboxVirtualBankService;
 use App\Support\BuyerPaymentTimeoutMinutes;
+use App\Support\DealBuyerFirstLeg;
+use App\Support\DealBuyerSecondLeg;
 use App\Support\DealChatTagSequenceValidator;
 use App\Support\DealEscrowCryptoType;
 use App\Support\DealEscrowPublicPart;
+use App\Support\SandboxTestReceiptPdf;
 use App\Support\SellerEscrowReservedAmount;
 use App\Support\TrainingDealEscrowTokenFormat;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +37,100 @@ final class TrainingDealSellerActions
         private readonly DealWebPushNotifier $dealWebPushNotifier,
         private readonly TrainingDealEscrowCoreUpload $escrowCoreUpload,
     ) {}
+
+    public function sendFirstLegPaymentDetails(ExchangeLot $lot): bool
+    {
+        $lot->refresh();
+        if (DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot) === true) {
+            return $this->sendBankPaymentDetails($lot);
+        }
+        if (DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot) === true) {
+            return $this->sendCryptoPaymentDetails($lot);
+        }
+
+        Log::warning('[training-deal] payment_details: unknown first leg for lot', ['lot_id' => $lot->id]);
+
+        return false;
+    }
+
+    public function sendBankPaymentDetails(ExchangeLot $lot): bool
+    {
+        $lot->refresh();
+        if (! $this->canAct($lot)) {
+            return false;
+        }
+        $state = DealChatTagSequenceValidator::computeStateForLot($lot);
+        if ($state !== DealChatTagSequenceValidator::STATE_DEAL_STARTED) {
+            return false;
+        }
+
+        $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($buyerEmail === '') {
+            return false;
+        }
+
+        $sellerToken = $this->sellerEscrowToken();
+        if ($sellerToken === null) {
+            return false;
+        }
+
+        try {
+            $cryptoType = DealEscrowCryptoType::sellerCoreType($lot);
+        } catch (\InvalidArgumentException $e) {
+            Log::warning('[training-deal] bank payment_details: crypto type', ['error' => $e->getMessage()]);
+
+            return false;
+        }
+
+        $amount = ($lot->buyer_selected_amount ?? 0) > 0
+            ? (float) $lot->buyer_selected_amount
+            : (float) $lot->sell_amount;
+
+        if (! $this->createCoreSellerReservation($lot, $sellerToken, $cryptoType)) {
+            return false;
+        }
+
+        $bankData = (string) config('training_deal.virtual_bank_payment_details', 'Sandbox virtual bank (training). Check your deal mailbox for the practice receipt.');
+        $txHash = substr('pd-tr-'.$lot->id.'-'.now()->format('YmdHis').'-'.bin2hex(random_bytes(4)), 0, 64);
+
+        $transaction = Transaction::create([
+            'tx_hash' => $txHash,
+            'tx_type' => 'sale',
+            'from_address' => 'buyer',
+            'to_address' => 'seller',
+            'amount' => $amount,
+            'exchange_lot_id' => $lot->id,
+            'buyer_lot_email' => $buyerEmail,
+            'bank_id' => SandboxVirtualBankService::virtualBankId(),
+            'bank_details' => $bankData,
+            'payment_details_set_by' => 'seller',
+            'transaction_timeout_minutes' => BuyerPaymentTimeoutMinutes::effectiveForLot(
+                isset($lot->buyer_payment_timeout_minutes) ? (int) $lot->buyer_payment_timeout_minutes : null
+            ),
+            'status' => 'pending',
+            'is_test' => true,
+            'test_group' => $lot->test_group,
+        ]);
+
+        $this->linkReservationToTransaction($lot, $transaction, $sellerToken, $cryptoType);
+
+        $tag = [
+            't' => 'payment_details',
+            'lot_id' => (int) $lot->id,
+            'tx_id' => (int) $transaction->id,
+            'bank_id' => SandboxVirtualBankService::virtualBankId(),
+            'bank_data' => $bankData,
+        ];
+        $tagJson = json_encode($tag, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $body = 'Training seller: pay via sandbox virtual bank for the first leg.';
+
+        $sent = $this->publishSellerChatMessage($lot, $buyerEmail, $body, $tagJson);
+        if ($sent && SandboxVirtualBankService::lotUsesVirtualSandboxBank($lot)) {
+            $this->sendSandboxReceiptToBuyer($lot, $transaction, $amount);
+        }
+
+        return $sent;
+    }
 
     public function sendCryptoPaymentDetails(ExchangeLot $lot): bool
     {
@@ -149,7 +247,7 @@ final class TrainingDealSellerActions
             $tag['tx_id'] = (int) $transaction->id;
         }
         $tagJson = json_encode($tag, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $body = 'Training seller: first-leg crypto received. Please send your destination address.';
+        $body = 'Training seller: first leg received. Please send your destination details.';
 
         return $this->publishSellerChatMessage($lot, $buyerEmail, $body, $tagJson);
     }
@@ -158,6 +256,25 @@ final class TrainingDealSellerActions
      * @param  array<string, mixed>  $buyerDestinationTag
      */
     public function executeSellerTransfer(ExchangeLot $lot, array $buyerDestinationTag): bool
+    {
+        $firstLegBank = DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot);
+        $buyerReceivesCrypto = DealBuyerSecondLeg::buyerReceivesCrypto($lot, $firstLegBank);
+        if ($buyerReceivesCrypto === true) {
+            return $this->executeSellerCryptoTransfer($lot, $buyerDestinationTag);
+        }
+        if ($buyerReceivesCrypto === false) {
+            return $this->executeSellerFiatTransfer($lot, $buyerDestinationTag);
+        }
+
+        Log::warning('[training-deal] seller_transfer: unknown second leg', ['lot_id' => $lot->id]);
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $buyerDestinationTag
+     */
+    private function executeSellerCryptoTransfer(ExchangeLot $lot, array $buyerDestinationTag): bool
     {
         $lot->refresh();
         if (! $this->canAct($lot)) {
@@ -295,6 +412,134 @@ final class TrainingDealSellerActions
 
             return $this->publishSellerTransferTag($lot, $buyerEmail, $cryptoTxId, (int) $transaction->id);
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $buyerDestinationTag
+     */
+    private function executeSellerFiatTransfer(ExchangeLot $lot, array $buyerDestinationTag): bool
+    {
+        $lot->refresh();
+        if (! $this->canAct($lot)) {
+            return false;
+        }
+        $state = DealChatTagSequenceValidator::computeStateForLot($lot);
+        if ($state !== DealChatTagSequenceValidator::STATE_WAIT_SELLER_TRANSFER) {
+            return false;
+        }
+
+        $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($buyerEmail === '') {
+            return false;
+        }
+
+        $sellerToken = $this->sellerEscrowToken();
+        if ($sellerToken === null) {
+            return false;
+        }
+
+        return (bool) DB::transaction(function () use ($lot, $buyerEmail, $sellerToken, $buyerDestinationTag): bool {
+            $transaction = Transaction::query()
+                ->where('exchange_lot_id', $lot->id)
+                ->where('buyer_lot_email', $buyerEmail)
+                ->where('tx_type', 'sale')
+                ->where('status', 'pending')
+                ->orderByDesc('id')
+                ->lockForUpdate()
+                ->first();
+
+            if ($transaction === null) {
+                return false;
+            }
+
+            try {
+                $cryptoType = DealEscrowCryptoType::sellerCoreType($lot);
+            } catch (\InvalidArgumentException $e) {
+                return false;
+            }
+
+            try {
+                [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerToken);
+                $req = Http::timeout((int) config('services.core.timeout', 10));
+                if ($coreKey !== '') {
+                    $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+                }
+                $req->post(rtrim($coreUrl, '/').'/api/complete-reservation', [
+                    'exchange_lot_id' => (string) $lot->id,
+                    'escrow_token' => $sellerToken,
+                    'crypto_type' => $cryptoType,
+                    'aml_required' => false,
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('[training-deal] fiat seller_transfer: complete-reservation failed', [
+                    'lot_id' => $lot->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            $amount = ($lot->buyer_selected_amount ?? 0) > 0
+                ? (float) $lot->buyer_selected_amount
+                : (float) $lot->sell_amount;
+            $transaction->status = 'completed';
+            $transaction->save();
+
+            if (SandboxVirtualBankService::lotUsesVirtualSandboxBank($lot)) {
+                $this->sendSandboxReceiptToBuyer($lot, $transaction, $amount);
+            }
+
+            $tag = [
+                't' => 'seller_transfer_tx',
+                'lot_id' => (int) $lot->id,
+                'tx_id' => (int) $transaction->id,
+                'receipt_links' => ['sandbox-training-receipt'],
+            ];
+            $tagJson = json_encode($tag, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $body = 'Training seller: sandbox bank transfer sent (second leg). Check your inbox for the practice receipt.';
+
+            return $this->publishSellerChatMessage($lot, $buyerEmail, $body, $tagJson);
+        });
+    }
+
+    private function sendSandboxReceiptToBuyer(ExchangeLot $lot, Transaction $transaction, float $amount): void
+    {
+        $to = trim((string) ($lot->buyer_notification_email ?? ''));
+        if ($to === '') {
+            return;
+        }
+
+        $fiatCode = 'USD';
+        $lot->loadMissing(['toFiatCurrency', 'fromFiatCurrency']);
+        if ($lot->toFiatCurrency) {
+            $fiatCode = (string) $lot->toFiatCurrency->code;
+        } elseif ($lot->fromFiatCurrency) {
+            $fiatCode = (string) $lot->fromFiatCurrency->code;
+        }
+
+        $paymentAtUtc = ($transaction->created_at ?? now())->clone()->utc();
+        $pdf = SandboxTestReceiptPdf::build([
+            'Transfer receipt (sandbox training)',
+            'Generated at: '.now('UTC')->format('d.m.Y H:i:s').' UTC',
+            'Payment date/time: '.$paymentAtUtc->format('d.m.Y H:i:s').' UTC',
+            'Beneficiary bank: '.(string) config('sandbox_virtual_bank.name_en'),
+            'Payment amount: '.number_format($amount, 2, '.', ' ').' '.$fiatCode,
+            'Reference: TRAINING-'.$lot->id.'-'.$transaction->id,
+        ]);
+
+        try {
+            Mail::send([], [], function ($message) use ($to, $pdf, $lot, $transaction): void {
+                $message->to($to);
+                $message->subject('Sandbox training receipt — Lot #'.$lot->id);
+                $message->from(config('mail.from.address', 'noreply@xdexboard.com'), config('mail.from.name', 'XBoard'));
+                $message->text('Synthetic PDF receipt for sandbox training deal (Lot #'.$lot->id.', tx '.$transaction->id.').');
+                $message->attachData($pdf, 'receipt-lot-'.$lot->id.'.pdf', ['mime' => 'application/pdf']);
+                HighDeliveryPriority::apply($message);
+            });
+        } catch (\Throwable $e) {
+            Log::warning('[training-deal] sandbox receipt mail failed', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function publishSellerTransferTag(ExchangeLot $lot, string $buyerEmail, string $cryptoTxId, int $transactionId): bool
