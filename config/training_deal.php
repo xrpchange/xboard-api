@@ -40,5 +40,10 @@ return [
 
     'lot_sell_amount' => (float) env('TRAINING_LOT_SELL_AMOUNT', 5),
     'lot_buy_amounts' => array_values(array_filter(array_map('floatval', explode(',', (string) env('TRAINING_LOT_BUY_AMOUNTS', '5'))))),
-    'lot_note' => env('TRAINING_LOT_NOTE', 'Training deal — automated seller (USDT Stellar testnet).'),
+    'lot_note_fiat_crypto' => env('TRAINING_LOT_NOTE_FIAT_CRYPTO', 'Training: USD → USDT (Stellar)'),
+    'lot_note_crypto_fiat' => env('TRAINING_LOT_NOTE_CRYPTO_FIAT', 'Training: USDT (Stellar) → USD'),
+    'virtual_bank_payment_details' => env(
+        'TRAINING_VIRTUAL_BANK_PAYMENT_DETAILS',
+        'Sandbox virtual bank (training). Confirm payment using the practice receipt in your deal mailbox.'
+    ),
 ];

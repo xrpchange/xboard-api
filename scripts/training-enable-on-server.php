@@ -44,7 +44,8 @@ $set('TRAINING_DEAL_ENABLED', 'true');
 $set('TRAINING_SELLER_NOTIFICATION_EMAIL', 'training-seller@xdexboard.com');
 $set('TRAINING_LOT_SELL_AMOUNT', '5');
 $set('TRAINING_LOT_BUY_AMOUNTS', '5');
-$set('TRAINING_LOT_NOTE', $quote('Для обучения'));
+$set('TRAINING_LOT_NOTE_FIAT_CRYPTO', $quote('Для обучения: USD → USDT (Stellar)'));
+$set('TRAINING_LOT_NOTE_CRYPTO_FIAT', $quote('Для обучения: USDT (Stellar) → USD'));
 $set('TRAINING_SELLER_ESCROW_PUBLIC_JSON', $quote($publicJson));
 $set('TRAINING_SELLER_ESCROW_TOKEN', $quote($coreToken));
 

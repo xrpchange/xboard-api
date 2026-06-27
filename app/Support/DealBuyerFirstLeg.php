@@ -39,7 +39,7 @@ final class DealBuyerFirstLeg
         return ! $bank;
     }
 
-    private static function currencyTypeForLotSide(ExchangeLot $lot, string $side): ?string
+    public static function currencyTypeForLotSide(ExchangeLot $lot, string $side): ?string
     {
         if ($side === 'from') {
             if ($lot->from_fiat_currency_id) {

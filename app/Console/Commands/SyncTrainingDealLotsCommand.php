@@ -6,21 +6,21 @@ namespace App\Console\Commands;
 
 use App\Models\CryptoCurrency;
 use App\Models\ExchangeLot;
+use App\Models\FiatCurrency;
 use App\Models\Node;
+use App\Services\SandboxVirtualBankService;
 use App\Support\DealEscrowPublicPart;
 use App\Support\TrainingDealEscrowTokenFormat;
 use Illuminate\Console\Command;
 
 /**
- * Create or refresh sandbox training lots (USDT Stellar crypto→crypto, automated seller).
- *
- * Requires TRAINING_SELLER_ESCROW_PUBLIC_JSON (or wallet JSON in env) on sandbox API host.
+ * Create or refresh sandbox training lots: USD↔USDT Stellar (fiat↔crypto), automated seller.
  */
 class SyncTrainingDealLotsCommand extends Command
 {
     protected $signature = 'training:sync-lots {--dry-run : Show actions without writing}';
 
-    protected $description = 'Upsert sandbox training exchange lots for deal learning practice';
+    protected $description = 'Upsert sandbox training exchange lots (fiat→crypto and crypto→fiat)';
 
     public function handle(): int
     {
@@ -51,8 +51,9 @@ class SyncTrainingDealLotsCommand extends Command
         }
 
         $usdt = CryptoCurrency::byCode('usdt_stellar')->first();
-        if ($usdt === null) {
-            $this->error('Crypto currency usdt_stellar not found — run CurrencySeeder.');
+        $usd = FiatCurrency::where('code', 'USD')->first();
+        if ($usdt === null || $usd === null) {
+            $this->error('Required currencies missing (usdt_stellar, USD) — run CurrencySeeder.');
 
             return self::FAILURE;
         }
@@ -78,16 +79,9 @@ class SyncTrainingDealLotsCommand extends Command
             $buyAmounts = [5.0];
         }
 
-        $attrs = [
+        $common = [
             'node_id' => (int) $node->id,
-            'from_crypto_currency_id' => $usdt->id,
-            'to_crypto_currency_id' => $usdt->id,
             'crypto_currency_id' => $usdt->id,
-            'sell_amount' => $sellAmount,
-            'buy_amount_min' => min($buyAmounts),
-            'buy_amount_max' => max($buyAmounts),
-            'buy_amounts' => $buyAmounts,
-            'rate' => count($buyAmounts) === 1 && $sellAmount > 0 ? ($buyAmounts[0] / $sellAmount) : 1.0,
             'wallet_address' => $publicJson,
             'wallet_hash' => $tokenHash,
             'is_for_individuals' => true,
@@ -96,34 +90,72 @@ class SyncTrainingDealLotsCommand extends Command
             'is_test' => true,
             'is_training' => true,
             'test_group' => null,
-            'note' => (string) config('training_deal.lot_note', 'Training deal lot'),
             'seller_locale' => 'en',
             'aml' => false,
             'seller_notification_email' => config('training_deal.seller_notification_email'),
+            'virtual_sandbox_bank_code' => SandboxVirtualBankService::bankCode(),
             'expires_at' => now('UTC')->addYear(),
         ];
 
-        $existing = ExchangeLot::query()
-            ->where('is_training', true)
-            ->where('wallet_hash', $tokenHash)
-            ->first();
+        $profiles = [
+            [
+                'key' => 'fiat_crypto',
+                'note' => (string) config('training_deal.lot_note_fiat_crypto', 'Training: USD → USDT (Stellar)'),
+                'from_fiat_currency_id' => $usd->id,
+                'from_crypto_currency_id' => null,
+                'to_fiat_currency_id' => null,
+                'to_crypto_currency_id' => $usdt->id,
+                'sell_amount' => $sellAmount,
+                'buy_amount_min' => min($buyAmounts),
+                'buy_amount_max' => max($buyAmounts),
+                'buy_amounts' => $buyAmounts,
+                'rate' => count($buyAmounts) === 1 && $sellAmount > 0 ? ($buyAmounts[0] / $sellAmount) : 1.0,
+            ],
+            [
+                'key' => 'crypto_fiat',
+                'note' => (string) config('training_deal.lot_note_crypto_fiat', 'Training: USDT (Stellar) → USD'),
+                'from_fiat_currency_id' => null,
+                'from_crypto_currency_id' => $usdt->id,
+                'to_fiat_currency_id' => $usd->id,
+                'to_crypto_currency_id' => null,
+                'sell_amount' => $sellAmount,
+                'buy_amount_min' => min($buyAmounts),
+                'buy_amount_max' => max($buyAmounts),
+                'buy_amounts' => $buyAmounts,
+                'rate' => count($buyAmounts) === 1 && $sellAmount > 0 ? ($buyAmounts[0] / $sellAmount) : 1.0,
+            ],
+        ];
 
         if ($this->option('dry-run')) {
-            $this->info($existing ? "Would update training lot #{$existing->id}" : 'Would create new training lot');
-            $this->line(json_encode($attrs, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            foreach ($profiles as $profile) {
+                $this->info('Would upsert training lot: '.$profile['key']);
+                $this->line(json_encode($common + $profile, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            }
 
             return self::SUCCESS;
         }
 
-        if ($existing !== null) {
-            $existing->update($attrs);
-            $this->info("Updated training lot #{$existing->id} on node {$node->domain}");
+        foreach ($profiles as $profile) {
+            $key = $profile['key'];
+            unset($profile['key']);
 
-            return self::SUCCESS;
+            $existing = ExchangeLot::query()
+                ->where('is_training', true)
+                ->where('wallet_hash', $tokenHash)
+                ->when($key === 'fiat_crypto', fn ($q) => $q->where('from_fiat_currency_id', $usd->id)->where('to_crypto_currency_id', $usdt->id))
+                ->when($key === 'crypto_fiat', fn ($q) => $q->where('from_crypto_currency_id', $usdt->id)->where('to_fiat_currency_id', $usd->id))
+                ->first();
+
+            $attrs = array_merge($common, $profile);
+
+            if ($existing !== null) {
+                $existing->update($attrs);
+                $this->info("Updated training lot #{$existing->id} ({$key}) on node {$node->domain}");
+            } else {
+                $lot = ExchangeLot::create($attrs);
+                $this->info("Created training lot #{$lot->id} ({$key}) on node {$node->domain}");
+            }
         }
-
-        $lot = ExchangeLot::create($attrs);
-        $this->info("Created training lot #{$lot->id} on node {$node->domain}");
 
         return self::SUCCESS;
     }
