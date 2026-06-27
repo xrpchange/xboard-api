@@ -695,6 +695,61 @@ final class TrainingDealSellerActions
     }
 
     /**
+     * After buyer deal_completed_buyer on a training lot, release treasury seller reservation in Core.
+     * Buyer-side complete-reservation uses the buyer token and does not unlock seller holds.
+     */
+    public function releaseSellerCoreReservation(ExchangeLot $lot): void
+    {
+        if (! $this->canAct($lot)) {
+            return;
+        }
+        $publicToken = $this->sellerEscrowPublicJson($lot);
+        if ($publicToken === null) {
+            Log::warning('[training-deal] release reservation: missing seller public token', ['lot_id' => $lot->id]);
+
+            return;
+        }
+        try {
+            $cryptoType = DealEscrowCryptoType::sellerCoreType($lot);
+        } catch (\InvalidArgumentException $e) {
+            Log::warning('[training-deal] release reservation: crypto type', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return;
+        }
+
+        try {
+            [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($publicToken);
+            $req = Http::timeout((int) config('services.core.timeout', 10));
+            if ($coreKey !== '') {
+                $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+            }
+            $resp = $req->post(rtrim($coreUrl, '/').'/api/complete-reservation', [
+                'exchange_lot_id' => (string) $lot->id,
+                'escrow_token' => $publicToken,
+                'crypto_type' => $cryptoType,
+                'aml_required' => false,
+            ]);
+            if ($resp->successful()) {
+                Log::info('[training-deal] seller reservation released', ['lot_id' => $lot->id]);
+            } else {
+                Log::warning('[training-deal] seller reservation release failed', [
+                    'lot_id' => $lot->id,
+                    'status' => $resp->status(),
+                    'body' => $resp->body(),
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[training-deal] seller reservation release exception', [
+                'lot_id' => $lot->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
      * Core reservations/transfers expect public part only; encrypted_part is uploaded separately.
      */
     private function uploadSellerEncryptedPart(): bool

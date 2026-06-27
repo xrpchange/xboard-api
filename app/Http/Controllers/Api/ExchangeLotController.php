@@ -5524,14 +5524,17 @@ class ExchangeLotController extends Controller
                     resolution: 'Deal data purged after completion.'
                 );
 
-                // Clear mailbox-oriented PII; keep buyer_escrow_token_hash so ValidateEscrowToken + chat-messages
-                // still recognize the buyer and return an empty thread (otherwise GET chat-messages → 403 and clients keep stale UI).
-                ExchangeLot::query()->where('id', $lot->id)->update([
+                // Clear mailbox-oriented PII. Regular lots keep buyer_escrow_token_hash for empty-thread chat auth.
+                $purgeLotUpdate = [
                     'buyer_lot_email' => null,
                     'buyer_selected_amount' => null,
                     'buyer_seen_ip' => null,
                     'buyer_ip_share_with_seller' => false,
-                ]);
+                ];
+                if ((bool) ($lot->is_training ?? false)) {
+                    $purgeLotUpdate['buyer_escrow_token_hash'] = null;
+                }
+                ExchangeLot::query()->where('id', $lot->id)->update($purgeLotUpdate);
             });
         } catch (\Throwable $e) {
             Log::error('[exchange-lots] purgeCompletedDealData failed', [
@@ -6441,6 +6444,10 @@ class ExchangeLotController extends Controller
             $this->tryDeleteCoreReservationAfterSellerAmicableCompletion($lot, $request, 'deal_completed_seller_timeout');
         }
         DealTerminalLotClosure::releaseLotBuyerBinding($lot);
+        $lot->refresh();
+        if ((bool) ($lot->is_training ?? false)) {
+            $this->trainingDealOrchestrator->releaseSellerCoreReservationAfterCompletion($lot);
+        }
 
         return null;
     }
