@@ -3990,6 +3990,12 @@ class ExchangeLotController extends Controller
                 $tagJson
             );
 
+            $decodedTag = json_decode($tagJson, true);
+            $this->maybeAdvanceTrainingDealAfterBuyerStep(
+                $lot,
+                is_array($decodedTag) ? $decodedTag : null,
+            );
+
             return response()->json([
                 'success' => true,
                 'message' => 'Crypto sent to seller address. Seller verification step is now active.',
@@ -7396,6 +7402,13 @@ class ExchangeLotController extends Controller
         $tagType = trim((string) ($dealTagData['t'] ?? ''));
         if (! in_array($tagType, ['buyer_crypto_tx', 'seller_transfer_tx'], true)) {
             return ['deal_tag' => $dealTagData, 'error' => null];
+        }
+
+        if ($this->trainingDealOrchestrator->isEnabledForLot($lot)) {
+            return [
+                'deal_tag' => $this->trainingDealOrchestrator->bypassCoreTxVerificationForTag($lot, $dealTagData),
+                'error' => null,
+            ];
         }
 
         // Bank / PDF second leg (crypto→fiat): seller_transfer_tx carries receipt_links only — no on-chain id for Core.

@@ -91,7 +91,7 @@ class SyncTrainingDealLotsCommand extends Command
             'is_training' => true,
             'test_group' => null,
             'seller_locale' => 'en',
-            'aml' => false,
+            'aml' => true,
             'seller_notification_email' => config('training_deal.seller_notification_email'),
             'virtual_sandbox_bank_code' => SandboxVirtualBankService::bankCode(),
             'expires_at' => now('UTC')->addYear(),
@@ -149,6 +149,8 @@ class SyncTrainingDealLotsCommand extends Command
             $attrs = array_merge($common, $profile);
 
             if ($existing !== null) {
+                // Practice lots are reused; reset sold volume so search shows them after a completed run.
+                $attrs['sold_crypto_amount'] = 0;
                 $existing->update($attrs);
                 $this->info("Updated training lot #{$existing->id} ({$key}) on node {$node->domain}");
             } else {

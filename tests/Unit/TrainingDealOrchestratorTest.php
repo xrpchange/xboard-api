@@ -51,6 +51,25 @@ class TrainingDealOrchestratorTest extends TestCase
     }
 
     /** @group spec-LOT-021 */
+    public function test_bypass_core_tx_verification_for_training_buyer_crypto_tx(): void
+    {
+        Config::set('training_deal.enabled', true);
+        Config::set('app.url', 'https://sandbox.api.xdexboard.com');
+
+        $lot = new ExchangeLot(['is_training' => true, 'id' => 9]);
+        $orch = $this->app->make(TrainingDealOrchestrator::class);
+
+        $out = $orch->bypassCoreTxVerificationForTag($lot, [
+            't' => 'buyer_crypto_tx',
+            'lot_id' => 9,
+            'tx_ref' => 'stellar-test-tx-hash',
+        ]);
+
+        $this->assertTrue($out['core_tx_check']['verified'] ?? false);
+        $this->assertTrue($out['core_tx_check']['training_auto'] ?? false);
+    }
+
+    /** @group spec-LOT-021 */
     public function test_disabled_on_production_host_even_when_training_flag(): void
     {
         Config::set('training_deal.enabled', true);

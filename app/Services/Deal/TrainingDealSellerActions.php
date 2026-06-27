@@ -22,6 +22,7 @@ use App\Support\DealTerminalLotClosure;
 use App\Support\SandboxTestReceiptPdf;
 use App\Support\SellerEscrowReservedAmount;
 use App\Support\TrainingDealEscrowTokenFormat;
+use App\Support\TrainingDealLegSemantics;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -43,10 +44,12 @@ final class TrainingDealSellerActions
     public function sendFirstLegPaymentDetails(ExchangeLot $lot): bool
     {
         $lot->refresh();
-        if (DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot) === true) {
+        $firstLegBank = TrainingDealLegSemantics::buyerFirstLegIsBankTransfer($lot)
+            ?? DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot);
+        if ($firstLegBank === true) {
             return $this->sendBankPaymentDetails($lot);
         }
-        if (DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot) === true) {
+        if ($firstLegBank === false) {
             return $this->sendCryptoPaymentDetails($lot);
         }
 
@@ -279,8 +282,12 @@ final class TrainingDealSellerActions
      */
     public function executeSellerTransfer(ExchangeLot $lot, array $buyerDestinationTag): bool
     {
-        $firstLegBank = DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot);
-        $buyerReceivesCrypto = DealBuyerSecondLeg::buyerReceivesCrypto($lot, $firstLegBank);
+        $buyerReceivesCrypto = TrainingDealLegSemantics::buyerSecondLegReceivesCrypto($lot);
+        if ($buyerReceivesCrypto === null) {
+            $firstLegBank = TrainingDealLegSemantics::buyerFirstLegIsBankTransfer($lot)
+                ?? DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot);
+            $buyerReceivesCrypto = DealBuyerSecondLeg::buyerReceivesCrypto($lot, $firstLegBank);
+        }
         if ($buyerReceivesCrypto === true) {
             return $this->executeSellerCryptoTransfer($lot, $buyerDestinationTag);
         }

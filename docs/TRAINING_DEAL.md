@@ -13,29 +13,35 @@
 
 `php artisan training:sync-lots` upserts **both** directions on the same treasury USDT Stellar token:
 
-| Lot | Direction | First leg (buyer pays) | Second leg (seller pays) |
-|-----|-----------|------------------------|---------------------------|
-| A | **Fiat → crypto** | USD via virtual sandbox bank | USDT Stellar testnet |
-| B | **Crypto → fiat** | USDT Stellar testnet | USD via virtual sandbox bank |
+| Lot | Direction (label) | First leg (buyer pays) | Second leg (seller pays) |
+|-----|-------------------|------------------------|---------------------------|
+| A (#9) | **Fiat → crypto** (USD→USDT) | USDT Stellar testnet | USD virtual sandbox bank |
+| B (#10) | **Crypto → fiat** (USDT→USD) | USD virtual sandbox bank | USDT Stellar testnet |
 
-- **Buyer:** real device; own Stellar USDT escrow token for crypto legs (Fund via Core in app)
+Leg types for **`is_training`** lots: **first leg = `to_currency`**, **second leg = `from_currency`** (not the same as non-training §4.1 from/to). API: `TrainingDealLegSemantics`; client: `trainingBuyerFirstLeg*` / `trainingBuyerSecondLegReceivesCryptoOrNull`.
+
+- **Buyer:** real device; own Stellar USDT escrow token for crypto legs (Fund via Core in app). Lots are synced with **`aml=true`** so on crypto-first legs the deal screen shows **Send crypto to seller** (server payout via buyer escrow token) instead of manual tx-id entry only.
 - **Seller:** treasury escrow token on the lot; **`TrainingDealOrchestrator`** on sandbox host only
 
 ## Orchestrator chain (buyer tags → seller auto-reply)
 
-**Fiat → crypto**
-
-1. `start_deal` → seller `payment_details` (virtual bank)
-2. `receipt_confirmation` → seller `seller_received_funds`
-3. `buyer_destination_details` → Core payout + seller `seller_transfer_tx` → **auto** `deal_completed_buyer` + lot release (no buyer button)
-
-**Crypto → fiat**
+**Fiat → crypto (lot A / #9 USD→USDT label)**
 
 1. `start_deal` → seller `payment_details` (Stellar address from treasury public JSON)
 2. `buyer_crypto_tx` → seller `seller_received_funds`
-3. `buyer_destination_details` → virtual bank receipt + seller `seller_transfer_tx` → **auto** `deal_completed_buyer` + lot release (no buyer button)
+3. `buyer_destination_details` → virtual bank receipt + seller `seller_transfer_tx` → **auto** `deal_completed_buyer` + lot release. Post-completion cleanup dialog as a regular deal.
 
-Validators are **not** relaxed for normal lots. Orchestrator runs only when:
+**Crypto → fiat (lot B / #10 USDT→USD label)**
+
+1. `start_deal` → seller `payment_details` (virtual bank)
+2. `receipt_confirmation` → seller `seller_received_funds`
+3. `buyer_destination_details` → Core payout + seller `seller_transfer_tx` → **auto** `deal_completed_buyer` + lot release. Post-completion cleanup dialog as a regular deal.
+
+After completion, `DealTerminalLotClosure` clears buyer email fields and resets **`sold_crypto_amount` to 0** so public search lists the practice lot again; **`buyer_escrow_token_hash` stays** until the next `start_deal` so the buyer client can still load chat tags through `deal_completed_buyer`. `completed_deals_count` is kept as history. `training:sync-lots` also resets `sold_crypto_amount` on refresh.
+
+Validators are **not** relaxed for normal lots. On **`is_training`** sandbox lots, **`buyer_crypto_tx`** / **`seller_transfer_tx`** skip on-chain Core verify (tag gets `core_tx_check.verified=true`, `training_auto`); the orchestrator then posts **`seller_received_funds`** without waiting for testnet confirmations.
+
+Orchestrator runs only when:
 
 - `TRAINING_DEAL_ENABLED=true`
 - API host is sandbox (`sandbox.api.*`)
