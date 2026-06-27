@@ -76,8 +76,8 @@ final class TrainingDealSellerActions
             return false;
         }
 
-        $sellerToken = $this->sellerEscrowTokenJson($lot);
-        if ($sellerToken === null) {
+        $publicToken = $this->sellerEscrowPublicJson($lot);
+        if ($publicToken === null) {
             Log::warning('[training-deal] payment_details: missing seller escrow token config', ['lot_id' => $lot->id]);
 
             return false;
@@ -95,13 +95,13 @@ final class TrainingDealSellerActions
             ? (float) $lot->buyer_selected_amount
             : (float) $lot->sell_amount;
 
-        if (! $this->escrowCoreUpload->ensureSellerEncryptedPartUploaded($sellerToken)) {
+        if (! $this->uploadSellerEncryptedPart()) {
             Log::warning('[training-deal] bank payment_details: encrypted upload failed', ['lot_id' => $lot->id]);
 
             return false;
         }
 
-        if (! $this->createCoreSellerReservation($lot, $sellerToken, $cryptoType)) {
+        if (! $this->createCoreSellerReservation($lot, $publicToken, $cryptoType)) {
             return false;
         }
 
@@ -127,7 +127,7 @@ final class TrainingDealSellerActions
             'test_group' => $lot->test_group,
         ]);
 
-        $this->linkReservationToTransaction($lot, $transaction, $sellerToken, $cryptoType);
+        $this->linkReservationToTransaction($lot, $transaction, $publicToken, $cryptoType);
 
         $tag = [
             't' => 'payment_details',
@@ -163,15 +163,14 @@ final class TrainingDealSellerActions
             return false;
         }
 
-        $sellerToken = $this->sellerEscrowTokenJson($lot);
-        $publicJson = $this->sellerEscrowPublicJson($lot);
-        if ($sellerToken === null || $publicJson === null) {
+        $publicToken = $this->sellerEscrowPublicJson($lot);
+        if ($publicToken === null) {
             Log::warning('[training-deal] payment_details: missing seller token config');
 
             return false;
         }
 
-        $cryptoAddress = DealEscrowPublicPart::blockchainReceiveAddressFromJson($publicJson);
+        $cryptoAddress = DealEscrowPublicPart::blockchainReceiveAddressFromJson($publicToken);
         if ($cryptoAddress === null) {
             Log::warning('[training-deal] payment_details: no blockchain address in seller public JSON');
 
@@ -192,13 +191,13 @@ final class TrainingDealSellerActions
             ? (float) $lot->buyer_selected_amount
             : (float) $lot->sell_amount;
 
-        if (! $this->escrowCoreUpload->ensureSellerEncryptedPartUploaded($sellerToken)) {
+        if (! $this->uploadSellerEncryptedPart()) {
             Log::warning('[training-deal] payment_details: encrypted upload failed', ['lot_id' => $lot->id]);
 
             return false;
         }
 
-        if (! $this->createCoreSellerReservation($lot, $sellerToken, $cryptoType)) {
+        if (! $this->createCoreSellerReservation($lot, $publicToken, $cryptoType)) {
             return false;
         }
 
@@ -222,7 +221,7 @@ final class TrainingDealSellerActions
             'test_group' => $lot->test_group,
         ]);
 
-        $this->linkReservationToTransaction($lot, $transaction, $sellerToken, $cryptoType);
+        $this->linkReservationToTransaction($lot, $transaction, $publicToken, $cryptoType);
 
         $tag = [
             't' => 'payment_details',
@@ -311,12 +310,12 @@ final class TrainingDealSellerActions
             return false;
         }
 
-        $sellerToken = $this->sellerEscrowTokenJson($lot);
-        if ($sellerToken === null) {
+        $publicToken = $this->sellerEscrowPublicJson($lot);
+        if ($publicToken === null) {
             return false;
         }
 
-        return (bool) DB::transaction(function () use ($lot, $buyerEmail, $sellerToken, $buyerDestinationTag): bool {
+        return (bool) DB::transaction(function () use ($lot, $buyerEmail, $publicToken, $buyerDestinationTag): bool {
             $transaction = Transaction::query()
                 ->where('exchange_lot_id', $lot->id)
                 ->where('buyer_lot_email', $buyerEmail)
@@ -356,18 +355,18 @@ final class TrainingDealSellerActions
                 return false;
             }
 
-            if (! $this->escrowCoreUpload->ensureSellerEncryptedPartUploaded($sellerToken)) {
+            if (! $this->uploadSellerEncryptedPart()) {
                 Log::warning('[training-deal] seller_transfer: encrypted upload failed', ['lot_id' => $lot->id]);
 
                 return false;
             }
 
-            [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerToken);
+            [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($publicToken);
             $timeout = (int) config('services.core.payout_timeout', 120);
             $payload = [
                 'exchange_lot_id' => (string) $lot->id,
                 'laravel_transaction_id' => $transaction->id,
-                'escrow_token' => $sellerToken,
+                'escrow_token' => $publicToken,
                 'destination_address' => $dest,
                 'amount' => $amount,
                 'crypto_type' => $cryptoType,
@@ -420,7 +419,7 @@ final class TrainingDealSellerActions
                 }
                 $reqDel->post(rtrim($coreUrl, '/').'/api/complete-reservation', [
                     'exchange_lot_id' => (string) $lot->id,
-                    'escrow_token' => $sellerToken,
+                    'escrow_token' => $publicToken,
                     'crypto_type' => $cryptoType,
                     'aml_required' => false,
                 ]);
@@ -454,12 +453,12 @@ final class TrainingDealSellerActions
             return false;
         }
 
-        $sellerToken = $this->sellerEscrowTokenJson($lot);
-        if ($sellerToken === null) {
+        $publicToken = $this->sellerEscrowPublicJson($lot);
+        if ($publicToken === null) {
             return false;
         }
 
-        return (bool) DB::transaction(function () use ($lot, $buyerEmail, $sellerToken, $buyerDestinationTag): bool {
+        return (bool) DB::transaction(function () use ($lot, $buyerEmail, $publicToken, $buyerDestinationTag): bool {
             $transaction = Transaction::query()
                 ->where('exchange_lot_id', $lot->id)
                 ->where('buyer_lot_email', $buyerEmail)
@@ -480,14 +479,14 @@ final class TrainingDealSellerActions
             }
 
             try {
-                [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerToken);
+                [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($publicToken);
                 $req = Http::timeout((int) config('services.core.timeout', 10));
                 if ($coreKey !== '') {
                     $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
                 }
                 $req->post(rtrim($coreUrl, '/').'/api/complete-reservation', [
                     'exchange_lot_id' => (string) $lot->id,
-                    'escrow_token' => $sellerToken,
+                    'escrow_token' => $publicToken,
                     'crypto_type' => $cryptoType,
                     'aml_required' => false,
                 ]);
@@ -696,28 +695,21 @@ final class TrainingDealSellerActions
     }
 
     /**
-     * Core escrow JSON: lot public part (hash-valid) + encrypted_part from server secrets.
+     * Core reservations/transfers expect public part only; encrypted_part is uploaded separately.
      */
-    private function sellerEscrowTokenJson(ExchangeLot $lot): ?string
+    private function uploadSellerEncryptedPart(): bool
     {
-        $publicJson = $this->sellerEscrowPublicJson($lot);
-        if ($publicJson === null) {
-            return null;
-        }
-        $public = json_decode($publicJson, true);
-        if (! is_array($public)) {
-            return null;
-        }
-        $encrypted = $this->sellerEscrowEncryptedPart();
-        if ($encrypted !== null && $encrypted !== '') {
-            $public['encrypted_part'] = $encrypted;
-        }
-        unset($public['encrypted_data']);
+        $export = $this->sellerEscrowSecretExportJson();
+        if ($export === null) {
+            Log::warning('[training-deal] missing seller secret export for encrypted upload');
 
-        return json_encode($public, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            return false;
+        }
+
+        return $this->escrowCoreUpload->ensureSellerEncryptedPartUploaded($export);
     }
 
-    private function sellerEscrowEncryptedPart(): ?string
+    private function sellerEscrowSecretExportJson(): ?string
     {
         $candidates = [
             trim((string) config('training_deal.seller_escrow_token', '')),
@@ -740,11 +732,10 @@ final class TrainingDealSellerActions
             if ($raw === '') {
                 continue;
             }
-            $encrypted = TrainingDealEscrowTokenFormat::encryptedData(
+            if (TrainingDealEscrowTokenFormat::encryptedData(
                 TrainingDealEscrowTokenFormat::normalizeForCore($raw)
-            );
-            if ($encrypted !== null && $encrypted !== '') {
-                return $encrypted;
+            ) !== null) {
+                return $raw;
             }
         }
 
