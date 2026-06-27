@@ -31,14 +31,22 @@ Validators are **not** relaxed for normal lots. Orchestrator runs only when:
 
 ## API / env
 
+**Preferred (server):** full client export in `storage/app/training_seller_token.json` (gitignored). Public JSON is derived automatically for the lot.
+
 ```env
 TRAINING_DEAL_ENABLED=true
-TRAINING_SELLER_ESCROW_PUBLIC_JSON={"token_hash":"…","currency":"USDT","wallet_address":"G…"}
-TRAINING_SELLER_ESCROW_TOKEN={"public_part":…,"encrypted_part":…}
 TRAINING_SELLER_NOTIFICATION_EMAIL=training-seller@xdexboard.com
 TRAINING_LOT_NODE_ID=1
 TRAINING_LOT_SELL_AMOUNT=5
 TRAINING_LOT_BUY_AMOUNTS=5
+TRAINING_LOT_NOTE=Для обучения
+```
+
+Optional overrides instead of the token file:
+
+```env
+TRAINING_SELLER_ESCROW_PUBLIC_JSON={"token_hash":"…","currency":"USDT","wallet_address":"G…"}
+TRAINING_SELLER_ESCROW_TOKEN={"public_part":…,"encrypted_part":…}
 ```
 
 Seed or refresh the lot:
@@ -50,9 +58,11 @@ php artisan training:sync-lots
 
 Treasury seller must be **funded** on sandbox Core (Stellar testnet USDT) so reservations and second-leg payout succeed.
 
+The orchestrator **re-uploads** `encrypted_part` to Core automatically before each seller payout (Core deletes it after transfer). Operators do not run manual steps between user deals.
+
 ## Client
 
-- Search: badge **Training** when `is_training` in lot JSON  
+- Search: badge **Training** when `is_training` in lot JSON; optional **practice mode** (from deal learning) lists only `is_training=true` USDT Stellar lots (`is_training` query param)  
 - Buyer deal screen: banner that seller responds automatically  
 - Settings / Search: `DealLearningScreen` promo and post-track CTA to Search  
 
