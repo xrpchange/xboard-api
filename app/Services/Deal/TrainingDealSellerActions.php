@@ -116,7 +116,7 @@ final class TrainingDealSellerActions
             'amount' => $amount,
             'exchange_lot_id' => $lot->id,
             'buyer_lot_email' => $buyerEmail,
-            'bank_id' => SandboxVirtualBankService::virtualBankId(),
+            'bank_id' => SandboxVirtualBankService::lotUsesVirtualSandboxBank($lot) ? null : $lot->bank_id,
             'bank_details' => $bankData,
             'payment_details_set_by' => 'seller',
             'transaction_timeout_minutes' => BuyerPaymentTimeoutMinutes::effectiveForLot(
