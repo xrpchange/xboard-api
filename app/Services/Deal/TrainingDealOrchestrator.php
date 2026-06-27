@@ -59,4 +59,13 @@ final class TrainingDealOrchestrator
             default => null,
         };
     }
+
+    /** Best-effort Core seller reservation release after training deal completion. */
+    public function releaseSellerCoreReservationAfterCompletion(ExchangeLot $lot): void
+    {
+        if (! (bool) ($lot->is_training ?? false)) {
+            return;
+        }
+        $this->sellerActions->releaseSellerCoreReservation($lot);
+    }
 }
