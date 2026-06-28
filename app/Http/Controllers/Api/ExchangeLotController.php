@@ -39,6 +39,7 @@ use App\Support\DealChatMessageLimits;
 use App\Support\DealEscrowCryptoType;
 use App\Support\EscrowTokenLotLimit;
 use App\Support\ExchangeLotDealCounters;
+use App\Support\ExchangeLotTrainingSearchFilter;
 use App\Support\StartDealBuyerEscrowValidation;
 use App\Support\DealSaleTransactionCompletion;
 use App\Support\DealSellerOpenLinks;
@@ -810,12 +811,8 @@ class ExchangeLotController extends Controller
         if ($request->filled('aml_max')) {
             $query->where('aml', true);
         }
-        if ($request->has('is_training')) {
-            $trainingOnly = filter_var($request->is_training, FILTER_VALIDATE_BOOL);
-            $query->where('is_training', $trainingOnly);
-            if ($trainingOnly) {
-                $this->trainingDealAbandonedLotRelease->releaseStaleLockedLots();
-            }
+        if (ExchangeLotTrainingSearchFilter::applyFromRequest($query, $request)) {
+            $this->trainingDealAbandonedLotRelease->releaseStaleLockedLots();
         }
         $walletAddresses = $request->input('wallet_address') ?? $request->input('wallet_address[]');
         $hashes = [];

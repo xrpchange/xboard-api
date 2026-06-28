@@ -86,7 +86,7 @@ The orchestrator **re-uploads** `encrypted_part` to Core automatically before ea
 
 ## Client
 
-- Search: badge **Training** when `is_training` in lot JSON; **practice mode** (from deal learning) lists only `is_training=true` lots (both directions)
+- Search: badge **Training** when `is_training` in lot JSON; **ordinary search** excludes training lots (`is_training=false`; API default when the parameter is omitted); **practice mode** (from deal learning) lists only `is_training=true` lots (both directions)
 - Buyer deal screen: banner that seller responds automatically
 - Settings / Search: `DealLearningScreen` promo and post-track CTA to Search; hub cards use vector arrow (not Unicode `→`) for web Skiko
 
