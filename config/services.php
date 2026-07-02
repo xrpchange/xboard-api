@@ -52,7 +52,7 @@ return [
         'key' => env('CORE_KEY', ''),
         'timeout' => env('CORE_TIMEOUT', 10),
         'create_timeout' => env('CORE_CREATE_TIMEOUT', 120),
-        'payout_timeout' => env('CORE_PAYOUT_TIMEOUT', 120),
+        'payout_timeout' => env('CORE_PAYOUT_TIMEOUT', 150),
     ],
 
     'core_production' => [
@@ -60,7 +60,7 @@ return [
         'key' => env('CORE_PRODUCTION_KEY', ''),
         'timeout' => env('CORE_PRODUCTION_TIMEOUT', 10),
         'create_timeout' => env('CORE_PRODUCTION_CREATE_TIMEOUT', env('CORE_CREATE_TIMEOUT', 120)),
-        'payout_timeout' => env('CORE_PRODUCTION_PAYOUT_TIMEOUT', 120),
+        'payout_timeout' => env('CORE_PRODUCTION_PAYOUT_TIMEOUT', 150),
     ],
 
     'dev' => [
