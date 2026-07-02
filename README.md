@@ -398,7 +398,7 @@ CORE_URL=https://api.core.xdexboard.com
 CORE_KEY=your_api_key
 CORE_TIMEOUT=10
 CORE_CREATE_TIMEOUT=120
-CORE_PAYOUT_TIMEOUT=120
+CORE_PAYOUT_TIMEOUT=150
 ```
 
 ### Usage Examples
