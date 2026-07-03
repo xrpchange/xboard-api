@@ -34,6 +34,7 @@ use App\Support\ArbiterReceiptPdfResolver;
 use App\Support\ClientWebOrigin;
 use App\Support\DealBuyerEscrowTokenHash;
 use App\Support\DealChatTagSequenceValidator;
+use App\Support\EscrowTokenOnlyCryptoDealRules;
 use App\Support\DisputeArbiterParticipantPolicy;
 use App\Support\DealChatMessageLimits;
 use App\Support\DealEscrowCryptoType;
@@ -3960,12 +3961,20 @@ class ExchangeLotController extends Controller
             $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot))
                 ?? $lot->seller_lot_email;
             // Client uses via_escrow_server for localized chat summary; chat row body is empty (no user-facing server prose in app).
+            $coreTxCheck = EscrowTokenOnlyCryptoDealRules::buildEscrowPayoutCoreTxCheck(
+                $cryptoType,
+                $cryptoTxId,
+                $amount,
+                $dest,
+                'buyer_first_leg',
+            );
             $tagJson = json_encode([
                 't' => 'buyer_crypto_tx',
                 'lot_id' => (int) $lot->id,
                 'tx_ref' => $cryptoTxId,
                 'laravel_transaction_id' => $transaction->id,
                 'via_escrow_server' => true,
+                'core_tx_check' => $coreTxCheck,
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             if (! empty($sellerEmailForChat)) {
                 try {
@@ -4301,11 +4310,20 @@ class ExchangeLotController extends Controller
                 ]);
             }
 
+            $coreTxCheck = EscrowTokenOnlyCryptoDealRules::buildEscrowPayoutCoreTxCheck(
+                $cryptoType,
+                $cryptoTxId,
+                $amount,
+                $dest,
+                'seller_second_leg',
+            );
             $tagJson = json_encode([
                 't' => 'deal_completed_seller',
                 'lot_id' => (int) $lot->id,
                 'crypto_payout_tx' => $cryptoTxId,
                 'laravel_transaction_id' => $transaction->id,
+                'via_escrow_server' => true,
+                'core_tx_check' => $coreTxCheck,
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
             try {
@@ -7386,102 +7404,23 @@ class ExchangeLotController extends Controller
             }
         }
 
-        // seller_transfer_tx from the app uses tx_number; buyer_crypto_tx uses tx_ref / transaction_id.
-        $txRef = trim((string) ($dealTagData['tx_ref'] ?? $dealTagData['transaction_id'] ?? $dealTagData['tx_number'] ?? ''));
-        if ($txRef === '') {
-            return [
-                'deal_tag' => $dealTagData,
-                'error' => [
-                    'message' => 'transaction id (tx_ref) is required for crypto transfer proof.',
-                    'error_code' => 'crypto_tx_id_required',
-                ],
-            ];
+        $result = $this->dealCryptoTxCoreVerifier->verifyDealTag($lot, $dealTagData);
+        $verification = is_array($result['verification'] ?? null) ? $result['verification'] : [];
+        if ($verification !== []) {
+            $dealTagData['core_tx_check'] = $verification;
         }
 
-        try {
-            $cryptoType = $tagType === 'buyer_crypto_tx'
-                ? self::coreCryptoTypeForBuyerEscrow($lot)
-                : self::coreCryptoTypeForSellerEscrow($lot);
-        } catch (\InvalidArgumentException $e) {
-            return [
-                'deal_tag' => $dealTagData,
-                'error' => [
-                    'message' => $e->getMessage(),
-                    'error_code' => 'invalid_lot_crypto',
-                ],
-            ];
-        }
-
-        $payload = [
-            'transaction_id' => $txRef,
-            'crypto_type' => $cryptoType,
-            'min_confirmations' => 0,
-            'strict_checks' => true,
-        ];
-        $expectedAddress = $this->expectedAddressForCoreTxCheck($lot, $tagType);
-        if ($expectedAddress !== null && $expectedAddress !== '') {
-            $payload['expected_address'] = $expectedAddress;
-        }
-        $expectedAmount = $this->expectedAmountForCoreTxCheck($lot, $tagType);
-        if ($expectedAmount !== null && $expectedAmount > 0) {
-            $payload['expected_amount'] = $expectedAmount;
-        }
-
-        $coreUrl = rtrim($this->getCoreApiUrl(), '/');
-        $endpoint = $coreUrl.'/api/escrow-tokens/verify-external-payment';
-        $req = Http::timeout((int) config('services.core.timeout', 10));
-        $coreKey = $this->getCoreApiKey();
-        if ($coreKey !== '') {
-            $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
-        }
-
-        try {
-            $resp = $req->asJson()->post($endpoint, $payload);
-        } catch (\Throwable $e) {
-            Log::warning('[exchange-lots] verifyCryptoTxDealTagViaCore: transport exception', [
-                'lot_id' => $lot->id,
-                'tag_type' => $tagType,
-                'tx_ref' => $txRef,
-                'error' => $e->getMessage(),
-            ]);
-            return [
-                'deal_tag' => $dealTagData,
-                'error' => [
-                    'message' => 'Failed to verify crypto transaction id via Core.',
-                    'error_code' => 'core_crypto_tx_verify_transport_failed',
-                    'status' => 502,
-                ],
-            ];
-        }
-
-        $body = $resp->json();
-        $data = is_array($body) && is_array($body['data'] ?? null) ? $body['data'] : [];
-        if (! $resp->successful()) {
-            return [
-                'deal_tag' => $dealTagData,
-                'error' => [
-                    'message' => is_array($body) ? (string) ($body['message'] ?? 'Core tx verification failed.') : 'Core tx verification failed.',
-                    'error_code' => is_array($body) ? (string) ($body['error_code'] ?? 'core_crypto_tx_verify_failed') : 'core_crypto_tx_verify_failed',
-                    'status' => $resp->status() >= 500 ? 502 : 422,
-                ],
-            ];
-        }
-
-        $verified = (bool) ($data['verified'] ?? false);
-        $verification = [
-            'source' => 'core_verify_external_payment',
-            'checked_at_utc' => now()->utc()->toIso8601String(),
-            'verified' => $verified,
-            'status' => $data['status'] ?? null,
-            'is_confirmed' => $data['is_confirmed'] ?? null,
-            'confirmations' => $data['confirmations'] ?? null,
-            'checks' => is_array($data['checks'] ?? null) ? $data['checks'] : [],
-        ];
-        $dealTagData['core_tx_check'] = $verification;
-
-        if (! $verified) {
-            $amountMatches = $verification['checks']['amount_matches'] ?? null;
-            if ($amountMatches === false) {
+        if (($result['error'] ?? null) !== null) {
+            /** @var array{message:string,error_code:string} $err */
+            $err = $result['error'];
+            $status = match ($err['error_code'] ?? '') {
+                'core_crypto_tx_verify_transport_failed' => 502,
+                default => 422,
+            };
+            if (
+                ($verification['checks']['amount_matches'] ?? null) === false
+                && ($err['error_code'] ?? '') === 'crypto_tx_not_verified'
+            ) {
                 return [
                     'deal_tag' => $dealTagData,
                     'error' => [
@@ -7492,12 +7431,13 @@ class ExchangeLotController extends Controller
                     ],
                 ];
             }
+
             return [
                 'deal_tag' => $dealTagData,
                 'error' => [
-                    'message' => 'Crypto transaction id is not verified yet. Check tx id / confirmations and try again.',
-                    'error_code' => 'crypto_tx_not_verified',
-                    'status' => 422,
+                    'message' => $err['message'],
+                    'error_code' => $err['error_code'],
+                    'status' => $status,
                     'verification' => $verification,
                 ],
             ];

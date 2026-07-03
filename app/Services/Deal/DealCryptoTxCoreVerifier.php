@@ -9,6 +9,7 @@ use App\Models\ExchangeLot;
 use App\Models\Transaction;
 use App\Support\ApiDeploymentEnvironment;
 use App\Support\DealEscrowCryptoType;
+use App\Support\EscrowTokenOnlyCryptoDealRules;
 use App\Support\SellerEscrowReservedAmount;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -53,6 +54,17 @@ final class DealCryptoTxCoreVerifier
     {
         $dealTagData = $this->normalizeCryptoProofTag($dealTagData);
         $tagType = trim((string) ($dealTagData['t'] ?? ''));
+        $manualReject = EscrowTokenOnlyCryptoDealRules::rejectManualCryptoProofIfRequired($lot, $dealTagData);
+        if ($manualReject !== null) {
+            return [
+                'verified' => false,
+                'verification' => [],
+                'error' => [
+                    'message' => $manualReject['message'],
+                    'error_code' => $manualReject['error_code'],
+                ],
+            ];
+        }
         if (! in_array($tagType, ['buyer_crypto_tx', 'seller_transfer_tx'], true)) {
             return [
                 'verified' => false,
@@ -105,17 +117,38 @@ final class DealCryptoTxCoreVerifier
             ];
         }
 
+        if (EscrowTokenOnlyCryptoDealRules::shouldVerifyViaEscrowRecords($lot, $dealTagData, $cryptoType, $tagType)) {
+            $storedCheck = is_array($dealTagData['core_tx_check'] ?? null) ? $dealTagData['core_tx_check'] : null;
+            if ($this->isStoredEscrowPayoutCheckValid($storedCheck, $txRef)) {
+                return $this->buildStoredEscrowPayoutVerifyResult($lot, $storedCheck, $cryptoType, $txRef);
+            }
+
+            $expectedAddress = $this->expectedAddress($lot, $tagType);
+            $expectedAmount = $this->expectedAmount($lot, $tagType);
+
+            return $this->verifyEscrowTokenTransfer(
+                $lot,
+                $dealTagData,
+                $tagType,
+                $txRef,
+                $cryptoType,
+                $expectedAmount,
+                $expectedAddress,
+            );
+        }
+
+        $expectedAddress = $this->expectedAddress($lot, $tagType);
+        $expectedAmount = $this->expectedAmount($lot, $tagType);
+
         $payload = [
             'transaction_id' => $txRef,
             'crypto_type' => $cryptoType,
             'min_confirmations' => 0,
             'strict_checks' => true,
         ];
-        $expectedAddress = $this->expectedAddress($lot, $tagType);
         if ($expectedAddress !== null && $expectedAddress !== '' && self::supportsExpectedAddressCheck($cryptoType)) {
             $payload['expected_address'] = $expectedAddress;
         }
-        $expectedAmount = $this->expectedAmount($lot, $tagType);
         if ($expectedAmount !== null && $expectedAmount > 0) {
             $payload['expected_amount'] = $expectedAmount;
         }
@@ -410,6 +443,129 @@ final class DealCryptoTxCoreVerifier
                 'tx_id' => $txRef,
                 'stored_core_tx_check' => $storedCheck,
             ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $dealTagData
+     * @return array{
+     *   verified: bool,
+     *   verification: array<string, mixed>,
+     *   error: array{message:string,error_code:string}|null
+     * }
+     */
+    private function verifyEscrowTokenTransfer(
+        ExchangeLot $lot,
+        array $dealTagData,
+        string $tagType,
+        string $txRef,
+        string $cryptoType,
+        ?float $expectedAmount,
+        ?string $expectedAddress,
+    ): array {
+        $storedCheck = is_array($dealTagData['core_tx_check'] ?? null) ? $dealTagData['core_tx_check'] : null;
+        if ($this->isStoredEscrowPayoutCheckValid($storedCheck, $txRef)) {
+            return $this->buildStoredEscrowPayoutVerifyResult($lot, $storedCheck, $cryptoType, $txRef);
+        }
+
+        $deploymentEnvironment = self::deploymentEnvironmentForLot($lot);
+        $transactionQuery = Transaction::query()->where('exchange_lot_id', $lot->id);
+        $laravelTxId = isset($dealTagData['laravel_transaction_id']) && is_numeric($dealTagData['laravel_transaction_id'])
+            ? (int) $dealTagData['laravel_transaction_id']
+            : null;
+        if ($laravelTxId !== null && $laravelTxId > 0) {
+            $transactionQuery->where('id', $laravelTxId);
+        }
+        $transaction = $transactionQuery->orderByDesc('id')->first();
+
+        $storedHash = match ($tagType) {
+            'buyer_crypto_tx' => trim((string) ($transaction?->buyer_crypto_payout_tx_hash ?? '')),
+            'seller_transfer_tx' => trim((string) ($transaction?->seller_crypto_payout_tx_hash ?? '')),
+            default => '',
+        };
+
+        $verified = $storedHash !== ''
+            && $storedHash !== 'unknown'
+            && strcasecmp($storedHash, $txRef) === 0;
+
+        $payoutRole = $tagType === 'buyer_crypto_tx' ? 'buyer_first_leg' : 'seller_second_leg';
+        $verification = [
+            'source' => 'escrow_token_payout',
+            'checked_at_utc' => now()->utc()->toIso8601String(),
+            'verified' => $verified,
+            'status' => $verified ? 'escrow_payout_confirmed' : 'escrow_payout_not_found',
+            'is_confirmed' => $verified,
+            'confirmations' => null,
+            'checks' => [
+                'confirmations_ok' => null,
+                'address_matches' => null,
+                'amount_matches' => $verified ? true : null,
+                'escrow_token_payout' => $verified,
+            ],
+            'observed' => array_filter([
+                'transaction_id' => $verified ? $storedHash : null,
+                'amount' => $verified ? $expectedAmount : null,
+                'to_address' => $verified ? $expectedAddress : null,
+            ], static fn ($value) => $value !== null && $value !== ''),
+            'expected' => array_filter([
+                'amount' => $expectedAmount,
+                'address' => $expectedAddress,
+            ], static fn ($value) => $value !== null && $value !== ''),
+            'crypto_type' => $cryptoType,
+            'transaction_id' => $txRef,
+            'deployment_environment' => $deploymentEnvironment,
+            'blockchain_network' => self::blockchainNetworkId($cryptoType, $deploymentEnvironment),
+            'payout_role' => $payoutRole,
+            'laravel_transaction_id' => $transaction?->id,
+        ];
+
+        return [
+            'verified' => $verified,
+            'verification' => $verification,
+            'error' => $verified ? null : [
+                'message' => 'Transaction id does not match a server escrow-token payout recorded for this deal.',
+                'error_code' => 'escrow_token_payout_not_verified',
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $storedCheck
+     */
+    private function isStoredEscrowPayoutCheckValid(?array $storedCheck, string $txRef): bool
+    {
+        return is_array($storedCheck)
+            && ($storedCheck['verified'] ?? false) === true
+            && ($storedCheck['source'] ?? '') === 'escrow_token_payout'
+            && strtolower(trim((string) ($storedCheck['transaction_id'] ?? ''))) === strtolower($txRef);
+    }
+
+    /**
+     * @param  array<string, mixed>  $storedCheck
+     * @return array{
+     *   verified: bool,
+     *   verification: array<string, mixed>,
+     *   error: array{message:string,error_code:string}|null
+     * }
+     */
+    private function buildStoredEscrowPayoutVerifyResult(
+        ExchangeLot $lot,
+        array $storedCheck,
+        string $cryptoType,
+        string $txRef,
+    ): array {
+        $deploymentEnvironment = self::deploymentEnvironmentForLot($lot);
+        $verification = array_merge($storedCheck, [
+            'checked_at_utc' => now()->utc()->toIso8601String(),
+            'deployment_environment' => $deploymentEnvironment,
+            'blockchain_network' => self::blockchainNetworkId($cryptoType, $deploymentEnvironment),
+            'transaction_id' => $txRef,
+        ]);
+
+        return [
+            'verified' => true,
+            'verification' => $verification,
+            'error' => null,
         ];
     }
 

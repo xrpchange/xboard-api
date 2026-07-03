@@ -1,0 +1,138 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Support;
+
+use App\Models\ExchangeLot;
+
+/**
+ * Monero and AML lots: crypto legs must use escrow-token server payout, not manual external tx proof.
+ */
+final class EscrowTokenOnlyCryptoDealRules
+{
+    public static function isMoneroCoreType(string $cryptoType): bool
+    {
+        $code = strtolower(trim($cryptoType));
+
+        return in_array($code, ['xmr', 'monero'], true);
+    }
+
+    public static function buyerFirstLegRequiresEscrowTokenServerPayout(ExchangeLot $lot): bool
+    {
+        if (DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot) !== true) {
+            return false;
+        }
+        if ((bool) $lot->aml) {
+            return true;
+        }
+        try {
+            return self::isMoneroCoreType(DealEscrowCryptoType::buyerCoreType($lot));
+        } catch (\InvalidArgumentException) {
+            return false;
+        }
+    }
+
+    public static function sellerSecondLegRequiresEscrowTokenOnly(ExchangeLot $lot): bool
+    {
+        $firstLegBank = DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot);
+        if (DealBuyerSecondLeg::buyerReceivesCrypto($lot, $firstLegBank) !== true) {
+            return false;
+        }
+        if ((bool) $lot->aml) {
+            return true;
+        }
+        try {
+            return self::isMoneroCoreType(DealEscrowCryptoType::sellerCoreType($lot));
+        } catch (\InvalidArgumentException) {
+            return false;
+        }
+    }
+
+    public static function legRequiresEscrowTokenOnly(ExchangeLot $lot, string $tagType): bool
+    {
+        return match (trim($tagType)) {
+            'buyer_crypto_tx' => self::buyerFirstLegRequiresEscrowTokenServerPayout($lot),
+            'seller_transfer_tx' => self::sellerSecondLegRequiresEscrowTokenOnly($lot),
+            default => false,
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $dealTagData
+     * @return array{message:string,error_code:string,status:int}|null
+     */
+    public static function rejectManualCryptoProofIfRequired(ExchangeLot $lot, array $dealTagData): ?array
+    {
+        $tagType = trim((string) ($dealTagData['t'] ?? ''));
+        if (! in_array($tagType, ['buyer_crypto_tx', 'seller_transfer_tx'], true)) {
+            return null;
+        }
+        if (filter_var($dealTagData['via_escrow_server'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            return null;
+        }
+        if (! self::legRequiresEscrowTokenOnly($lot, $tagType)) {
+            return null;
+        }
+
+        return [
+            'message' => 'This deal requires a server payout from your escrow token. Manual transaction id proof is not accepted.',
+            'error_code' => 'manual_crypto_tx_requires_escrow_payout',
+            'status' => 422,
+        ];
+    }
+
+    public static function shouldVerifyViaEscrowRecords(ExchangeLot $lot, array $dealTagData, string $cryptoType, string $tagType): bool
+    {
+        if (self::isMoneroCoreType($cryptoType)) {
+            return true;
+        }
+        if (filter_var($dealTagData['via_escrow_server'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            return true;
+        }
+
+        return self::legRequiresEscrowTokenOnly($lot, $tagType);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function buildEscrowPayoutCoreTxCheck(
+        string $cryptoType,
+        string $txHash,
+        ?float $expectedAmount,
+        ?string $destinationAddress,
+        string $payoutRole,
+    ): array {
+        $observed = array_filter([
+            'transaction_id' => $txHash,
+            'amount' => $expectedAmount,
+            'to_address' => $destinationAddress,
+        ], static fn ($value) => $value !== null && $value !== '');
+
+        $expected = array_filter([
+            'amount' => $expectedAmount,
+            'address' => $destinationAddress,
+        ], static fn ($value) => $value !== null && $value !== '');
+
+        return [
+            'source' => 'escrow_token_payout',
+            'checked_at_utc' => now()->utc()->toIso8601String(),
+            'verified' => true,
+            'status' => 'escrow_payout_confirmed',
+            'is_confirmed' => true,
+            'confirmations' => null,
+            'checks' => [
+                'confirmations_ok' => null,
+                'address_matches' => null,
+                'amount_matches' => true,
+                'escrow_token_payout' => true,
+            ],
+            'observed' => $observed,
+            'expected' => $expected,
+            'crypto_type' => $cryptoType,
+            'transaction_id' => $txHash,
+            'payout_role' => $payoutRole,
+        ];
+    }
+}
