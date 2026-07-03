@@ -99,6 +99,8 @@ The tx id must be verifiable on-chain by Core (`data.verified=true`), otherwise 
 
 Successful checks are written into `deal_tag.core_tx_check` (source, UTC check time, status, confirmations, checks) for auditability in chat history.
 
+**Monero (XMR) and escrow-token server payout:** when the lot requires escrow-token-only transfer (`via_escrow_server` on the chat tag, or XMR on the matching deal leg), Laravel does **not** call Core `verify-external-payment`. Verification uses `transactions.buyer_crypto_payout_tx_hash` / `seller_crypto_payout_tx_hash` and/or the stored `core_tx_check` with `source: escrow_token_payout`. Manual `buyer_crypto_tx` / `seller_transfer_tx` tags without `via_escrow_server` are rejected (`manual_crypto_tx_requires_escrow_payout`).
+
 ### `GET …/dispute-status` response extras
 
 The JSON always includes **`dispute`**: an object for the latest active row (`opened` / `in_review`), or **`null`** if none. It always includes **`arbiter_ai`** (usage counter for the lot — independent of whether a dispute row exists):
