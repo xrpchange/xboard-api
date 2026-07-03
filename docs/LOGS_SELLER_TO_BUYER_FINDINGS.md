@@ -53,7 +53,7 @@
 
 | Что | Где |
 |-----|-----|
-| Postfix (доставка) | `server@xrpchange.site`: `sudo tail -f /var/log/mail.log` |
+| Postfix (доставка) | `server@xdexboard.com`: `sudo tail -f /var/log/mail.log` |
 | Laravel (sendMessageToBuyer) | Хост с xboard-api: `storage/logs/laravel.log` |
 | Проверка INBOX на сервере | `sudo doveadm mailbox status -u <email> messages INBOX` |
 

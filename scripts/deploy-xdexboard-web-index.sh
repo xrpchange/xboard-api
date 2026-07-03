@@ -2,7 +2,7 @@
 # Deploy fixed index.html to xdexboard.com preserving live bundle stamp meta tags.
 set -euo pipefail
 LIVE_INDEX=/tmp/xdex-live-index.html
-REMOTE=server@xrpchange.site
+REMOTE=server@xdexboard.com
 LOCAL_SRC="${1:?usage: $0 <path-to-index.html>}"
 curl -fsS "https://xdexboard.com/index.html" -o "$LIVE_INDEX"
 STAMP=$(grep -oP '(?<=meta name="xboard-web-bundle" content=")[^"]+' "$LIVE_INDEX" | head -1)

@@ -151,7 +151,7 @@ receipts@your-domain.example    unix - n n - - pipe
 ### Test 1: Send Test Email
 
 ```bash
-ssh server@xrpchange.site
+ssh server@xdexboard.com
 echo "Test email body" | mail -s "Test Subject" receipts@your-domain.example
 sudo tail -f /var/log/xboard-email/verifier.log
 ```

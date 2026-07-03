@@ -57,7 +57,7 @@ Interpretation:
 On the API server, ensure mail is sent via the host that runs Postfix (or the same host):
 
 - If API and Postfix are on the same machine: `MAIL_MAILER=log` only logs; use `sendmail` or `smtp` to actually send.
-- If API uses SMTP to server@xrpchange.site: check `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_ENCRYPTION` and that Postfix (or the MTA on that host) accepts submissions (e.g. submission port, auth).
+- If API uses SMTP to server@xdexboard.com: check `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_ENCRYPTION` and that Postfix (or the MTA on that host) accepts submissions (e.g. submission port, auth).
 
 After changing config, restart the PHP/queue workers so the new config is loaded.
 

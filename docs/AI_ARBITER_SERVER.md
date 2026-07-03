@@ -327,7 +327,7 @@ If the configured model is missing from `/models`, the check prints a **warning*
 
 ### When *not* to disable verify
 
-Prefer **installing the CA** over `ARBITER_GIGACHAT_VERIFY_SSL=false`. Use `false` only as a temporary workaround on hosts where you cannot update the trust store (e.g. some local XAMPP setups). Production (`server@xrpchange.site`, `/var/www/xboard-api`) was fixed by adding Russian Trusted CAs (2026-06); **`verify_ssl` left enabled**.
+Prefer **installing the CA** over `ARBITER_GIGACHAT_VERIFY_SSL=false`. Use `false` only as a temporary workaround on hosts where you cannot update the trust store (e.g. some local XAMPP setups). Production (`server@xdexboard.com`, `/var/www/xboard-api`) was fixed by adding Russian Trusted CAs (2026-06); **`verify_ssl` left enabled**.
 
 ---
 

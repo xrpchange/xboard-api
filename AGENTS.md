@@ -6,7 +6,7 @@ XBoard API (PHP/Laravel).
 
 **`xrpchange.site` is out of scope** unless the user explicitly asks in the current chat — see `.cursor/rules/xrpchange-out-of-scope.mdc`. Default API hosts: **`*.xdexboard.com`** with **`.env`** on this PC.
 
-**Деплой на сервер:** только **git push** + `scripts/server-git-pull-xboard-api.sh` на `server@xrpchange.site`. **Не** копировать PHP через `scp` — см. `.cursor/rules/git-only-server-deploy.mdc`.
+**Деплой на сервер:** только **git push** + `scripts/server-git-pull-xboard-api.sh` на `server@xdexboard.com`. **Не** копировать PHP через `scp` — см. `.cursor/rules/git-only-server-deploy.mdc`.
 
 Start by reading:
 

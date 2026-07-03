@@ -83,10 +83,10 @@ Use when a participant hits **`deal_internal_mail_daily_limit_reached`** (HTTP *
 | Seller → buyer (`sendMessageToBuyer`, `sendPaymentDetails`) | Seller lot mailbox: `lot_mailboxes` for the lot’s `wallet_address`, else `exchange_lots.seller_lot_email` |
 | Buyer → seller (`sendMessageToSeller`, `buyerSetCryptoDestination`) | Buyer lot mailbox: `exchange_lots.buyer_lot_email` |
 
-**Production example** (xdexboard API on `server@xrpchange.site`):
+**Production example** (xdexboard API on `server@xdexboard.com`):
 
 ```bash
-ssh server@xrpchange.site 'cd /var/www/xboard-api && php artisan deal:internal-mail-counter:clear "seller-lot-abc@mail.xdexboard.com"'
+ssh server@xdexboard.com 'cd /var/www/xboard-api && php artisan deal:internal-mail-counter:clear "seller-lot-abc@mail.xdexboard.com"'
 ```
 
 **Inspect before/after** (optional, MySQL):
