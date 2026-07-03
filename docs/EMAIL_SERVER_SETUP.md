@@ -24,7 +24,7 @@
 
 ```bash
 # Подключитесь к серверу
-ssh server@xrpchange.site
+ssh server@xdexboard.com
 
 # Обновите систему
 sudo apt-get update && sudo apt-get upgrade -y

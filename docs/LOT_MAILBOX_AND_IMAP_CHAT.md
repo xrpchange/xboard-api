@@ -276,7 +276,7 @@ nc -zv mail.xdexboard.com 993
 
 Если соединение таймаутит или «Connection refused» — снаружи до сервера не достучаться (фаервол, не проброшен порт, или Dovecot не слушает на 0.0.0.0).
 
-**2. На сервере (ssh server@xrpchange.site):**
+**2. На сервере (ssh server@xdexboard.com):**
 
 ```bash
 # Dovecot слушает ли на 993

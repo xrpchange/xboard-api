@@ -1,6 +1,6 @@
 # Быстрый старт - Применение на сервере
 
-## Применение на server@xrpchange.site
+## Применение на server@xdexboard.com
 
 ### Вариант 1: Автоматический deploy (рекомендуется)
 
@@ -20,13 +20,13 @@ chmod +x deploy.sh
 
 ```bash
 # 1. Подключитесь к серверу
-ssh server@xrpchange.site
+ssh server@xdexboard.com
 
 # 2. Скопируйте файлы (с локальной машины)
-scp -r scripts/email-server server@xrpchange.site:/opt/xboard-api/
+scp -r scripts/email-server server@xdexboard.com:/opt/xboard-api/
 
 # 3. На сервере: запустите установку
-ssh server@xrpchange.site
+ssh server@xdexboard.com
 cd /opt/xboard-api/scripts/email-server
 chmod +x install.sh
 sudo ./install.sh
@@ -37,7 +37,7 @@ sudo ./install.sh
 ### 1. Получите SSL сертификат (если еще не получен)
 
 ```bash
-ssh server@xrpchange.site
+ssh server@xdexboard.com
 sudo certbot certonly --standalone -d xdexboard.com -d mail.xdexboard.com
 ```
 
@@ -84,7 +84,7 @@ _dmarc.xdexboard.com    TXT    "v=DMARC1; p=quarantine; rua=mailto:receipts@your
 ### 3. Перезапустите сервисы
 
 ```bash
-ssh server@xrpchange.site
+ssh server@xdexboard.com
 sudo systemctl restart postfix
 sudo systemctl restart dovecot
 sudo systemctl restart opendkim

@@ -5,7 +5,7 @@ When the seller sends a message to the buyer, the API calls `Mail::raw()` to the
 ## 1. SSH access
 
 ```bash
-ssh server@xrpchange.site
+ssh server@xdexboard.com
 ```
 
 - Hostname may be `supersrv` or `mail` depending on the host.
@@ -35,7 +35,7 @@ If you see **not_seller**, the client is sending a token that resolves to a diff
 
 ## 3. Postfix logs (mail server)
 
-On the host where Postfix runs (e.g. after `ssh server@xrpchange.site`):
+On the host where Postfix runs (e.g. after `ssh server@xdexboard.com`):
 
 ```bash
 # Recent deliveries

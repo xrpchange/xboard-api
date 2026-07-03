@@ -39,7 +39,7 @@ Options:
 
 ### Server setup
 
-The scheduler must run **every minute**. On production (`server@xrpchange.site`, app in `/var/www/xboard-api`) use the **`www-data`** user — same as PHP-FPM (`.env`, `storage/`, uploaded attachments).
+The scheduler must run **every minute**. On production (`server@xdexboard.com`, app in `/var/www/xboard-api`) use the **`www-data`** user — same as PHP-FPM (`.env`, `storage/`, uploaded attachments).
 
 One-time install on the server:
 

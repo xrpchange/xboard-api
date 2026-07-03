@@ -27,7 +27,7 @@ scripts/email-server/
 
 1. **Подключитесь к серверу:**
    ```bash
-   ssh server@xrpchange.site
+   ssh server@xdexboard.com
    ```
 
 2. **Скопируйте файлы на сервер:**
@@ -36,7 +36,7 @@ scripts/email-server/
    cd /path/to/xboard-api
    
    # Или скопируйте через scp
-   scp -r scripts/email-server server@xrpchange.site:/path/to/xboard-api/
+   scp -r scripts/email-server server@xdexboard.com:/path/to/xboard-api/
    ```
 
 3. **Запустите установку:**

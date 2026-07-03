@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Script to apply settings on server server@xrpchange.site
+# Script to apply settings on server server@xdexboard.com
 # Usage: ./deploy.sh
 
 set -e
 
-SERVER="server@xrpchange.site"
+SERVER="server@xdexboard.com"
 REMOTE_PATH="/opt/xboard-api"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

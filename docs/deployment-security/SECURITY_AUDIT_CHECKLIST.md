@@ -6,7 +6,7 @@
 - `xboard-api` (Laravel API);
 - `xboard-core` (PHP‑ядро);
 - `xboard-monero-balance` (Go‑сервис балансов/трансферов);
-- почтовый сервер `mail.xdexboard.com` (`server@xrpchange.site`, Postfix + Dovecot).
+- почтовый сервер `mail.xdexboard.com` (`server@xdexboard.com`, Postfix + Dovecot).
 
 Цель: **выявить и закрыть стандартные векторы атак** (забивание диска, brute‑force, злоупотребление API и т.п.) на реальных деплоях.
 

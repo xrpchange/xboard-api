@@ -6,7 +6,7 @@
 
 1. Commit on `main`.
 2. `git push origin main`
-3. On `server@xrpchange.site`:
+3. On `server@xdexboard.com`:
    ```bash
    bash /var/www/xboard-api/scripts/server-git-pull-xboard-api.sh
    ```
