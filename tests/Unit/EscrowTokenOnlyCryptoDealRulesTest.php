@@ -13,6 +13,39 @@ use Tests\TestCase;
 #[Group('spec')]
 class EscrowTokenOnlyCryptoDealRulesTest extends TestCase
 {
+    public function test_rejects_manual_buyer_crypto_tx_for_xmr_buyer_pays_crypto_lot(): void
+    {
+        $lot = $this->makeXmrSellerEscrowLot();
+
+        $reject = EscrowTokenOnlyCryptoDealRules::rejectManualCryptoProofIfRequired($lot, [
+            't' => 'buyer_crypto_tx',
+            'tx_ref' => 'abc123',
+        ]);
+
+        $this->assertNotNull($reject);
+        $this->assertSame('manual_crypto_tx_requires_escrow_payout', $reject['error_code']);
+    }
+
+    public function test_xmr_to_fiat_buyer_first_leg_requires_server_payout(): void
+    {
+        $lot = $this->makeXmrSellerEscrowLot();
+
+        $this->assertTrue(EscrowTokenOnlyCryptoDealRules::buyerFirstLegRequiresEscrowTokenServerPayout($lot));
+    }
+
+    public function test_usdt_to_usd_does_not_require_buyer_server_payout(): void
+    {
+        $lot = new ExchangeLot([
+            'from_crypto_currency_id' => 1,
+            'to_fiat_currency_id' => 2,
+        ]);
+        $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
+        $lot->setRelation('toFiatCurrency', (object) ['code' => 'USD']);
+        $lot->setRelation('toCryptoCurrency', null);
+
+        $this->assertFalse(EscrowTokenOnlyCryptoDealRules::buyerFirstLegRequiresEscrowTokenServerPayout($lot));
+    }
+
     public function test_rejects_manual_seller_transfer_tx_for_xmr_second_leg_lot(): void
     {
         $lot = $this->makeXmrSellerEscrowLot();

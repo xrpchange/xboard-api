@@ -183,6 +183,12 @@ final class StartDealBuyerEscrowValidation
      */
     private static function resolveBuyerFirstLegPaysCrypto(ExchangeLot $lot): ?bool
     {
+        try {
+            if (EscrowTokenOnlyCryptoDealRules::isMoneroCoreType(DealEscrowCryptoType::buyerCoreType($lot))) {
+                return true;
+            }
+        } catch (\InvalidArgumentException) {
+        }
         if ($lot->to_fiat_currency_id) {
             return false;
         }
