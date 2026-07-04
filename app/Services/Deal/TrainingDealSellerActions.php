@@ -20,6 +20,7 @@ use App\Support\DealEscrowPublicPart;
 use App\Support\DealSaleTransactionCompletion;
 use App\Support\DealTerminalLotClosure;
 use App\Support\SandboxTestReceiptPdf;
+use App\Support\SandboxVirtualBankReceiptAmount;
 use App\Support\SellerEscrowReservedAmount;
 use App\Support\TrainingDealEscrowTokenFormat;
 use App\Support\TrainingDealLegSemantics;
@@ -146,7 +147,7 @@ final class TrainingDealSellerActions
 
         $sent = $this->publishSellerChatMessage($lot, $buyerEmail, $body, $tagJson);
         if ($sent && SandboxVirtualBankService::lotUsesVirtualSandboxBank($lot)) {
-            $this->sendSandboxReceiptToBuyer($lot, $transaction, $amount);
+            $this->sendSandboxReceiptToBuyer($lot, $transaction);
         }
 
         return $sent;
@@ -513,7 +514,7 @@ final class TrainingDealSellerActions
             $transaction->save();
 
             if (SandboxVirtualBankService::lotUsesVirtualSandboxBank($lot)) {
-                $this->sendSandboxReceiptToBuyer($lot, $transaction, $amount);
+                $this->sendSandboxReceiptToBuyer($lot, $transaction);
             }
 
             $tag = [
@@ -534,20 +535,25 @@ final class TrainingDealSellerActions
         });
     }
 
-    private function sendSandboxReceiptToBuyer(ExchangeLot $lot, Transaction $transaction, float $amount): void
+    private function sendSandboxReceiptToBuyer(ExchangeLot $lot, Transaction $transaction): void
     {
         $to = trim((string) ($lot->buyer_notification_email ?? ''));
         if ($to === '') {
             return;
         }
 
-        $fiatCode = 'USD';
-        $lot->loadMissing(['toFiatCurrency', 'fromFiatCurrency']);
-        if ($lot->toFiatCurrency) {
-            $fiatCode = (string) $lot->toFiatCurrency->code;
-        } elseif ($lot->fromFiatCurrency) {
-            $fiatCode = (string) $lot->fromFiatCurrency->code;
+        $lot->loadMissing(['toFiatCurrency', 'fromFiatCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
+        $amount = SandboxVirtualBankReceiptAmount::resolve($lot);
+        if ($amount === null || $amount <= 0) {
+            Log::warning('[training-deal] sandbox receipt: cannot resolve fiat amount', [
+                'lot_id' => $lot->id,
+                'transaction_id' => $transaction->id,
+            ]);
+
+            return;
         }
+
+        $fiatCode = SandboxVirtualBankReceiptAmount::fiatCurrencyCode($lot);
 
         $paymentAtUtc = ($transaction->created_at ?? now())->clone()->utc();
         $pdf = SandboxTestReceiptPdf::build([

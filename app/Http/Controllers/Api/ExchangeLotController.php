@@ -48,6 +48,7 @@ use App\Support\DealStartedAtUtc;
 use App\Support\DealTerminalLotClosure;
 use App\Support\PublicHttpsUrl;
 use App\Support\SandboxTestReceiptPdf;
+use App\Support\SandboxVirtualBankReceiptAmount;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -3722,13 +3723,7 @@ class ExchangeLotController extends Controller
         }
 
         if ($paymentType === 'bank' && SandboxVirtualBankService::lotUsesVirtualSandboxBank($lot)) {
-            $sandboxReceiptAmount = (float) ($transaction->amount ?? 0);
-            if ($sandboxReceiptAmount <= 0) {
-                $sandboxReceiptAmount = $lot->buyer_selected_amount > 0
-                    ? (float) $lot->buyer_selected_amount
-                    : (float) $lot->sell_amount;
-            }
-            $this->sendSandboxVirtualBankReceiptEmail($lot, $transaction, $sandboxReceiptAmount);
+            $this->sendSandboxVirtualBankReceiptEmail($lot, $transaction);
         }
 
         return response()->json([
@@ -4758,7 +4753,7 @@ class ExchangeLotController extends Controller
         }
 
         if ($paymentType === 'bank' && SandboxVirtualBankService::lotUsesVirtualSandboxBank($lot)) {
-            $this->sendSandboxVirtualBankReceiptEmail($lot, $transaction, $amount);
+            $this->sendSandboxVirtualBankReceiptEmail($lot, $transaction);
         }
 
         $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot)) ?? $lot->seller_lot_email;
@@ -6941,7 +6936,7 @@ class ExchangeLotController extends Controller
      * Sandbox-only synthetic RU bank: send PDF receipt to the deal participant mailbox
      * (buyer first, fallback to seller). This lets the user verify the receipt from their own inbox.
      */
-    private function sendSandboxVirtualBankReceiptEmail(ExchangeLot $lot, Transaction $transaction, float $amount): void
+    private function sendSandboxVirtualBankReceiptEmail(ExchangeLot $lot, Transaction $transaction): void
     {
         if (! SandboxVirtualBankService::isSandboxApiHost(request()->getHost())) {
             return;
@@ -6965,12 +6960,21 @@ class ExchangeLotController extends Controller
             return;
         }
 
-        $fiatCode = 'FIAT';
-        if ($lot->toFiatCurrency) {
-            $fiatCode = (string) $lot->toFiatCurrency->code;
-        } elseif ($lot->fromFiatCurrency) {
-            $fiatCode = (string) $lot->fromFiatCurrency->code;
+        $lot->loadMissing(['fromFiatCurrency', 'toFiatCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
+        $amount = SandboxVirtualBankReceiptAmount::resolve($lot);
+        if ($amount === null || $amount <= 0) {
+            Log::warning('[exchange-lots] sendSandboxVirtualBankReceiptEmail: cannot resolve fiat receipt amount', [
+                'lot_id' => $lot->id,
+                'transaction_id' => $transaction->id,
+                'buyer_selected_amount' => $lot->buyer_selected_amount,
+                'sell_amount' => $lot->sell_amount,
+                'rate' => $lot->rate,
+            ]);
+
+            return;
         }
+
+        $fiatCode = SandboxVirtualBankReceiptAmount::fiatCurrencyCode($lot);
 
         $paymentAtUtc = ($transaction->created_at ?? now())->clone()->utc();
         $generatedAtUtc = now()->utc();
