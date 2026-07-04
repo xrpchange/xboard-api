@@ -20,11 +20,16 @@ final class EscrowTokenOnlyCryptoDealRules
 
     public static function buyerFirstLegRequiresEscrowTokenServerPayout(ExchangeLot $lot): bool
     {
-        if (DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot) !== true) {
-            return false;
-        }
-        if ((bool) $lot->aml) {
-            return true;
+        $paysCrypto = DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot);
+        if ($paysCrypto === true) {
+            if ((bool) $lot->aml) {
+                return true;
+            }
+            try {
+                return self::isMoneroCoreType(DealEscrowCryptoType::buyerCoreType($lot));
+            } catch (\InvalidArgumentException) {
+                return false;
+            }
         }
         try {
             return self::isMoneroCoreType(DealEscrowCryptoType::buyerCoreType($lot));
