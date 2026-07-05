@@ -97,6 +97,7 @@ final class BuyerCryptoDepositReservationService
             'crypto_type' => $cryptoType,
             'is_legal_entity' => false,
             'reservation_side' => 'seller',
+            'inbound_deposit_lock' => true,
         ];
         if (! empty($lot->buyer_escrow_token_hash)) {
             $reservationPayload['buyer_escrow_token_hash'] = $lot->buyer_escrow_token_hash;
