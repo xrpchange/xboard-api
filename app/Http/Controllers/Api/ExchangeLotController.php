@@ -4575,13 +4575,21 @@ class ExchangeLotController extends Controller
         $coreSellerCryptoType = null;
         $reservationResponseBody = null;
         $buyerFirstLegPaysCrypto = DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot);
-        $skipSellerPreReservation = $paymentType === 'crypto'
+        $isCryptoToFiatDeal = CryptoToFiatDealSupport::isCryptoToFiatDeal($lot);
+        $skipFullSellerPreReservation = $paymentType === 'crypto'
             && $buyerFirstLegPaysCrypto === true
-            && CryptoToFiatDealSupport::isCryptoToFiatDeal($lot);
+            && $isCryptoToFiatDeal;
+        $serviceFeeOnlyPreReserve = $skipFullSellerPreReservation && ! (bool) $lot->aml;
 
-        // Seller pre-reservation before payment_details: fiat→crypto only (seller will send crypto on leg 2).
-        // crypto→fiat: buyer deposits externally; reservation is created after verified buyer_crypto_tx.
-        if (! empty($sellerEscrowToken) && is_string($sellerEscrowToken) && ! $skipSellerPreReservation) {
+        // Seller pre-reservation before payment_details:
+        // - fiat→crypto: full deal amount on seller token.
+        // - crypto→fiat non-AML: service fee only (buyer deposit locked after verified buyer_crypto_tx).
+        // - crypto→fiat AML: no pre-reserve here (inbound after buyer_crypto_tx + AML).
+        $shouldCreateSellerReservation = ! empty($sellerEscrowToken)
+            && is_string($sellerEscrowToken)
+            && (! $skipFullSellerPreReservation || $serviceFeeOnlyPreReserve);
+
+        if ($shouldCreateSellerReservation) {
             try {
                 $coreSellerCryptoType = self::coreCryptoTypeFromEscrowTokenJson($sellerEscrowToken)
                     ?? self::coreCryptoTypeForSellerEscrow($lot);
@@ -4619,6 +4627,9 @@ class ExchangeLotController extends Controller
             }
             if ((bool) $lot->aml) {
                 $reservationPayload['aml_required'] = true;
+            }
+            if ($serviceFeeOnlyPreReserve) {
+                $reservationPayload['service_fee_only'] = true;
             }
             $reservationResponse = $req->asJson()->post($coreUrl.'/api/reservations', $reservationPayload);
             if (! $reservationResponse->successful()) {
@@ -4660,7 +4671,7 @@ class ExchangeLotController extends Controller
         $bankDetails = $paymentType === 'bank' ? trim((string) $request->input('bank_data', '')) : null;
         $cryptoAddress = null;
         if ($paymentType === 'crypto') {
-            if ($skipSellerPreReservation) {
+            if ($skipFullSellerPreReservation) {
                 $sellerTokenJson = is_string($sellerEscrowToken) && trim($sellerEscrowToken) !== ''
                     ? trim($sellerEscrowToken)
                     : trim((string) ($lot->wallet_address ?? ''));
@@ -4719,7 +4730,7 @@ class ExchangeLotController extends Controller
             'buyer_ip_share_with_seller' => false,
         ]);
 
-        if (! empty($sellerEscrowToken) && is_string($sellerEscrowToken) && ! $skipSellerPreReservation) {
+        if ($shouldCreateSellerReservation) {
             try {
                 [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
                 $timeout = (int) config('services.core.timeout', 10);
