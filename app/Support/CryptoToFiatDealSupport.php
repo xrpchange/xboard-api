@@ -13,6 +13,23 @@ use App\Models\ExchangeLot;
  */
 final class CryptoToFiatDealSupport
 {
+    /**
+     * Currency pair before lot row exists (store/update validation).
+     * Seller escrow token is chosen at deal step 1, not at lot create.
+     */
+    public static function isCryptoToFiatCurrencyPair(
+        ?object $fromFiat,
+        ?object $fromCrypto,
+        ?object $toFiat,
+        ?object $toCrypto,
+    ): bool {
+        if ($fromFiat !== null || $toCrypto !== null) {
+            return false;
+        }
+
+        return $fromCrypto !== null && $toFiat !== null;
+    }
+
     public static function isCryptoToFiatDeal(ExchangeLot $lot): bool
     {
         if (! $lot->to_fiat_currency_id || $lot->from_fiat_currency_id) {
