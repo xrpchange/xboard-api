@@ -16,6 +16,7 @@ use App\Models\Node;
 use App\Models\Transaction;
 use App\Services\Arbiter\ArbiterOperatorEscalationNotifier;
 use App\Services\Arbiter\ArbiterService;
+use App\Services\Deal\BuyerCryptoDepositReservationService;
 use App\Services\Deal\DealCryptoTxCoreVerifier;
 use App\Services\Deal\DealInternalMailRateLimitService;
 use App\Services\Deal\DealWebPushNotifier;
@@ -30,6 +31,7 @@ use App\Support\ApiDeploymentEnvironment;
 use App\Support\ArbiterPromptContextAssembler;
 use App\Support\BuyerCompensationDestinationSupport;
 use App\Support\BuyerExternalEmailReputation;
+use App\Support\DealBuyerFirstLeg;
 use App\Support\ArbiterReceiptPdfResolver;
 use App\Support\ClientWebOrigin;
 use App\Support\DealBuyerEscrowTokenHash;
@@ -37,7 +39,9 @@ use App\Support\DealChatTagSequenceValidator;
 use App\Support\EscrowTokenOnlyCryptoDealRules;
 use App\Support\DisputeArbiterParticipantPolicy;
 use App\Support\DealChatMessageLimits;
+use App\Support\CryptoToFiatDealSupport;
 use App\Support\DealEscrowCryptoType;
+use App\Support\DealEscrowPublicPart;
 use App\Support\EscrowTokenLotLimit;
 use App\Support\ExchangeLotDealCounters;
 use App\Support\ExchangeLotTrainingSearchFilter;
@@ -78,6 +82,7 @@ class ExchangeLotController extends Controller
         private DealCryptoTxCoreVerifier $dealCryptoTxCoreVerifier,
         private TrainingDealOrchestrator $trainingDealOrchestrator,
         private TrainingDealAbandonedLotRelease $trainingDealAbandonedLotRelease,
+        private BuyerCryptoDepositReservationService $buyerCryptoDepositReservation,
     ) {}
 
     /**
@@ -2265,6 +2270,16 @@ class ExchangeLotController extends Controller
                     ], (int) ($err['status'] ?? 422));
                 }
                 $customDealTagData = $coreTxCheck['deal_tag'] ?? $customDealTagData;
+                if (($customDealTagData['t'] ?? '') === 'buyer_crypto_tx') {
+                    $depositLockErr = $this->buyerCryptoDepositReservation->lockDepositAfterVerifiedBuyerCryptoTx($lot, $customDealTagData);
+                    if ($depositLockErr !== null) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => $depositLockErr['message'],
+                            'error_code' => $depositLockErr['error_code'],
+                        ], (int) ($depositLockErr['status'] ?? 422));
+                    }
+                }
                 $receiptReuseCheck = $this->validateAndAttachReceiptChecksums(
                     lot: $lot,
                     senderSide: 'buyer',
@@ -3752,6 +3767,14 @@ class ExchangeLotController extends Controller
             ], 403);
         }
 
+        if (CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This deal expects an external crypto deposit to the seller escrow token address. Use buyer_crypto_tx with your on-chain transaction id.',
+                'error_code' => 'buyer_external_deposit_required',
+            ], 422);
+        }
+
         $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
         if ($buyerEmail === '') {
             return response()->json(['success' => false, 'message' => 'No buyer in deal.'], 400);
@@ -4535,10 +4558,14 @@ class ExchangeLotController extends Controller
         $sellerEscrowToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
         $coreSellerCryptoType = null;
         $reservationResponseBody = null;
+        $buyerFirstLegPaysCrypto = DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot);
+        $skipSellerPreReservation = $paymentType === 'crypto'
+            && $buyerFirstLegPaysCrypto === true
+            && CryptoToFiatDealSupport::isCryptoToFiatDeal($lot);
 
-        // First create reservation in Core (reserves amount on escrow token). Server error (e.g. insufficient balance) is returned to client.
-        // Use Core URL from token environment (EscrowTokenValidationService) so sandbox/prod and salt match token creation.
-        if (! empty($sellerEscrowToken) && is_string($sellerEscrowToken)) {
+        // Seller pre-reservation before payment_details: fiat→crypto only (seller will send crypto on leg 2).
+        // crypto→fiat: buyer deposits externally; reservation is created after verified buyer_crypto_tx.
+        if (! empty($sellerEscrowToken) && is_string($sellerEscrowToken) && ! $skipSellerPreReservation) {
             try {
                 $coreSellerCryptoType = self::coreCryptoTypeFromEscrowTokenJson($sellerEscrowToken)
                     ?? self::coreCryptoTypeForSellerEscrow($lot);
@@ -4615,7 +4642,32 @@ class ExchangeLotController extends Controller
 
         $bankId = $paymentType === 'bank' ? $lot->bank_id : null;
         $bankDetails = $paymentType === 'bank' ? trim((string) $request->input('bank_data', '')) : null;
-        $cryptoAddress = $paymentType === 'crypto' ? trim((string) $request->input('address', '')) : null;
+        $cryptoAddress = null;
+        if ($paymentType === 'crypto') {
+            if ($skipSellerPreReservation) {
+                $sellerTokenJson = is_string($sellerEscrowToken) && trim($sellerEscrowToken) !== ''
+                    ? trim($sellerEscrowToken)
+                    : trim((string) ($lot->wallet_address ?? ''));
+                if ($sellerTokenJson === '' || ! str_starts_with($sellerTokenJson, '{')) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Seller escrow token is required to publish deposit address.',
+                        'error_code' => 'seller_escrow_token_missing',
+                    ], 422);
+                }
+                $tokenAddress = DealEscrowPublicPart::blockchainReceiveAddressFromJson($sellerTokenJson);
+                if ($tokenAddress === null) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Seller escrow token has no on-chain receive address.',
+                        'error_code' => 'seller_token_address_missing',
+                    ], 422);
+                }
+                $cryptoAddress = $tokenAddress;
+            } else {
+                $cryptoAddress = trim((string) $request->input('address', ''));
+            }
+        }
 
         $lot->refresh();
         $buyerSeenIpForSale = $lot->buyer_seen_ip;
@@ -4651,7 +4703,7 @@ class ExchangeLotController extends Controller
             'buyer_ip_share_with_seller' => false,
         ]);
 
-        if (! empty($sellerEscrowToken) && is_string($sellerEscrowToken)) {
+        if (! empty($sellerEscrowToken) && is_string($sellerEscrowToken) && ! $skipSellerPreReservation) {
             try {
                 [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
                 $timeout = (int) config('services.core.timeout', 10);
@@ -7490,6 +7542,10 @@ class ExchangeLotController extends Controller
     {
         // On-chain proof only — escrow token units (not transactions.amount / buyer fiat).
         if ($tagType === 'buyer_crypto_tx') {
+            if (CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)) {
+                return \App\Support\SellerEscrowReservedAmount::resolveForSellerEscrowLot($lot);
+            }
+
             return \App\Support\SellerEscrowReservedAmount::resolveForBuyerEscrowLot($lot);
         }
 

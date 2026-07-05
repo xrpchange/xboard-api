@@ -7,10 +7,7 @@ namespace App\Support;
 use App\Models\ExchangeLot;
 
 /**
- * Training practice lots (fiat↔crypto): first leg = to side, second leg = from side.
- * Not the general mixed-pair rule where crypto→fiat first leg can be bank (USD).
- *
- * @see docs/TRAINING_DEAL.md
+ * @deprecated Training lots use the same leg rules as production ({@see DealBuyerFirstLeg}).
  */
 final class TrainingDealLegSemantics
 {
@@ -19,13 +16,8 @@ final class TrainingDealLegSemantics
         if (! (bool) ($lot->is_training ?? false)) {
             return null;
         }
-        $to = DealBuyerFirstLeg::currencyTypeForLotSide($lot, 'to');
 
-        return match ($to) {
-            'fiat' => true,
-            'crypto', 'stablecoin' => false,
-            default => null,
-        };
+        return DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot);
     }
 
     public static function buyerSecondLegReceivesCrypto(ExchangeLot $lot): ?bool
@@ -33,12 +25,8 @@ final class TrainingDealLegSemantics
         if (! (bool) ($lot->is_training ?? false)) {
             return null;
         }
-        $from = DealBuyerFirstLeg::currencyTypeForLotSide($lot, 'from');
+        $firstLegBank = DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot);
 
-        return match ($from) {
-            'fiat' => false,
-            'crypto', 'stablecoin' => true,
-            default => null,
-        };
+        return DealBuyerSecondLeg::buyerReceivesCrypto($lot, $firstLegBank);
     }
 }

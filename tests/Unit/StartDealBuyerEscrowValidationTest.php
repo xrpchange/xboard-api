@@ -45,6 +45,23 @@ class StartDealBuyerEscrowValidationTest extends TestCase
     {
         $lot = new ExchangeLot([
             'aml' => true,
+            'from_fiat_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+        ]);
+        $lot->setRelation('fromFiatCurrency', (object) ['code' => 'USD']);
+        $lot->setRelation('toCryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
+        $lot->setRelation('fromCryptoCurrency', null);
+
+        $validator = new StartDealBuyerEscrowValidation($this->createMock(EscrowTokenValidationService::class));
+        $result = $validator->validate($lot, '', 100.0);
+
+        $this->assertNull($result);
+    }
+
+    public function test_skips_buyer_token_for_crypto_to_fiat_even_with_aml(): void
+    {
+        $lot = new ExchangeLot([
+            'aml' => true,
             'from_crypto_currency_id' => 1,
             'to_fiat_currency_id' => 2,
         ]);

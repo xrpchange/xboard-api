@@ -29,7 +29,7 @@ final class StartDealBuyerEscrowValidation
                 'status' => 422,
             ];
         }
-        if (! $paysCrypto) {
+        if (! $paysCrypto || CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)) {
             return null;
         }
 
@@ -179,26 +179,10 @@ final class StartDealBuyerEscrowValidation
     }
 
     /**
-     * On-chain first leg when buyer pays `to_crypto`, even if currency-type heuristics misclassified the pair.
+     * Uses {@see DealBuyerFirstLeg} only (no legacy to_fiat / Monero overrides).
      */
     private static function resolveBuyerFirstLegPaysCrypto(ExchangeLot $lot): ?bool
     {
-        try {
-            if (EscrowTokenOnlyCryptoDealRules::isMoneroCoreType(DealEscrowCryptoType::buyerCoreType($lot))) {
-                return true;
-            }
-        } catch (\InvalidArgumentException) {
-        }
-        if ($lot->to_fiat_currency_id) {
-            return false;
-        }
-        if ($lot->to_crypto_currency_id) {
-            return true;
-        }
-        if ($lot->from_fiat_currency_id) {
-            return false;
-        }
-
         return DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot);
     }
 }
