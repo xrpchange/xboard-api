@@ -1141,11 +1141,14 @@ class ExchangeLotController extends Controller
                 'errors' => ['wallet_address' => ['Escrow token is required for this lot type.']],
             ], 422);
         }
-        if ($isCryptoToFiatPair && $fromCrypto !== null && (int) $validated['crypto_currency_id'] !== (int) $fromCrypto->id) {
-            return response()->json([
-                'success' => false,
-                'errors' => ['crypto_currency_id' => ['Must match from-side crypto currency for crypto-to-fiat lots.']],
-            ], 422);
+        if ($isCryptoToFiatPair) {
+            $expectedCryptoId = (int) ($fromCrypto?->id ?? $toCrypto?->id ?? 0);
+            if ($expectedCryptoId <= 0 || (int) $validated['crypto_currency_id'] !== $expectedCryptoId) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => ['crypto_currency_id' => ['Must match the on-chain leg crypto currency for this lot type.']],
+                ], 422);
+            }
         }
 
         $decoded = null;
