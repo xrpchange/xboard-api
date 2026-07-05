@@ -1937,11 +1937,16 @@ class ExchangeLotController extends Controller
                     'error_code' => 'lot_no_remaining_amount',
                 ], 409);
             }
-            $availableAmounts = $lot->availableBuyAmountsForRemaining();
+            $skipRemainingVolumeTierCheck = CryptoToFiatDealSupport::skipsStartDealRemainingVolumeTierCheck($lot);
+            $availableAmounts = $skipRemainingVolumeTierCheck
+                ? $lot->configuredBuyAmounts()
+                : $lot->availableBuyAmountsForRemaining();
             if (count($availableAmounts) === 0) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Lot has no available amount tiers for the current remaining volume.',
+                    'message' => $skipRemainingVolumeTierCheck
+                        ? 'Lot has no configured buy amount tiers.'
+                        : 'Lot has no available amount tiers for the current remaining volume.',
                     'error_code' => 'lot_no_available_tiers',
                 ], 409);
             }

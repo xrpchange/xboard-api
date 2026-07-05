@@ -20,4 +20,14 @@ final class CryptoToFiatDealSupport
 
         return in_array($from, ['crypto', 'stablecoin'], true) && $to === 'fiat';
     }
+
+    /**
+     * Non-AML crypto→fiat: buyer may deposit from any external wallet; tier fit against seller
+     * remaining crypto volume is enforced only after verified buyer_crypto_tx, not at start_deal.
+     * AML lots keep the remaining-volume tier gate at start_deal.
+     */
+    public static function skipsStartDealRemainingVolumeTierCheck(ExchangeLot $lot): bool
+    {
+        return self::isCryptoToFiatDeal($lot) && ! (bool) $lot->aml;
+    }
 }
