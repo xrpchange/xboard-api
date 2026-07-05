@@ -1967,9 +1967,20 @@ class ExchangeLotController extends Controller
                 }
             }
             if (! $matchesAvailableTier) {
+                Log::info('[exchange-lots] sendMessageToSeller: start_deal selected_amount tier rejected', [
+                    'lot_id' => $lot->id,
+                    'aml' => (bool) $lot->aml,
+                    'skip_remaining_volume_tier_check' => $skipRemainingVolumeTierCheck,
+                    'is_crypto_to_fiat' => CryptoToFiatDealSupport::isCryptoToFiatDeal($lot),
+                    'selected' => $selected,
+                    'available_amounts' => $availableAmounts,
+                ]);
+
                 return response()->json([
                     'success' => false,
-                    'message' => 'selected_amount is not available for the lot remaining volume.',
+                    'message' => $skipRemainingVolumeTierCheck
+                        ? 'selected_amount must match one of the lot buy amount tiers.'
+                        : 'selected_amount is not available for the lot remaining volume.',
                     'error_code' => 'selected_amount_not_available',
                 ], 422);
             }
