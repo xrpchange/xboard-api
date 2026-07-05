@@ -242,16 +242,28 @@ class ExchangeLot extends Model
     }
 
     /**
+     * Positive buy-side tier amounts configured on the lot (to currency).
+     *
+     * @return list<float>
+     */
+    public function configuredBuyAmounts(): array
+    {
+        $raw = $this->buy_amounts ?? [];
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map('floatval', $raw), fn ($v) => $v > 0));
+    }
+
+    /**
      * Buy-side tier amounts (to currency) that still fit into {@see getRemainingAmountAttribute} at the lot rate.
      *
      * @return list<float>
      */
     public function availableBuyAmountsForRemaining(): array
     {
-        $raw = $this->buy_amounts ?? [];
-        $amounts = is_array($raw)
-            ? array_values(array_filter(array_map('floatval', $raw), fn ($v) => $v > 0))
-            : [];
+        $amounts = $this->configuredBuyAmounts();
         if ($amounts === []) {
             return [];
         }
