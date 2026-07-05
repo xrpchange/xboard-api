@@ -20,10 +20,12 @@ final class DealBuyerFirstLeg
         }
         $fromOnChain = in_array($fromType, ['crypto', 'stablecoin'], true);
 
+        $toOnChain = in_array($toType, ['crypto', 'stablecoin'], true);
+
         return match (true) {
-            $fromType === 'fiat' => true,
-            // crypto→fiat: buyer pays on-chain crypto to seller token; seller pays fiat second leg.
+            // Mixed fiat + on-chain (either orientation): buyer pays crypto to seller token first.
             $fromOnChain && $toType === 'fiat' => false,
+            $fromType === 'fiat' && $toOnChain => false,
             $fromOnChain && $toType === 'stablecoin' => false,
             $fromOnChain && $toType === 'crypto' => false,
             default => null,
