@@ -15,10 +15,17 @@ final class CryptoToFiatDealSupport
 {
     public static function isCryptoToFiatDeal(ExchangeLot $lot): bool
     {
-        $from = DealBuyerFirstLeg::currencyTypeForLotSide($lot, 'from');
-        $to = DealBuyerFirstLeg::currencyTypeForLotSide($lot, 'to');
+        if (! $lot->to_fiat_currency_id || $lot->from_fiat_currency_id) {
+            return false;
+        }
+        if ($lot->from_crypto_currency_id || ($lot->crypto_currency_id && ! $lot->to_crypto_currency_id)) {
+            $from = DealBuyerFirstLeg::currencyTypeForLotSide($lot, 'from');
+            $to = DealBuyerFirstLeg::currencyTypeForLotSide($lot, 'to');
 
-        return in_array($from, ['crypto', 'stablecoin'], true) && $to === 'fiat';
+            return in_array($from, ['crypto', 'stablecoin'], true) && $to === 'fiat';
+        }
+
+        return false;
     }
 
     /**
