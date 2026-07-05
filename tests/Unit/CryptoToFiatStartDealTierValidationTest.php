@@ -64,4 +64,27 @@ class CryptoToFiatStartDealTierValidationTest extends TestCase
 
         $this->assertFalse(CryptoToFiatDealSupport::skipsStartDealRemainingVolumeTierCheck($lot));
     }
+
+    public function test_legacy_crypto_to_fiat_without_from_crypto_fk_skips_remaining_volume_tier_gate(): void
+    {
+        $lot = new ExchangeLot([
+            'aml' => false,
+            'from_crypto_currency_id' => null,
+            'crypto_currency_id' => 1,
+            'to_fiat_currency_id' => 2,
+            'to_crypto_currency_id' => null,
+            'sell_amount' => 0.8,
+            'sold_crypto_amount' => 0.0,
+            'rate' => 150.0,
+            'buy_amounts' => [100.0, 200.0],
+        ]);
+        $lot->setRelation('fromCryptoCurrency', null);
+        $lot->setRelation('cryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+        $lot->setRelation('toFiatCurrency', (object) ['code' => 'USD']);
+        $lot->setRelation('fromFiatCurrency', null);
+
+        $this->assertTrue(CryptoToFiatDealSupport::isCryptoToFiatDeal($lot));
+        $this->assertTrue(CryptoToFiatDealSupport::skipsStartDealRemainingVolumeTierCheck($lot));
+        $this->assertSame([100.0, 200.0], $lot->configuredBuyAmounts());
+    }
 }

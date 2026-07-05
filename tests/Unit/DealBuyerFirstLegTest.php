@@ -83,6 +83,23 @@ class DealBuyerFirstLegTest extends TestCase
         $this->assertTrue(DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot));
     }
 
+    public function test_legacy_crypto_to_fiat_with_escrow_crypto_currency_id_only(): void
+    {
+        $lot = new ExchangeLot([
+            'from_crypto_currency_id' => null,
+            'crypto_currency_id' => 1,
+            'to_fiat_currency_id' => 2,
+            'to_crypto_currency_id' => null,
+        ]);
+        $lot->setRelation('fromCryptoCurrency', null);
+        $lot->setRelation('cryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+        $lot->setRelation('toFiatCurrency', (object) ['code' => 'USD']);
+        $lot->setRelation('fromFiatCurrency', null);
+
+        $this->assertFalse(DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot));
+        $this->assertTrue(DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot));
+    }
+
     private function lotWithTypes(string $fromType, string $toType): ExchangeLot
     {
         $lot = new ExchangeLot;

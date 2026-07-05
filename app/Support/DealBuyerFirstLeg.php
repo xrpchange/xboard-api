@@ -52,6 +52,13 @@ final class DealBuyerFirstLeg
 
                 return $row && ! $row->is_native ? 'stablecoin' : 'crypto';
             }
+            // Legacy rows: seller crypto in crypto_currency_id only (XMR→USD and similar).
+            if ($lot->to_fiat_currency_id && ! $lot->from_fiat_currency_id && $lot->crypto_currency_id) {
+                $lot->loadMissing('cryptoCurrency');
+                $row = $lot->cryptoCurrency;
+
+                return $row && ! $row->is_native ? 'stablecoin' : 'crypto';
+            }
 
             return null;
         }
