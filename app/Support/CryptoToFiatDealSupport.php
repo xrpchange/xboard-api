@@ -29,12 +29,52 @@ final class CryptoToFiatDealSupport
     }
 
     /**
-     * Non-AML crypto→fiat: buyer may deposit from any external wallet; tier fit against seller
-     * remaining crypto volume is enforced only after verified buyer_crypto_tx, not at start_deal.
-     * AML lots keep the remaining-volume tier gate at start_deal.
+     * Monero (XMR) crypto→fiat: buyer pays from any external wallet; at start_deal only
+     * configured buy_amounts tiers are checked — not seller remaining crypto volume.
+     * Other crypto→fiat pairs (e.g. USDT→USD with AML) keep the remaining-volume tier gate.
      */
+    public static function isMoneroCryptoToFiatDeal(ExchangeLot $lot): bool
+    {
+        if (! self::isCryptoToFiatDeal($lot)) {
+            return false;
+        }
+
+        return self::lotFromCryptoBaseCode($lot) === 'xmr';
+    }
+
     public static function skipsStartDealRemainingVolumeTierCheck(ExchangeLot $lot): bool
     {
-        return self::isCryptoToFiatDeal($lot) && ! (bool) $lot->aml;
+        return self::isMoneroCryptoToFiatDeal($lot);
+    }
+
+    private static function lotFromCryptoBaseCode(ExchangeLot $lot): ?string
+    {
+        if ($lot->from_crypto_currency_id) {
+            $lot->loadMissing('fromCryptoCurrency');
+            $code = $lot->fromCryptoCurrency?->code;
+            if (is_string($code) && trim($code) !== '') {
+                return self::normalizeCryptoBaseCode($code);
+            }
+        }
+        if ($lot->crypto_currency_id) {
+            $lot->loadMissing('cryptoCurrency');
+            $code = $lot->cryptoCurrency?->code;
+            if (is_string($code) && trim($code) !== '') {
+                return self::normalizeCryptoBaseCode($code);
+            }
+        }
+        $fromCurrency = trim((string) ($lot->from_currency ?? ''));
+        if ($fromCurrency !== '') {
+            return self::normalizeCryptoBaseCode($fromCurrency);
+        }
+
+        return null;
+    }
+
+    private static function normalizeCryptoBaseCode(string $code): string
+    {
+        $normalized = strtolower(trim($code));
+
+        return explode('_', $normalized, 2)[0];
     }
 }
