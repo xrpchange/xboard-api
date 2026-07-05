@@ -8,6 +8,7 @@ use App\Models\DealChatMessage;
 use App\Models\ExchangeLot;
 use App\Models\Transaction;
 use App\Support\ApiDeploymentEnvironment;
+use App\Support\CryptoToFiatDealSupport;
 use App\Support\DealEscrowCryptoType;
 use App\Support\EscrowTokenOnlyCryptoDealRules;
 use App\Support\SellerEscrowReservedAmount;
@@ -103,9 +104,12 @@ final class DealCryptoTxCoreVerifier
         }
 
         try {
-            $cryptoType = $tagType === 'buyer_crypto_tx'
-                ? DealEscrowCryptoType::buyerCoreType($lot)
-                : DealEscrowCryptoType::sellerCoreType($lot);
+            $cryptoType = match ($tagType) {
+                'buyer_crypto_tx' => CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)
+                    ? DealEscrowCryptoType::sellerCoreType($lot)
+                    : DealEscrowCryptoType::buyerCoreType($lot),
+                default => DealEscrowCryptoType::sellerCoreType($lot),
+            };
         } catch (\InvalidArgumentException $e) {
             return [
                 'verified' => false,
@@ -323,7 +327,9 @@ final class DealCryptoTxCoreVerifier
         if ($cryptoType === '') {
             try {
                 $cryptoType = match ((string) ($proof['tag_type'] ?? '')) {
-                    'buyer_crypto_tx' => DealEscrowCryptoType::buyerCoreType($lot),
+                    'buyer_crypto_tx' => CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)
+                        ? DealEscrowCryptoType::sellerCoreType($lot)
+                        : DealEscrowCryptoType::buyerCoreType($lot),
                     default => DealEscrowCryptoType::sellerCoreType($lot),
                 };
             } catch (\InvalidArgumentException) {
@@ -610,6 +616,10 @@ final class DealCryptoTxCoreVerifier
     private function expectedAmount(ExchangeLot $lot, string $tagType): ?float
     {
         if ($tagType === 'buyer_crypto_tx') {
+            if (CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)) {
+                return SellerEscrowReservedAmount::resolveForSellerEscrowLot($lot);
+            }
+
             return SellerEscrowReservedAmount::resolveForBuyerEscrowLot($lot);
         }
         if ($tagType === 'seller_transfer_tx') {

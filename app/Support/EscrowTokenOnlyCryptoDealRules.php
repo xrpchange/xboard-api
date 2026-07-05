@@ -7,7 +7,8 @@ namespace App\Support;
 use App\Models\ExchangeLot;
 
 /**
- * Monero and AML lots: crypto legs must use escrow-token server payout, not manual external tx proof.
+ * AML lots on non-crypto→fiat paths may still require escrow-token server payout.
+ * crypto→fiat: buyer deposits from any wallet to seller token; manual buyer_crypto_tx + verify-external-payment.
  */
 final class EscrowTokenOnlyCryptoDealRules
 {
@@ -20,26 +21,23 @@ final class EscrowTokenOnlyCryptoDealRules
 
     public static function buyerFirstLegRequiresEscrowTokenServerPayout(ExchangeLot $lot): bool
     {
-        $paysCrypto = DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot);
-        if ($paysCrypto === true) {
-            if ((bool) $lot->aml) {
-                return true;
-            }
-            try {
-                return self::isMoneroCoreType(DealEscrowCryptoType::buyerCoreType($lot));
-            } catch (\InvalidArgumentException) {
-                return false;
-            }
-        }
-        try {
-            return self::isMoneroCoreType(DealEscrowCryptoType::buyerCoreType($lot));
-        } catch (\InvalidArgumentException) {
+        if (CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)) {
             return false;
         }
+
+        if ((bool) $lot->aml && DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot) === true) {
+            return true;
+        }
+
+        return false;
     }
 
     public static function sellerSecondLegRequiresEscrowTokenOnly(ExchangeLot $lot): bool
     {
+        if (CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)) {
+            return false;
+        }
+
         $firstLegBank = DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot);
         if (DealBuyerSecondLeg::buyerReceivesCrypto($lot, $firstLegBank) !== true) {
             return false;
@@ -89,7 +87,10 @@ final class EscrowTokenOnlyCryptoDealRules
 
     public static function shouldVerifyViaEscrowRecords(ExchangeLot $lot, array $dealTagData, string $cryptoType, string $tagType): bool
     {
-        if (self::isMoneroCoreType($cryptoType)) {
+        if ($tagType === 'buyer_crypto_tx' && CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)) {
+            return false;
+        }
+        if (self::isMoneroCoreType($cryptoType) && $tagType === 'seller_transfer_tx') {
             return true;
         }
         if (filter_var($dealTagData['via_escrow_server'] ?? false, FILTER_VALIDATE_BOOLEAN)) {

@@ -203,10 +203,6 @@ final class TrainingDealSellerActions
             return false;
         }
 
-        if (! $this->createCoreSellerReservation($lot, $publicToken, $cryptoType)) {
-            return false;
-        }
-
         $txHash = substr('pd-tr-'.$lot->id.'-'.now()->format('YmdHis').'-'.bin2hex(random_bytes(4)), 0, 64);
 
         $transaction = Transaction::create([
@@ -226,8 +222,6 @@ final class TrainingDealSellerActions
             'is_test' => true,
             'test_group' => $lot->test_group,
         ]);
-
-        $this->linkReservationToTransaction($lot, $transaction, $publicToken, $cryptoType);
 
         $tag = [
             't' => 'payment_details',

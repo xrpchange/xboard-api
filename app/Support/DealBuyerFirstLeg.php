@@ -22,7 +22,8 @@ final class DealBuyerFirstLeg
 
         return match (true) {
             $fromType === 'fiat' => true,
-            $fromOnChain && $toType === 'fiat' => true,
+            // crypto→fiat: buyer pays on-chain crypto to seller token; seller pays fiat second leg.
+            $fromOnChain && $toType === 'fiat' => false,
             $fromOnChain && $toType === 'stablecoin' => false,
             $fromOnChain && $toType === 'crypto' => false,
             default => null,
