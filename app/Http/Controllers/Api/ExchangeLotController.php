@@ -4579,12 +4579,12 @@ class ExchangeLotController extends Controller
         $skipFullSellerPreReservation = $paymentType === 'crypto'
             && $buyerFirstLegPaysCrypto === true
             && $isCryptoToFiatDeal;
-        $serviceFeeOnlyPreReserve = $skipFullSellerPreReservation && ! (bool) $lot->aml;
+        $serviceFeeOnlyPreReserve = $skipFullSellerPreReservation;
 
         // Seller pre-reservation before payment_details:
         // - fiat→crypto: full deal amount on seller token.
-        // - crypto→fiat non-AML: service fee only (buyer deposit locked after verified buyer_crypto_tx).
-        // - crypto→fiat AML: no pre-reserve here (inbound after buyer_crypto_tx + AML).
+        // - crypto→fiat (all assets, AML or not): service fee (+ AML fee when lot.aml) via service_fee_only;
+        //   full deal crypto locked after verified buyer_crypto_tx (inbound_deposit_lock).
         $shouldCreateSellerReservation = ! empty($sellerEscrowToken)
             && is_string($sellerEscrowToken)
             && (! $skipFullSellerPreReservation || $serviceFeeOnlyPreReserve);
