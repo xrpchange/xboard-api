@@ -208,6 +208,20 @@ Important:
 
 ## Client behavior
 
+### Server-only tags and sender trust
+
+Some tags must **not** advance deal state when they arrive from a participant mailbox on the **email** channel. The API sends them with **`From: MAIL_FROM_ADDRESS`** (`config('mail.from.address')`, exposed to clients as `meta.deal_system_mail_from` on `GET /nodes` and `deal_system_mail_from` on `GET …/chat-messages`).
+
+| Tag | Email `From` must be system mail | Chat DB `sender_side` (trusted API insert) |
+|-----|----------------------------------|------------------------------------------|
+| `payment_details` | yes (to buyer) | `seller` (after `send-payment-details`) |
+| `start_deal` | yes (to seller) | `buyer` (after `send-message` `start_deal`) |
+| `buyer_exited` | yes (to seller) | `buyer` |
+
+**Attack:** a seller could email the buyer's lot mailbox with a forged `X-XBoard-Deal-Tag: payment_details` and a malicious `address`. Clients must **ignore** such tags unless `From` matches `deal_system_mail_from`. Implementation: `App\Support\DealServerOriginMail` (API export filter) and client `DealServerOriginMail` + `deriveDealChatTagState`.
+
+Participant tags (`seller_message`, `receipt_confirmation`, `buyer_destination_details`, …) continue to use lot mailbox `From` as today.
+
 1. **Fetch email** (IMAP) to buyer's deal mailbox.
 2. **Parse subject** as JSON. If parsing fails, treat as plain message (no tag).
 3. **If `t === "payment_details"`:**

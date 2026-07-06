@@ -5233,19 +5233,29 @@ class ExchangeLotController extends Controller
         }
         $messages = $query->orderBy('created_at')
             ->get()
-            ->map(fn (DealChatMessage $m) => [
-                'id' => $m->id,
-                'date' => $this->toUtcIso8601($m->created_at) ?? '',
-                'body' => $m->body,
-                'from_me' => $isSeller ? $m->sender_side === 'seller' : $m->sender_side === 'buyer',
-                'sender_side' => $m->sender_side,
-                'deal_tag' => $m->deal_tag,
-            ]);
+            ->map(function (DealChatMessage $m) use ($isSeller) {
+                $dealTag = \App\Support\DealServerOriginMail::trustedDealTagForChatExport(
+                    $m->deal_tag,
+                    $m->sender_side,
+                    $m->from_email,
+                );
+
+                return [
+                    'id' => $m->id,
+                    'date' => $this->toUtcIso8601($m->created_at) ?? '',
+                    'body' => $m->body,
+                    'from_me' => $isSeller ? $m->sender_side === 'seller' : $m->sender_side === 'buyer',
+                    'sender_side' => $m->sender_side,
+                    'from_email' => $m->from_email,
+                    'deal_tag' => $dealTag,
+                ];
+            });
 
         // Lets clients align step timers with device clock skew; all instants above are UTC regardless of app/DB TZ.
         return response()->json([
             'success' => true,
             'server_time' => $this->toUtcIso8601(now()),
+            'deal_system_mail_from' => \App\Support\DealServerOriginMail::systemMailFromAddress(),
             'messages' => $messages,
         ]);
     }
