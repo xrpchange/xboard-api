@@ -65,3 +65,18 @@ The Android/web client queries **each enabled exchanger** with the same filters,
 - **Pagination** is **per block**: «Load more» requests `page+1` only for that exchanger; sort order comes from the node API (no global merge sort).
 
 See also: `docs/EXCHANGE_LOT_DEAL_COUNTERS.md`, xboard-client Search screen.
+
+## Seller «my lots» (POST /api/v1/exchange-lots/seller-list)
+
+**Protected** (`X-Escrow-Token` required). Lists lots owned by the seller’s escrow token(s).
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `wallet_hashes` | **Yes** | JSON array of lowercase `token_hash` values (from escrow public part). |
+| `include_inactive` | No | When `true`, include deactivated lots (seller UI). |
+| `is_test`, `test_group`, `main_group` | No | Same as GET index (sandbox vs production groups). |
+| `page`, `per_page`, `sort_by`, `sort_dir` | No | Same pagination/sort as public search. |
+
+Response shape is identical to GET index. **Do not** pass full escrow JSON or `wallet_address[]` on GET — use this POST so filters stay in the body (no URI length limits).
+
+Legacy GET `wallet_hashes` query (comma-separated) remains for old clients; new clients use POST only for seller my-lots.
