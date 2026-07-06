@@ -79,6 +79,30 @@ final class CryptoToFiatDealSupport
     }
 
     /**
+     * Buyer pays fiat first; seller escrow holds crypto (from=fiat, to=crypto/stablecoin).
+     */
+    public static function buyerFiatFirstLegFiatToCrypto(ExchangeLot $lot): bool
+    {
+        $from = DealBuyerFirstLeg::currencyTypeForLotSide($lot, 'from');
+        $to = DealBuyerFirstLeg::currencyTypeForLotSide($lot, 'to');
+
+        return $from === 'fiat' && in_array($to, ['crypto', 'stablecoin'], true);
+    }
+
+    /**
+     * Seller escrow public JSON for buyer amicable completion when Core reservation is on the seller token.
+     * crypto→fiat (inbound crypto) and fiat→crypto (seller payout leg) both use exchange_lots.wallet_address.
+     */
+    public static function sellerEscrowPublicJsonForBuyerAmicableCompletion(ExchangeLot $lot): ?string
+    {
+        if (! self::buyerCryptoFirstLegCryptoToFiat($lot) && ! self::buyerFiatFirstLegFiatToCrypto($lot)) {
+            return null;
+        }
+
+        return self::sellerEscrowPublicJsonFromLotWalletAddress($lot);
+    }
+
+    /**
      * Buyer pays on-chain crypto first (from=crypto/stablecoin, to=fiat): inbound reservation
      * (service_fee_only + inbound_deposit_lock) is on the seller escrow token at payment_details,
      * not on the buyer wallet token sent with deal_completed_buyer.
@@ -88,6 +112,12 @@ final class CryptoToFiatDealSupport
         if (! self::buyerCryptoFirstLegCryptoToFiat($lot)) {
             return null;
         }
+
+        return self::sellerEscrowPublicJsonFromLotWalletAddress($lot);
+    }
+
+    private static function sellerEscrowPublicJsonFromLotWalletAddress(ExchangeLot $lot): ?string
+    {
         $wallet = trim((string) ($lot->wallet_address ?? ''));
         if ($wallet === '' || ! str_starts_with($wallet, '{')) {
             return null;

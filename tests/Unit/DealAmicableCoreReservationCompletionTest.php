@@ -65,6 +65,57 @@ class DealAmicableCoreReservationCompletionTest extends TestCase
             && ! str_contains($request->url(), 'complete-reservation-by-buyer'));
     }
 
+    public function test_fiat_to_crypto_buyer_completion_calls_complete_reservation_with_seller_lot_wallet(): void
+    {
+        Http::fake(function (\Illuminate\Http\Client\Request $request) {
+            if (str_contains($request->url(), '/api/complete-reservation')) {
+                return Http::response([
+                    'status' => 200,
+                    'data' => ['deleted' => true, 'service_fee_collected' => true],
+                ], 200);
+            }
+
+            return Http::response(['message' => 'unexpected url'], 500);
+        });
+
+        $lot = new ExchangeLot([
+            'aml' => false,
+            'wallet_address' => '{"currency":"XMR","wallet_address":"9seller","token_hash":"aabb"}',
+            'from_fiat_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+            'from_currency' => 'USD',
+            'to_currency' => 'xmr',
+        ]);
+        $lot->id = 21;
+        $lot->setRelation('fromFiatCurrency', (object) ['code' => 'USD']);
+        $lot->setRelation('toCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+        $lot->setRelation('fromCryptoCurrency', null);
+        $lot->setRelation('toFiatCurrency', null);
+        $lot->setRelation('cryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+
+        $validation = $this->createMock(EscrowTokenValidationService::class);
+        $validation->method('getCoreUrlAndKeyForToken')
+            ->willReturn(['https://sandbox.api.core.example.test', 'test-key']);
+
+        $service = new DealAmicableCoreReservationCompletion($validation);
+        $request = Request::create('/send-message', 'POST', [], [], [], [
+            'HTTP_X-Escrow-Token' => '{"currency":"XMR","wallet_address":"9buyer","token_hash":"ccdd"}',
+        ]);
+
+        $result = $service->completeBeforeAmicableChat(
+            $lot,
+            $request,
+            ['t' => 'deal_completed_buyer', 'lot_id' => '21'],
+            'deal_completed_buyer',
+        );
+
+        $this->assertTrue(CryptoToFiatDealSupport::buyerFiatFirstLegFiatToCrypto($lot));
+        $this->assertTrue($result['ok']);
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/api/complete-reservation')
+            && ! str_contains($request->url(), 'complete-reservation-by-buyer'));
+    }
+
     public function test_buyer_completion_fails_when_core_returns_error(): void
     {
         Http::fake(function (\Illuminate\Http\Client\Request $request) {
@@ -142,6 +193,7 @@ class DealAmicableCoreReservationCompletionTest extends TestCase
 
         $lot = new ExchangeLot([
             'aml' => false,
+            'wallet_address' => '{"currency":"XMR","wallet_address":"9seller","token_hash":"aabb"}',
             'from_fiat_currency_id' => 1,
             'to_crypto_currency_id' => 2,
             'from_currency' => 'USD',
@@ -150,6 +202,8 @@ class DealAmicableCoreReservationCompletionTest extends TestCase
         $lot->id = 21;
         $lot->setRelation('fromFiatCurrency', (object) ['code' => 'USD']);
         $lot->setRelation('toCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+        $lot->setRelation('fromCryptoCurrency', null);
+        $lot->setRelation('toFiatCurrency', null);
         $lot->setRelation('cryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
 
         $validation = $this->createMock(EscrowTokenValidationService::class);

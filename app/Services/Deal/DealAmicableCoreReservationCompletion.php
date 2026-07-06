@@ -47,16 +47,19 @@ final class DealAmicableCoreReservationCompletion
     {
         $lot->loadMissing(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
 
-        $sellerPublicForCryptoToFiat = CryptoToFiatDealSupport::sellerEscrowPublicJsonForReservationRelease($lot);
-        if ($sellerPublicForCryptoToFiat !== null) {
-            Log::info('[exchange-lots] crypto-to-fiat buyer completion: release seller escrow reservation', [
+        $sellerPublicForCompletion = CryptoToFiatDealSupport::sellerEscrowPublicJsonForBuyerAmicableCompletion($lot);
+        if ($sellerPublicForCompletion !== null) {
+            Log::info('[exchange-lots] buyer completion: release seller escrow reservation', [
                 'lot_id' => $lot->id,
                 'reason' => $reason,
+                'crypto_to_fiat' => CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot),
+                'fiat_to_crypto' => CryptoToFiatDealSupport::buyerFiatFirstLegFiatToCrypto($lot),
             ]);
 
-            return $this->postCompleteReservationSeller($lot, $sellerPublicForCryptoToFiat, $reason);
+            return $this->postCompleteReservationSeller($lot, $sellerPublicForCompletion, $reason);
         }
-        if (CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot)) {
+        if (CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot)
+            || CryptoToFiatDealSupport::buyerFiatFirstLegFiatToCrypto($lot)) {
             return [
                 'ok' => false,
                 'message' => 'Seller escrow token is missing on this lot; cannot release reservation on completion.',
