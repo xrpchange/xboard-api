@@ -154,7 +154,7 @@ final class DealCryptoTxCoreVerifier
         if ($expectedAddress !== null && $expectedAddress !== '' && self::supportsExpectedAddressCheck($cryptoType)) {
             $payload['expected_address'] = $expectedAddress;
         }
-        if ($expectedAmount !== null && $expectedAmount > 0) {
+        if ($expectedAmount !== null && $expectedAmount > 0 && self::supportsExpectedAmountCheck($cryptoType)) {
             $payload['expected_amount'] = $expectedAmount;
         }
 
@@ -680,7 +680,13 @@ final class DealCryptoTxCoreVerifier
 
     private static function supportsExpectedAddressCheck(string $cryptoType): bool
     {
-        // Monero hides recipient addresses on-chain; only tx existence + amount are verifiable.
+        // Monero hides recipient addresses on-chain; daemon lookup confirms tx existence/confirmations only.
+        return strtolower(trim($cryptoType)) !== 'xmr';
+    }
+
+    private static function supportsExpectedAmountCheck(string $cryptoType): bool
+    {
+        // RingCT output amounts are not observable from monerod get_transactions without wallet view keys.
         return strtolower(trim($cryptoType)) !== 'xmr';
     }
 
