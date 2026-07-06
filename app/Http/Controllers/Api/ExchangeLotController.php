@@ -937,6 +937,30 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * Seller «my lots»: filter by escrow token_hash values in JSON body (not GET query).
+     * Same filters/pagination as GET index; requires X-Escrow-Token (protected route).
+     */
+    public function sellerList(Request $request): JsonResponse
+    {
+        if (! $request->filled('wallet_hashes')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'wallet_hashes is required in request body.',
+            ], 422);
+        }
+
+        Log::info('[exchange-lots] SELLER_LIST POST', [
+            'host' => $request->getHost(),
+            'wallet_hashes_count' => is_array($request->input('wallet_hashes'))
+                ? count($request->input('wallet_hashes'))
+                : 1,
+            'include_inactive' => $request->get('include_inactive'),
+        ]);
+
+        return $this->index($request);
+    }
+
+    /**
      * @OA\Get(
      *     path="/exchange-lots/{id}",
      *     summary="Get exchange lot by ID",

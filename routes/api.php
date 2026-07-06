@@ -174,6 +174,7 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
     Route::post('/lot-mailbox/delete', [LotMailboxController::class, 'delete']);
 
     Route::prefix('exchange-lots')->group(function () {
+        Route::post('/seller-list', [ExchangeLotController::class, 'sellerList']);
         Route::post('/buyer-cancel-deal', [ExchangeLotController::class, 'buyerCancelDealByToken']);
         Route::get('/{lot}/deal-messages', [ExchangeLotController::class, 'dealMessages']);
         Route::post('/', [ExchangeLotController::class, 'store']);
