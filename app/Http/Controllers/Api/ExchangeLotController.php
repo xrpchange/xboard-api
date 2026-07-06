@@ -45,6 +45,7 @@ use App\Support\DealEscrowPublicPart;
 use App\Support\EscrowTokenLotLimit;
 use App\Support\ExchangeLotDealCounters;
 use App\Support\ExchangeLotTrainingSearchFilter;
+use App\Support\ExchangeLotTestMainFilter;
 use App\Support\StartDealBuyerEscrowValidation;
 use App\Support\DealSaleTransactionCompletion;
 use App\Support\DealSellerOpenLinks;
@@ -729,15 +730,11 @@ class ExchangeLotController extends Controller
         $query = ($includeInactive ? ExchangeLot::query() : ExchangeLot::active())
             ->with(['cryptoCurrency', 'node', 'bank', 'banks', 'fromFiatCurrency', 'fromCryptoCurrency', 'toFiatCurrency', 'toCryptoCurrency']);
 
-        if ($request->has('is_test')) {
-            if ($request->is_test === 'true') {
-                $testGroupHash = $request->filled('test_group') ? hash('sha256', trim($request->test_group)) : null;
-                $query->test($testGroupHash);
-            } else {
-                $mainGroupHash = $request->filled('main_group') ? hash('sha256', trim($request->main_group)) : null;
-                $query->main($mainGroupHash);
-            }
-        }
+        $walletAddressesEarly = $request->input('wallet_address') ?? $request->input('wallet_address[]');
+        $hashesEarly = self::extractWalletHashesFromRequest($request, $walletAddressesEarly);
+        $sellerWalletHashQuery = ! empty($hashesEarly);
+
+        ExchangeLotTestMainFilter::applyFromRequest($query, $request, $sellerWalletHashQuery);
 
         if ($request->filled('from_currency')) {
             $code = strtoupper($request->from_currency);
@@ -822,35 +819,7 @@ class ExchangeLotController extends Controller
             $this->trainingDealAbandonedLotRelease->releaseStaleLockedLots();
         }
         $walletAddresses = $request->input('wallet_address') ?? $request->input('wallet_address[]');
-        $hashes = [];
-        if ($request->filled('wallet_hashes')) {
-            $rawHashes = $request->input('wallet_hashes');
-            $parts = is_array($rawHashes) ? $rawHashes : explode(',', (string) $rawHashes);
-            foreach ($parts as $h) {
-                $h = strtolower(trim((string) $h));
-                if ($h !== '') {
-                    $hashes[] = $h;
-                }
-            }
-        }
-        if (! empty($walletAddresses)) {
-            $addresses = is_array($walletAddresses) ? $walletAddresses : [$walletAddresses];
-            $addresses = array_filter(array_map('trim', $addresses));
-            foreach ($addresses as $a) {
-                $decoded = json_decode($a, true);
-                if (is_array($decoded) && ! empty($decoded['token_hash'])) {
-                    $hashes[] = strtolower(trim($decoded['token_hash']));
-                } elseif (preg_match('/^[a-f0-9]{64}$/i', $a)) {
-                    $hashes[] = strtolower($a);
-                } else {
-                    Log::warning('[exchange-lots] Failed to parse wallet_address', [
-                        'raw_preview' => is_string($a) ? substr($a, 0, 200) : gettype($a),
-                        'json_error' => json_last_error_msg(),
-                    ]);
-                }
-            }
-        }
-        $hashes = array_values(array_unique(array_filter($hashes)));
+        $hashes = self::extractWalletHashesFromRequest($request, $walletAddresses);
         Log::info('[exchange-lots] Extracted hashes for query', ['hashes' => $hashes, 'count' => count($hashes)]);
         if (! empty($hashes)) {
             $query->whereIn('wallet_hash', $hashes);
@@ -900,8 +869,9 @@ class ExchangeLotController extends Controller
         ]);
         $testGroupHashForTotal = $request->filled('test_group') ? hash('sha256', trim($request->test_group)) : null;
         $mainGroupHashForTotal = $request->filled('main_group') ? hash('sha256', trim($request->main_group)) : null;
-        $totalAllTest = ExchangeLot::when($request->has('is_test') && $request->is_test === 'true', fn ($q) => $q->test($testGroupHashForTotal))
-            ->when($request->has('is_test') && $request->is_test !== 'true', fn ($q) => $q->main($mainGroupHashForTotal))
+        $isTestForTotal = ExchangeLotTestMainFilter::isTestRequested($request);
+        $totalAllTest = ExchangeLot::when($isTestForTotal === true, fn ($q) => $q->test($testGroupHashForTotal))
+            ->when($isTestForTotal === false, fn ($q) => $q->main($mainGroupHashForTotal))
             ->count();
         $count = count($items);
 
@@ -914,8 +884,8 @@ class ExchangeLotController extends Controller
         $responseLog['total_all_test_in_db'] = $totalAllTest;
         // When filter returns 0 but DB has lots — log their wallet_hashes for debugging
         if ($count === 0 && $totalAllTest > 0 && ! empty($hashes)) {
-            $allTestLots = ExchangeLot::when($request->has('is_test') && $request->is_test === 'true', fn ($q) => $q->test($testGroupHashForTotal))
-                ->when($request->has('is_test') && $request->is_test !== 'true', fn ($q) => $q->main($mainGroupHashForTotal))
+            $allTestLots = ExchangeLot::when($isTestForTotal === true, fn ($q) => $q->test($testGroupHashForTotal))
+                ->when($isTestForTotal === false, fn ($q) => $q->main($mainGroupHashForTotal))
                 ->get(['id', 'wallet_hash']);
             $responseLog['db_test_wallet_hashes'] = $allTestLots->map(fn ($l) => substr($l->wallet_hash ?? '', 0, 16).'...')->all();
         }
@@ -7759,5 +7729,43 @@ class ExchangeLotController extends Controller
         );
 
         return $dealTagData;
+    }
+
+    /**
+     * @param  mixed  $walletAddresses
+     * @return list<string>
+     */
+    private static function extractWalletHashesFromRequest(\Illuminate\Http\Request $request, mixed $walletAddresses): array
+    {
+        $hashes = [];
+        if ($request->filled('wallet_hashes')) {
+            $rawHashes = $request->input('wallet_hashes');
+            $parts = is_array($rawHashes) ? $rawHashes : explode(',', (string) $rawHashes);
+            foreach ($parts as $h) {
+                $h = strtolower(trim((string) $h));
+                if ($h !== '') {
+                    $hashes[] = $h;
+                }
+            }
+        }
+        if (! empty($walletAddresses)) {
+            $addresses = is_array($walletAddresses) ? $walletAddresses : [$walletAddresses];
+            $addresses = array_filter(array_map('trim', $addresses));
+            foreach ($addresses as $a) {
+                $decoded = json_decode($a, true);
+                if (is_array($decoded) && ! empty($decoded['token_hash'])) {
+                    $hashes[] = strtolower(trim((string) $decoded['token_hash']));
+                } elseif (preg_match('/^[a-f0-9]{64}$/i', $a)) {
+                    $hashes[] = strtolower($a);
+                } else {
+                    Log::warning('[exchange-lots] Failed to parse wallet_address', [
+                        'raw_preview' => is_string($a) ? substr($a, 0, 200) : gettype($a),
+                        'json_error' => json_last_error_msg(),
+                    ]);
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter($hashes)));
     }
 }
