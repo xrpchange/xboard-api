@@ -151,5 +151,7 @@ class CryptoToFiatStartDealTierValidationTest extends TestCase
         $fiatToCrypto->setRelation('toFiatCurrency', null);
         $fiatToCrypto->wallet_address = $sellerJson;
         $this->assertNull(CryptoToFiatDealSupport::sellerEscrowPublicJsonForReservationRelease($fiatToCrypto));
+        $this->assertTrue(CryptoToFiatDealSupport::buyerFiatFirstLegFiatToCrypto($fiatToCrypto));
+        $this->assertSame($sellerJson, CryptoToFiatDealSupport::sellerEscrowPublicJsonForBuyerAmicableCompletion($fiatToCrypto));
     }
 }
