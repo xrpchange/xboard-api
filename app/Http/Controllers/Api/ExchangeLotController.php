@@ -823,6 +823,16 @@ class ExchangeLotController extends Controller
         }
         $walletAddresses = $request->input('wallet_address') ?? $request->input('wallet_address[]');
         $hashes = [];
+        if ($request->filled('wallet_hashes')) {
+            $rawHashes = $request->input('wallet_hashes');
+            $parts = is_array($rawHashes) ? $rawHashes : explode(',', (string) $rawHashes);
+            foreach ($parts as $h) {
+                $h = strtolower(trim((string) $h));
+                if ($h !== '') {
+                    $hashes[] = $h;
+                }
+            }
+        }
         if (! empty($walletAddresses)) {
             $addresses = is_array($walletAddresses) ? $walletAddresses : [$walletAddresses];
             $addresses = array_filter(array_map('trim', $addresses));
@@ -830,6 +840,8 @@ class ExchangeLotController extends Controller
                 $decoded = json_decode($a, true);
                 if (is_array($decoded) && ! empty($decoded['token_hash'])) {
                     $hashes[] = strtolower(trim($decoded['token_hash']));
+                } elseif (preg_match('/^[a-f0-9]{64}$/i', $a)) {
+                    $hashes[] = strtolower($a);
                 } else {
                     Log::warning('[exchange-lots] Failed to parse wallet_address', [
                         'raw_preview' => is_string($a) ? substr($a, 0, 200) : gettype($a),
@@ -837,11 +849,11 @@ class ExchangeLotController extends Controller
                     ]);
                 }
             }
-            $hashes = array_values(array_unique(array_filter($hashes)));
-            Log::info('[exchange-lots] Extracted hashes for query', ['hashes' => $hashes, 'count' => count($hashes)]);
-            if (! empty($hashes)) {
-                $query->whereIn('wallet_hash', $hashes);
-            }
+        }
+        $hashes = array_values(array_unique(array_filter($hashes)));
+        Log::info('[exchange-lots] Extracted hashes for query', ['hashes' => $hashes, 'count' => count($hashes)]);
+        if (! empty($hashes)) {
+            $query->whereIn('wallet_hash', $hashes);
         }
 
         // Public search: exclude lots that have a buyer in deal (buyer_lot_email set)
