@@ -124,4 +124,51 @@ class DealAmicableCoreReservationCompletionTest extends TestCase
         $this->assertTrue($result['skipped'] ?? false);
         Http::assertNothingSent();
     }
+
+    public function test_buyer_completion_succeeds_after_transport_timeout_when_core_already_completed(): void
+    {
+        $calls = 0;
+        Http::fake(function () use (&$calls) {
+            $calls++;
+            if ($calls === 1) {
+                throw new \Illuminate\Http\Client\ConnectionException('cURL error 28: Operation timed out');
+            }
+
+            return Http::response([
+                'message' => 'Matching reservation service fee state not found.',
+                'error_code' => 'CRYPTO_ERROR',
+            ], 404);
+        });
+
+        $lot = new ExchangeLot([
+            'aml' => false,
+            'from_fiat_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+            'from_currency' => 'USD',
+            'to_currency' => 'xmr',
+        ]);
+        $lot->id = 21;
+        $lot->setRelation('fromFiatCurrency', (object) ['code' => 'USD']);
+        $lot->setRelation('toCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+        $lot->setRelation('cryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+
+        $validation = $this->createMock(EscrowTokenValidationService::class);
+        $validation->method('getCoreUrlAndKeyForToken')
+            ->willReturn(['https://sandbox.api.core.example.test', 'test-key']);
+
+        $service = new DealAmicableCoreReservationCompletion($validation);
+        $request = Request::create('/send-message', 'POST', [], [], [], [
+            'HTTP_X-Escrow-Token' => '{"currency":"XMR","wallet_address":"9buyer","token_hash":"ccdd"}',
+        ]);
+
+        $result = $service->completeBeforeAmicableChat(
+            $lot,
+            $request,
+            ['t' => 'deal_completed_buyer', 'lot_id' => '21'],
+            'deal_completed_buyer',
+        );
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(2, $calls);
+    }
 }
