@@ -277,6 +277,27 @@ class ExchangeLotController extends Controller
      */
     private function tryDeleteCoreReservationAfterBuyerAmicableCompletion(ExchangeLot $lot, Request $request, string $reason): void
     {
+        $lot->loadMissing(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
+
+        $sellerPublicForCryptoToFiat = CryptoToFiatDealSupport::sellerEscrowPublicJsonForReservationRelease($lot);
+        if ($sellerPublicForCryptoToFiat !== null) {
+            Log::info('[exchange-lots] crypto-to-fiat buyer completion: release seller escrow reservation', [
+                'lot_id' => $lot->id,
+                'reason' => $reason,
+            ]);
+            $this->postCoreCompleteReservationSeller($lot, $sellerPublicForCryptoToFiat, $reason);
+
+            return;
+        }
+        if (CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot)) {
+            Log::warning('[exchange-lots] crypto-to-fiat buyer completion: seller escrow token missing on lot; Core reservation not released', [
+                'lot_id' => $lot->id,
+                'reason' => $reason,
+            ]);
+
+            return;
+        }
+
         $buyerToken = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
         if (empty($buyerToken) || ! is_string($buyerToken)) {
             Log::info('[exchange-lots] Core delete-reservation-by-buyer skipped (no escrow token)', [
@@ -286,7 +307,6 @@ class ExchangeLotController extends Controller
 
             return;
         }
-        $lot->loadMissing(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
         try {
             [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($buyerToken);
             try {

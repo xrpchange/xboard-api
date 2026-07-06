@@ -67,6 +67,35 @@ final class CryptoToFiatDealSupport
         return self::isMoneroCryptoToFiatDeal($lot);
     }
 
+    /**
+     * Buyer pays on-chain crypto first (from=crypto/stablecoin, to=fiat).
+     */
+    public static function buyerCryptoFirstLegCryptoToFiat(ExchangeLot $lot): bool
+    {
+        $from = DealBuyerFirstLeg::currencyTypeForLotSide($lot, 'from');
+        $to = DealBuyerFirstLeg::currencyTypeForLotSide($lot, 'to');
+
+        return in_array($from, ['crypto', 'stablecoin'], true) && $to === 'fiat';
+    }
+
+    /**
+     * Buyer pays on-chain crypto first (from=crypto/stablecoin, to=fiat): inbound reservation
+     * (service_fee_only + inbound_deposit_lock) is on the seller escrow token at payment_details,
+     * not on the buyer wallet token sent with deal_completed_buyer.
+     */
+    public static function sellerEscrowPublicJsonForReservationRelease(ExchangeLot $lot): ?string
+    {
+        if (! self::buyerCryptoFirstLegCryptoToFiat($lot)) {
+            return null;
+        }
+        $wallet = trim((string) ($lot->wallet_address ?? ''));
+        if ($wallet === '' || ! str_starts_with($wallet, '{')) {
+            return null;
+        }
+
+        return $wallet;
+    }
+
     private static function lotBuyerFirstLegCryptoBaseCode(ExchangeLot $lot): ?string
     {
         $from = DealBuyerFirstLeg::currencyTypeForLotSide($lot, 'from');

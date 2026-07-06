@@ -131,4 +131,25 @@ class CryptoToFiatStartDealTierValidationTest extends TestCase
         $this->assertTrue(CryptoToFiatDealSupport::skipsStartDealRemainingVolumeTierCheck($lot));
         $this->assertSame([100.0, 200.0], $lot->configuredBuyAmounts());
     }
+
+    #[Group('spec-LOT-003')]
+    public function test_seller_escrow_public_json_for_reservation_release(): void
+    {
+        $lot = $this->xmrToFiatLot(aml: false);
+        $sellerJson = '{"token_hash":"e9626d4e'.str_repeat('a', 56).'","currency":"XMR","wallet_address":"{\"primary\":\"9abc\"}"}';
+        $lot->wallet_address = $sellerJson;
+
+        $this->assertSame($sellerJson, CryptoToFiatDealSupport::sellerEscrowPublicJsonForReservationRelease($lot));
+
+        $fiatToCrypto = new ExchangeLot([
+            'from_fiat_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+        ]);
+        $fiatToCrypto->setRelation('fromFiatCurrency', (object) ['code' => 'USD']);
+        $fiatToCrypto->setRelation('toCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+        $fiatToCrypto->setRelation('fromCryptoCurrency', null);
+        $fiatToCrypto->setRelation('toFiatCurrency', null);
+        $fiatToCrypto->wallet_address = $sellerJson;
+        $this->assertNull(CryptoToFiatDealSupport::sellerEscrowPublicJsonForReservationRelease($fiatToCrypto));
+    }
 }
