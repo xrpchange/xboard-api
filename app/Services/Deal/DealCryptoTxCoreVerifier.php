@@ -10,6 +10,7 @@ use App\Models\Transaction;
 use App\Support\ApiDeploymentEnvironment;
 use App\Support\CryptoToFiatDealSupport;
 use App\Support\DealEscrowCryptoType;
+use App\Support\DealEscrowPublicPart;
 use App\Support\EscrowTokenOnlyCryptoDealRules;
 use App\Support\SellerEscrowReservedAmount;
 use Illuminate\Support\Facades\Http;
@@ -585,8 +586,19 @@ final class DealCryptoTxCoreVerifier
                 ->orderByDesc('id')
                 ->first();
             $addr = trim((string) ($tx?->crypto_address ?? ''));
+            if ($addr === '') {
+                return null;
+            }
+            try {
+                $cryptoType = CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)
+                    ? DealEscrowCryptoType::sellerCoreType($lot)
+                    : DealEscrowCryptoType::buyerCoreType($lot);
+            } catch (\InvalidArgumentException) {
+                $cryptoType = null;
+            }
+            $normalized = DealEscrowPublicPart::normalizeReceiveAddressForVerification($addr, $cryptoType);
 
-            return $addr !== '' ? $addr : null;
+            return $normalized !== '' ? $normalized : null;
         }
         if ($tagType === 'seller_transfer_tx') {
             $rows = DealChatMessage::query()

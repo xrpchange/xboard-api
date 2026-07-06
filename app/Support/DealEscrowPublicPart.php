@@ -89,6 +89,49 @@ final class DealEscrowPublicPart
         return $trimmed !== '' ? $trimmed : null;
     }
 
+    /**
+     * Single on-chain address for DB / verify-external-payment (XMR: primary from JSON blob).
+     * Deal tags may still carry the raw wallet_address JSON unchanged.
+     */
+    public static function normalizeReceiveAddressForVerification(string $raw, ?string $cryptoType = null): string
+    {
+        $trimmed = trim($raw);
+        if ($trimmed === '') {
+            return '';
+        }
+        if ($trimmed[0] !== '{') {
+            return $trimmed;
+        }
+        $decoded = json_decode($trimmed, true);
+        if (! is_array($decoded)) {
+            return $trimmed;
+        }
+        $type = strtolower(trim((string) ($cryptoType ?? '')));
+        if (in_array($type, ['xmr', 'monero'], true)) {
+            $primary = trim((string) ($decoded['primary'] ?? ''));
+            if ($primary !== '') {
+                return $primary;
+            }
+        }
+        foreach (['wallet_address', 'address', 'primary'] as $key) {
+            $value = $decoded[$key] ?? null;
+            if (! is_string($value)) {
+                continue;
+            }
+            $inner = trim($value);
+            if ($inner === '') {
+                continue;
+            }
+            if ($inner[0] === '{' || $inner[0] === '[') {
+                return self::normalizeReceiveAddressForVerification($inner, $cryptoType);
+            }
+
+            return $inner;
+        }
+
+        return $trimmed;
+    }
+
     private static function inferStablecoinNetworkFromBlockchainAddress(string $address): ?string
     {
         $w = trim($address);
