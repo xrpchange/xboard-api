@@ -8,6 +8,7 @@ use App\Models\ExchangeLot;
 use App\Services\EscrowTokenValidationService;
 use App\Support\CryptoToFiatDealSupport;
 use App\Support\DealSaleTransactionCompletion;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -101,51 +102,25 @@ final class DealAmicableCoreReservationCompletion
     private function postCompleteReservationSeller(ExchangeLot $lot, string $sellerEscrowToken, string $reason): array
     {
         $lot->loadMissing(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
-        try {
-            [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
-            $cryptoType = $this->resolveCryptoType($lot, $sellerEscrowToken);
-            $timeout = (int) config('services.core.timeout', 10);
-            $req = Http::timeout($timeout);
-            if ($coreKey !== '') {
-                $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
-            }
-            $coreEndpoint = rtrim($coreUrl, '/').'/api/complete-reservation';
-            Log::info('[exchange-lots] Core complete-reservation start (amicable completion)', [
-                'lot_id' => $lot->id,
-                'reason' => $reason,
-                'core_endpoint' => $coreEndpoint,
-                'timeout_seconds' => $timeout,
-                'crypto_type' => $cryptoType,
-            ]);
-            $startedAt = microtime(true);
-            $resp = $req->post($coreEndpoint, [
+        [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
+        $cryptoType = $this->resolveCryptoType($lot, $sellerEscrowToken);
+        $coreEndpoint = rtrim($coreUrl, '/').'/api/complete-reservation';
+
+        return $this->postReservationCompletion(
+            $lot,
+            $reason,
+            $coreUrl,
+            $coreKey,
+            $coreEndpoint,
+            'complete-reservation',
+            $cryptoType,
+            [
                 'exchange_lot_id' => (string) $lot->id,
                 'escrow_token' => $sellerEscrowToken,
                 'crypto_type' => $cryptoType,
                 'aml_required' => (bool) $lot->aml,
-            ]);
-
-            return $this->interpretCoreCompletionResponse(
-                $resp,
-                $lot->id,
-                'complete-reservation',
-                $reason,
-                $startedAt,
-            );
-        } catch (\Throwable $e) {
-            Log::warning('[exchange-lots] Core complete-reservation exception (amicable completion)', [
-                'lot_id' => $lot->id,
-                'reason' => $reason,
-                'error' => $e->getMessage(),
-            ]);
-
-            return [
-                'ok' => false,
-                'message' => 'Failed to finalize escrow reservation via Core.',
-                'error_code' => 'core_reservation_completion_failed',
-                'http_status' => 502,
-            ];
-        }
+            ],
+        );
     }
 
     /**
@@ -154,39 +129,79 @@ final class DealAmicableCoreReservationCompletion
     private function postCompleteReservationByBuyer(ExchangeLot $lot, string $buyerToken, string $reason): array
     {
         $lot->loadMissing(['cryptoCurrency', 'fromCryptoCurrency', 'toCryptoCurrency']);
-        try {
-            [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($buyerToken);
-            $cryptoType = $this->resolveCryptoType($lot, $buyerToken);
-            $timeout = (int) config('services.core.timeout', 10);
-            $req = Http::timeout($timeout);
-            if ($coreKey !== '') {
-                $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
-            }
-            $coreEndpoint = rtrim($coreUrl, '/').'/api/complete-reservation-by-buyer';
-            Log::info('[exchange-lots] Core complete-reservation-by-buyer start (amicable completion)', [
-                'lot_id' => $lot->id,
-                'reason' => $reason,
-                'core_endpoint' => $coreEndpoint,
-                'timeout_seconds' => $timeout,
-                'crypto_type' => $cryptoType,
-            ]);
-            $startedAt = microtime(true);
-            $resp = $req->post($coreEndpoint, [
+        [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($buyerToken);
+        $cryptoType = $this->resolveCryptoType($lot, $buyerToken);
+        $coreEndpoint = rtrim($coreUrl, '/').'/api/complete-reservation-by-buyer';
+
+        return $this->postReservationCompletion(
+            $lot,
+            $reason,
+            $coreUrl,
+            $coreKey,
+            $coreEndpoint,
+            'complete-reservation-by-buyer',
+            $cryptoType,
+            [
                 'exchange_lot_id' => (string) $lot->id,
                 'escrow_token' => $buyerToken,
                 'crypto_type' => $cryptoType,
                 'aml_required' => (bool) $lot->aml,
-            ]);
+            ],
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{ok:bool,message?:string,error_code?:string,http_status?:int}
+     */
+    private function postReservationCompletion(
+        ExchangeLot $lot,
+        string $reason,
+        string $coreUrl,
+        string $coreKey,
+        string $coreEndpoint,
+        string $endpointLabel,
+        string $cryptoType,
+        array $payload,
+    ): array {
+        $timeout = $this->completionTimeoutSeconds($coreUrl);
+        Log::info('[exchange-lots] Core '.$endpointLabel.' start (amicable completion)', [
+            'lot_id' => $lot->id,
+            'reason' => $reason,
+            'core_endpoint' => $coreEndpoint,
+            'timeout_seconds' => $timeout,
+            'crypto_type' => $cryptoType,
+        ]);
+
+        try {
+            $startedAt = microtime(true);
+            $resp = $this->coreHttpClient($coreKey, $timeout)->post($coreEndpoint, $payload);
 
             return $this->interpretCoreCompletionResponse(
                 $resp,
                 $lot->id,
-                'complete-reservation-by-buyer',
+                $endpointLabel,
                 $reason,
                 $startedAt,
             );
         } catch (\Throwable $e) {
-            Log::warning('[exchange-lots] Core complete-reservation-by-buyer exception (amicable completion)', [
+            if ($this->isCoreTransportFailure($e)) {
+                $verified = $this->verifyCompletionAfterTransportFailure(
+                    $lot,
+                    $reason,
+                    $coreKey,
+                    $coreEndpoint,
+                    $endpointLabel,
+                    $timeout,
+                    $payload,
+                    $e,
+                );
+                if ($verified !== null) {
+                    return $verified;
+                }
+            }
+
+            Log::warning('[exchange-lots] Core '.$endpointLabel.' exception (amicable completion)', [
                 'lot_id' => $lot->id,
                 'reason' => $reason,
                 'error' => $e->getMessage(),
@@ -194,11 +209,103 @@ final class DealAmicableCoreReservationCompletion
 
             return [
                 'ok' => false,
-                'message' => 'Failed to finalize escrow reservation via Core.',
-                'error_code' => 'core_reservation_completion_failed',
+                'message' => $this->isCoreTransportFailure($e)
+                    ? 'Core did not respond in time while finalizing the reservation. If the fee was already collected, confirm completion again.'
+                    : 'Failed to finalize escrow reservation via Core.',
+                'error_code' => $this->isCoreTransportFailure($e)
+                    ? 'core_reservation_completion_timeout'
+                    : 'core_reservation_completion_failed',
                 'http_status' => 502,
             ];
         }
+    }
+
+    /**
+     * After a transport timeout the first Core request may still finish (XMR fee transfer).
+     * A follow-up POST is idempotent: 404 "matching reservation … not found" means completion already ran.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array{ok:bool,message?:string,error_code?:string,http_status?:int}|null
+     */
+    private function verifyCompletionAfterTransportFailure(
+        ExchangeLot $lot,
+        string $reason,
+        string $coreKey,
+        string $coreEndpoint,
+        string $endpointLabel,
+        int $timeout,
+        array $payload,
+        \Throwable $original,
+    ): ?array {
+        Log::warning('[exchange-lots] Core '.$endpointLabel.' transport failure; verifying completion state', [
+            'lot_id' => $lot->id,
+            'reason' => $reason,
+            'error' => $original->getMessage(),
+        ]);
+
+        try {
+            $startedAt = microtime(true);
+            $resp = $this->coreHttpClient($coreKey, $timeout)->post($coreEndpoint, $payload);
+            $result = $this->interpretCoreCompletionResponse(
+                $resp,
+                $lot->id,
+                $endpointLabel,
+                $reason,
+                $startedAt,
+            );
+            if ($result['ok'] ?? false) {
+                Log::info('[exchange-lots] Core '.$endpointLabel.' OK after transport failure (verify)', [
+                    'lot_id' => $lot->id,
+                    'reason' => $reason,
+                ]);
+
+                return $result;
+            }
+        } catch (\Throwable $verifyError) {
+            Log::warning('[exchange-lots] Core '.$endpointLabel.' verify after transport failure failed', [
+                'lot_id' => $lot->id,
+                'reason' => $reason,
+                'error' => $verifyError->getMessage(),
+            ]);
+        }
+
+        return null;
+    }
+
+    private function coreHttpClient(string $coreKey, int $timeout): \Illuminate\Http\Client\PendingRequest
+    {
+        $req = Http::timeout($timeout);
+        if ($coreKey !== '') {
+            $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
+        }
+
+        return $req;
+    }
+
+    private function completionTimeoutSeconds(string $coreUrl): int
+    {
+        $configKey = $this->isProductionCoreUrl($coreUrl) ? 'services.core_production' : 'services.core';
+
+        return max(10, (int) config(
+            $configKey.'.completion_timeout',
+            config($configKey.'.payout_timeout', 150)
+        ));
+    }
+
+    private function isProductionCoreUrl(string $coreUrl): bool
+    {
+        return ! preg_match('#://sandbox\.#i', $coreUrl)
+            && ! preg_match('#://dev\.api\.core\.#i', $coreUrl);
+    }
+
+    private function isCoreTransportFailure(\Throwable $e): bool
+    {
+        if ($e instanceof ConnectionException) {
+            return true;
+        }
+
+        return str_contains($e->getMessage(), 'cURL error 28')
+            || str_contains($e->getMessage(), 'Operation timed out');
     }
 
     /**

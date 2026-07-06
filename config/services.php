@@ -53,6 +53,8 @@ return [
         'timeout' => env('CORE_TIMEOUT', 10),
         'create_timeout' => env('CORE_CREATE_TIMEOUT', 120),
         'payout_timeout' => env('CORE_PAYOUT_TIMEOUT', 150),
+        // Amicable deal completion (complete-reservation*): may include on-chain fee transfer (XMR).
+        'completion_timeout' => env('CORE_COMPLETION_TIMEOUT', env('CORE_PAYOUT_TIMEOUT', 150)),
     ],
 
     'core_production' => [
@@ -61,6 +63,7 @@ return [
         'timeout' => env('CORE_PRODUCTION_TIMEOUT', 10),
         'create_timeout' => env('CORE_PRODUCTION_CREATE_TIMEOUT', env('CORE_CREATE_TIMEOUT', 120)),
         'payout_timeout' => env('CORE_PRODUCTION_PAYOUT_TIMEOUT', 150),
+        'completion_timeout' => env('CORE_PRODUCTION_COMPLETION_TIMEOUT', env('CORE_COMPLETION_TIMEOUT', env('CORE_PAYOUT_TIMEOUT', 150))),
     ],
 
     'dev' => [
