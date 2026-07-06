@@ -4745,6 +4745,7 @@ class ExchangeLotController extends Controller
         $bankId = $paymentType === 'bank' ? $lot->bank_id : null;
         $bankDetails = $paymentType === 'bank' ? trim((string) $request->input('bank_data', '')) : null;
         $cryptoAddress = null;
+        $paymentDetailsTagAddress = null;
         if ($paymentType === 'crypto') {
             if ($skipFullSellerPreReservation) {
                 $sellerTokenJson = is_string($sellerEscrowToken) && trim($sellerEscrowToken) !== ''
@@ -4765,9 +4766,30 @@ class ExchangeLotController extends Controller
                         'error_code' => 'seller_token_address_missing',
                     ], 422);
                 }
-                $cryptoAddress = $tokenAddress;
+                $paymentDetailsTagAddress = $tokenAddress;
+                try {
+                    $addrCryptoType = $coreSellerCryptoType ?? DealEscrowCryptoType::sellerCoreType($lot);
+                } catch (\InvalidArgumentException $e) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $e->getMessage(),
+                        'error_code' => 'invalid_lot_crypto',
+                    ], 422);
+                }
+                $cryptoAddress = DealEscrowPublicPart::normalizeReceiveAddressForVerification($tokenAddress, $addrCryptoType);
             } else {
-                $cryptoAddress = trim((string) $request->input('address', ''));
+                $rawAddress = trim((string) $request->input('address', ''));
+                $paymentDetailsTagAddress = $rawAddress;
+                try {
+                    $addrCryptoType = $coreSellerCryptoType
+                        ?: trim((string) $request->input('crypto_type', ''))
+                        ?: DealEscrowCryptoType::sellerCoreType($lot);
+                } catch (\InvalidArgumentException $e) {
+                    $addrCryptoType = trim((string) $request->input('crypto_type', ''));
+                }
+                $cryptoAddress = $addrCryptoType !== ''
+                    ? DealEscrowPublicPart::normalizeReceiveAddressForVerification($rawAddress, $addrCryptoType)
+                    : $rawAddress;
             }
         }
 
@@ -4847,7 +4869,7 @@ class ExchangeLotController extends Controller
         ];
         if ($paymentType === 'crypto') {
             $tag['crypto'] = trim((string) $request->input('crypto_type', ''));
-            $tag['address'] = $cryptoAddress;
+            $tag['address'] = $paymentDetailsTagAddress ?? $cryptoAddress;
         } else {
             $tag['bank_id'] = SandboxVirtualBankService::lotUsesVirtualSandboxBank($lot)
                 ? SandboxVirtualBankService::virtualBankId()
