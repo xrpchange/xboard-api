@@ -73,6 +73,7 @@ class NodeController extends BaseApiController
             return $this->successResponse($nodes, null, 200, [
                 'default_environment' => $defaultEnvironment, // TODO: Remove in future versions
                 'ip_lookup_url_template' => $ipLookupTpl,
+                'deal_system_mail_from' => \App\Support\DealServerOriginMail::systemMailFromAddress(),
             ]);
         } catch (\Throwable $e) {
             \Log::error('Failed to load nodes', [
@@ -122,6 +123,7 @@ class NodeController extends BaseApiController
         
         return $this->successResponse($filteredNodes, null, 200, [
             'ip_lookup_url_template' => (string) config('xboard.ip_lookup_url_template', 'https://ipinfo.io/{ip}'),
+            'deal_system_mail_from' => \App\Support\DealServerOriginMail::systemMailFromAddress(),
         ]);
     }
 
