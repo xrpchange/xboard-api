@@ -54,8 +54,9 @@ class DealEscrowCryptoTypeTest extends TestCase
         $lot->setRelation('toCryptoCurrency', null);
         $lot->setRelation('cryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
 
-        // First leg is bank; start_deal skips crypto validation — type helper still resolves USDT for other flows.
+        // USDT→USD field orientation: buyer pays USDT on-chain first; seller sends USDT on leg 2.
         $this->assertSame('usdt_tron', DealEscrowCryptoType::buyerCoreType($lot));
-        $this->assertTrue(DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot));
+        $this->assertFalse(DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot));
+        $this->assertTrue(\App\Support\DealSellerSecondLeg::sendsCrypto($lot));
     }
 }

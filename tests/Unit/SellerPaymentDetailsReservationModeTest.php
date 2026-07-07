@@ -31,7 +31,7 @@ class SellerPaymentDetailsReservationModeTest extends TestCase
         $this->assertFalse(CryptoToFiatDealSupport::buyerFiatFirstLegFiatToCrypto($lot));
     }
 
-    public function test_usd_to_usdt_mixed_pair_is_not_buyer_crypto_first_leg_crypto_to_fiat(): void
+    public function test_usd_to_usdt_mixed_pair_seller_sends_fiat_on_second_leg(): void
     {
         $lot = new ExchangeLot([
             'from_fiat_currency_id' => 1,
@@ -44,5 +44,20 @@ class SellerPaymentDetailsReservationModeTest extends TestCase
         $this->assertTrue(CryptoToFiatDealSupport::isCryptoToFiatDeal($lot));
         $this->assertFalse(CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot));
         $this->assertTrue(CryptoToFiatDealSupport::buyerFiatFirstLegFiatToCrypto($lot));
+        $this->assertFalse(\App\Support\DealSellerSecondLeg::sendsCrypto($lot));
+    }
+
+    public function test_usdt_to_usd_lot_fields_seller_sends_crypto_on_second_leg(): void
+    {
+        $lot = new ExchangeLot([
+            'from_crypto_currency_id' => 1,
+            'to_fiat_currency_id' => 2,
+        ]);
+        $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
+        $lot->setRelation('toFiatCurrency', (object) ['code' => 'USD']);
+        $lot->setRelation('fromFiatCurrency', null);
+
+        $this->assertTrue(CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot));
+        $this->assertTrue(\App\Support\DealSellerSecondLeg::sendsCrypto($lot));
     }
 }

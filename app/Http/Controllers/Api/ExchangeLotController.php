@@ -33,6 +33,7 @@ use App\Support\ArbiterPromptContextAssembler;
 use App\Support\BuyerCompensationDestinationSupport;
 use App\Support\BuyerExternalEmailReputation;
 use App\Support\DealBuyerFirstLeg;
+use App\Support\DealSellerSecondLeg;
 use App\Support\ArbiterReceiptPdfResolver;
 use App\Support\ClientWebOrigin;
 use App\Support\DealBuyerEscrowTokenHash;
@@ -4528,15 +4529,15 @@ class ExchangeLotController extends Controller
         $reservationResponseBody = null;
         $buyerFirstLegPaysCrypto = DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot);
         $isMixedFiatCryptoDeal = CryptoToFiatDealSupport::isCryptoToFiatDeal($lot);
-        $buyerCryptoFirstLegCryptoToFiat = CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot);
+        $sellerSecondLegSendsCrypto = DealSellerSecondLeg::sendsCrypto($lot);
         $skipFullSellerPreReservation = $paymentType === 'crypto'
             && $buyerFirstLegPaysCrypto === true
-            && $buyerCryptoFirstLegCryptoToFiat;
+            && $sellerSecondLegSendsCrypto === false;
         $serviceFeeOnlyPreReserve = $skipFullSellerPreReservation;
 
         // Seller pre-reservation before payment_details:
-        // - fiat→crypto / seller sends crypto on leg 2: full deal amount on seller token (balance checked in Core).
-        // - crypto→fiat (buyer crypto first leg): service_fee_only (no balance pre-check);
+        // - seller sends crypto on leg 2 (`from` is on-chain): full deal amount (balance checked in Core).
+        // - seller sends fiat on leg 2 (mixed pair, buyer crypto first leg): service_fee_only;
         //   inbound_deposit_lock after verified buyer_crypto_tx links the on-chain deposit to the reservation row.
         $shouldCreateSellerReservation = ! empty($sellerEscrowToken)
             && is_string($sellerEscrowToken)
