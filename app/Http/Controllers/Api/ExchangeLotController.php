@@ -4535,8 +4535,8 @@ class ExchangeLotController extends Controller
 
         // Seller pre-reservation before payment_details:
         // - fiat→crypto: full deal amount on seller token.
-        // - crypto→fiat (all assets, AML or not): service fee (+ AML fee when lot.aml) via service_fee_only;
-        //   full deal crypto locked after verified buyer_crypto_tx (inbound_deposit_lock).
+        // - crypto→fiat (all assets, AML or not): expected inbound deal amount + fees via service_fee_only (no balance pre-check);
+        //   inbound_deposit_lock after verified buyer_crypto_tx links the on-chain deposit to the reservation row.
         $shouldCreateSellerReservation = ! empty($sellerEscrowToken)
             && is_string($sellerEscrowToken)
             && (! $skipFullSellerPreReservation || $serviceFeeOnlyPreReserve);
