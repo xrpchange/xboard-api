@@ -4527,15 +4527,16 @@ class ExchangeLotController extends Controller
         $coreSellerCryptoType = null;
         $reservationResponseBody = null;
         $buyerFirstLegPaysCrypto = DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot);
-        $isCryptoToFiatDeal = CryptoToFiatDealSupport::isCryptoToFiatDeal($lot);
+        $isMixedFiatCryptoDeal = CryptoToFiatDealSupport::isCryptoToFiatDeal($lot);
+        $buyerCryptoFirstLegCryptoToFiat = CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot);
         $skipFullSellerPreReservation = $paymentType === 'crypto'
             && $buyerFirstLegPaysCrypto === true
-            && $isCryptoToFiatDeal;
+            && $buyerCryptoFirstLegCryptoToFiat;
         $serviceFeeOnlyPreReserve = $skipFullSellerPreReservation;
 
         // Seller pre-reservation before payment_details:
-        // - fiat→crypto: full deal amount on seller token.
-        // - crypto→fiat (all assets, AML or not): expected inbound deal amount + fees via service_fee_only (no balance pre-check);
+        // - fiat→crypto / seller sends crypto on leg 2: full deal amount on seller token (balance checked in Core).
+        // - crypto→fiat (buyer crypto first leg): service_fee_only (no balance pre-check);
         //   inbound_deposit_lock after verified buyer_crypto_tx links the on-chain deposit to the reservation row.
         $shouldCreateSellerReservation = ! empty($sellerEscrowToken)
             && is_string($sellerEscrowToken)
@@ -4765,7 +4766,7 @@ class ExchangeLotController extends Controller
         $sellerTokenJsonForMail = is_string($sellerEscrowToken) && trim($sellerEscrowToken) !== ''
             ? trim($sellerEscrowToken)
             : trim((string) ($lot->wallet_address ?? ''));
-        if ($isCryptoToFiatDeal && $sellerTokenJsonForMail !== '' && str_starts_with($sellerTokenJsonForMail, '{')) {
+        if ($isMixedFiatCryptoDeal && $sellerTokenJsonForMail !== '' && str_starts_with($sellerTokenJsonForMail, '{')) {
             $decodedSeller = json_decode($sellerTokenJsonForMail, true);
             if (is_array($decodedSeller) && ! empty($decodedSeller['token_hash'])) {
                 $persistHash = strtolower(trim((string) $decodedSeller['token_hash']));
