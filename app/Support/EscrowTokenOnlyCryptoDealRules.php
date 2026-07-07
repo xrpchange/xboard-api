@@ -38,9 +38,6 @@ final class EscrowTokenOnlyCryptoDealRules
         if (DealBuyerSecondLeg::buyerReceivesCrypto($lot, $firstLegBank) !== true) {
             return false;
         }
-        if ((bool) $lot->aml) {
-            return true;
-        }
         try {
             return self::isMoneroCoreType(DealEscrowCryptoType::sellerCoreType($lot));
         } catch (\InvalidArgumentException) {

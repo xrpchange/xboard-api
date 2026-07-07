@@ -81,6 +81,26 @@ class EscrowTokenOnlyCryptoDealRulesTest extends TestCase
         $this->assertSame('manual_crypto_tx_requires_escrow_payout', $reject['error_code']);
     }
 
+    public function test_fiat_to_usdt_allows_manual_seller_transfer_tx(): void
+    {
+        $lot = new ExchangeLot([
+            'from_fiat_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+            'aml' => 1,
+        ]);
+        $lot->setRelation('fromFiatCurrency', (object) ['code' => 'USD']);
+        $lot->setRelation('toCryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
+
+        $this->assertFalse(EscrowTokenOnlyCryptoDealRules::sellerSecondLegRequiresEscrowTokenOnly($lot));
+
+        $reject = EscrowTokenOnlyCryptoDealRules::rejectManualCryptoProofIfRequired($lot, [
+            't' => 'seller_transfer_tx',
+            'tx_number' => 'deadbeef',
+        ]);
+
+        $this->assertNull($reject);
+    }
+
     public function test_aml_crypto_to_crypto_still_requires_buyer_server_payout(): void
     {
         $lot = new ExchangeLot([
