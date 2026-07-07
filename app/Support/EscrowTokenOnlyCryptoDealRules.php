@@ -34,10 +34,6 @@ final class EscrowTokenOnlyCryptoDealRules
 
     public static function sellerSecondLegRequiresEscrowTokenOnly(ExchangeLot $lot): bool
     {
-        if (CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)) {
-            return false;
-        }
-
         $firstLegBank = DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot);
         if (DealBuyerSecondLeg::buyerReceivesCrypto($lot, $firstLegBank) !== true) {
             return false;
