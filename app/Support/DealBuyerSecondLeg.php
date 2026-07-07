@@ -22,7 +22,6 @@ final class DealBuyerSecondLeg
         if ($sellerFirstLegWasBankTransfer === true) {
             return match (true) {
                 $fromOnChain && $toOnChain => true,
-                $fromOnChain && $toType === 'fiat' => true,
                 $fromType === 'fiat' && $toOnChain => true,
                 default => false,
             };
