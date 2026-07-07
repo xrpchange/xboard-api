@@ -11,11 +11,12 @@ use Tests\TestCase;
 #[Group('spec-LOT-016')]
 class DealBuyerSecondLegTest extends TestCase
 {
-    public function test_xmr_to_usd_second_leg_is_fiat_even_if_payment_details_tag_was_bank(): void
+    public function test_xmr_to_usd_second_leg_follows_tag_for_in_flight_deals(): void
     {
         $lot = $this->lotWithTypes('crypto', 'fiat');
 
-        $this->assertFalse(DealBuyerSecondLeg::buyerReceivesCrypto($lot, true));
+        // Bank tag from in-flight deal (pre-dialog-fix) → treat as buyer-receives-crypto for backward compat.
+        $this->assertTrue(DealBuyerSecondLeg::buyerReceivesCrypto($lot, true));
         $this->assertFalse(DealBuyerSecondLeg::buyerReceivesCrypto($lot, false));
         $this->assertFalse(DealBuyerSecondLeg::buyerReceivesCrypto($lot, null));
     }
