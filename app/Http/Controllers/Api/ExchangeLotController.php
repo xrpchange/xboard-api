@@ -2815,16 +2815,6 @@ class ExchangeLotController extends Controller
                     'release_at' => $disputeLock['release_at'],
                 ], 403);
             }
-            $exitPermission = $this->getDealExitPermissionForTimeout($lot);
-            if ($exitPermission !== null && $exitPermission['allowed_side'] !== 'seller') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Only the side that provided payment details can exit the deal after timeout.',
-                    'error_code' => 'deal_exit_not_allowed_for_side',
-                    'allowed_side' => $exitPermission['allowed_side'],
-                    'transaction_id' => $exitPermission['transaction_id'],
-                ], 403);
-            }
         }
 
         $messageText = $request->input('message', '');
