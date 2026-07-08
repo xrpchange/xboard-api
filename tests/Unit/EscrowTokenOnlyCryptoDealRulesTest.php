@@ -139,6 +139,46 @@ class EscrowTokenOnlyCryptoDealRulesTest extends TestCase
         $this->assertFalse(EscrowTokenOnlyCryptoDealRules::buyerFirstLegRequiresEscrowTokenServerPayout($lot));
     }
 
+    public function test_rejects_manual_buyer_crypto_tx_when_buyer_token_is_forced(): void
+    {
+        $lot = new ExchangeLot([
+            'from_crypto_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+            'aml' => 1,
+        ]);
+        // Buyer pays Monero first leg (to_currency), seller escrow is XRP (from_currency):
+        // forced buyer escrow-token route must block manual tx id proof.
+        $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'xrp', 'is_native' => true, 'network' => 'native']);
+        $lot->setRelation('toCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+
+        $reject = EscrowTokenOnlyCryptoDealRules::rejectManualCryptoProofIfRequired($lot, [
+            't' => 'buyer_crypto_tx',
+            'tx_ref' => 'manual-hash',
+        ]);
+
+        $this->assertNotNull($reject);
+        $this->assertSame('manual_crypto_tx_requires_escrow_payout', $reject['error_code']);
+    }
+
+    public function test_allows_manual_buyer_crypto_tx_when_buyer_token_is_not_forced(): void
+    {
+        $lot = new ExchangeLot([
+            'from_crypto_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+            'aml' => 1,
+        ]);
+        // Buyer pays Monero and seller escrow is also Monero: forced-token route is not required.
+        $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+        $lot->setRelation('toCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+
+        $reject = EscrowTokenOnlyCryptoDealRules::rejectManualCryptoProofIfRequired($lot, [
+            't' => 'buyer_crypto_tx',
+            'tx_ref' => 'manual-hash',
+        ]);
+
+        $this->assertNull($reject);
+    }
+
     public function test_verify_external_payment_for_crypto_to_fiat_buyer_crypto_tx(): void
     {
         $lot = $this->makeXmrToFiatLot();
