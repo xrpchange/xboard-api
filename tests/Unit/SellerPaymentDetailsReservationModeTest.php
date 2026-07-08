@@ -60,4 +60,19 @@ class SellerPaymentDetailsReservationModeTest extends TestCase
         $this->assertTrue(CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot));
         $this->assertTrue(\App\Support\DealSellerSecondLeg::sendsCrypto($lot));
     }
+
+    public function test_crypto_to_crypto_requires_pre_payment_details_reservation(): void
+    {
+        $lot = new ExchangeLot([
+            'from_crypto_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+        ]);
+        $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+        $lot->setRelation('toCryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
+        $lot->setRelation('fromFiatCurrency', null);
+        $lot->setRelation('toFiatCurrency', null);
+
+        $this->assertTrue(\App\Support\DealSellerSecondLeg::sendsCrypto($lot));
+        $this->assertTrue(\App\Support\DealSellerSecondLeg::requiresPrePaymentDetailsReservation($lot));
+    }
 }

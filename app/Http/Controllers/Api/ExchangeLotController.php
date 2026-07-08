@@ -4520,17 +4520,27 @@ class ExchangeLotController extends Controller
         $buyerFirstLegPaysCrypto = DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot);
         $isMixedFiatCryptoDeal = CryptoToFiatDealSupport::isCryptoToFiatDeal($lot);
         $sellerSecondLegSendsCrypto = DealSellerSecondLeg::sendsCrypto($lot);
+        $sellerPreReservationRequired = $paymentType === 'crypto'
+            && DealSellerSecondLeg::requiresPrePaymentDetailsReservation($lot);
         $skipFullSellerPreReservation = $paymentType === 'crypto'
             && $buyerFirstLegPaysCrypto === true
             && $sellerSecondLegSendsCrypto === false;
         $serviceFeeOnlyPreReserve = $skipFullSellerPreReservation;
+        if ($sellerPreReservationRequired && (! is_string($sellerEscrowToken) || trim($sellerEscrowToken) === '')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Seller escrow token is required before sending payment details.',
+                'error_code' => 'seller_escrow_token_required',
+            ], 422);
+        }
 
         // Seller pre-reservation before payment_details:
         // - seller sends crypto on leg 2 (`from` is on-chain): full deal amount (balance checked in Core).
         // - seller sends fiat on leg 2 (mixed pair, buyer crypto first leg): service_fee_only;
         //   inbound_deposit_lock after verified buyer_crypto_tx links the on-chain deposit to the reservation row.
-        $shouldCreateSellerReservation = ! empty($sellerEscrowToken)
+        $shouldCreateSellerReservation = $sellerPreReservationRequired
             && is_string($sellerEscrowToken)
+            && trim($sellerEscrowToken) !== ''
             && (! $skipFullSellerPreReservation || $serviceFeeOnlyPreReserve);
 
         if ($shouldCreateSellerReservation) {
