@@ -29,7 +29,12 @@ final class StartDealBuyerEscrowValidation
                 'status' => 422,
             ];
         }
-        if (! $paysCrypto || CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)) {
+        if (! $paysCrypto) {
+            return null;
+        }
+
+        $requiresBuyerReservationGate = EscrowTokenOnlyCryptoDealRules::buyerFirstLegRequiresEscrowTokenServerPayout($lot);
+        if (! $requiresBuyerReservationGate) {
             return null;
         }
 
@@ -69,10 +74,6 @@ final class StartDealBuyerEscrowValidation
                 'error_code' => 'buyer_escrow_token_crypto_mismatch',
                 'status' => 422,
             ];
-        }
-
-        if (! (bool) $lot->aml) {
-            return null;
         }
 
         return $this->validateAmlReservationBalance($lot, $trimmed, $selectedAmount);

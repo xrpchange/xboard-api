@@ -126,6 +126,19 @@ class EscrowTokenOnlyCryptoDealRulesTest extends TestCase
         $this->assertTrue(EscrowTokenOnlyCryptoDealRules::buyerFirstLegRequiresEscrowTokenServerPayout($lot));
     }
 
+    public function test_aml_crypto_to_crypto_buyer_pays_monero_and_seller_escrow_monero_skips_buyer_server_payout(): void
+    {
+        $lot = new ExchangeLot([
+            'from_crypto_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+            'aml' => 1,
+        ]);
+        $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+        $lot->setRelation('toCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+
+        $this->assertFalse(EscrowTokenOnlyCryptoDealRules::buyerFirstLegRequiresEscrowTokenServerPayout($lot));
+    }
+
     public function test_verify_external_payment_for_crypto_to_fiat_buyer_crypto_tx(): void
     {
         $lot = $this->makeXmrToFiatLot();
