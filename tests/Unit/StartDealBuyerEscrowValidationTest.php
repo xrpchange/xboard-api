@@ -151,4 +151,43 @@ class StartDealBuyerEscrowValidationTest extends TestCase
         $this->assertNotNull($result);
         $this->assertSame('buyer_escrow_token_required', $result['error_code']);
     }
+
+    public function test_non_aml_non_monero_buyer_first_leg_skips_buyer_token_requirement(): void
+    {
+        $lot = new ExchangeLot([
+            'aml' => false,
+            'from_crypto_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+        ]);
+        // Buyer pays to_currency first leg -> USDT (non-Monero), so no forced buyer token.
+        $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'xrp', 'is_native' => true, 'network' => 'native']);
+        $lot->setRelation('toCryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
+        $lot->setRelation('fromFiatCurrency', null);
+        $lot->setRelation('toFiatCurrency', null);
+
+        $validator = new StartDealBuyerEscrowValidation($this->createMock(EscrowTokenValidationService::class));
+        $result = $validator->validate($lot, '', 100.0);
+
+        $this->assertNull($result);
+    }
+
+    public function test_non_aml_monero_buyer_first_leg_keeps_buyer_token_requirement(): void
+    {
+        $lot = new ExchangeLot([
+            'aml' => false,
+            'from_crypto_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+        ]);
+        // Buyer pays to_currency first leg -> Monero, token route remains required.
+        $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
+        $lot->setRelation('toCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+        $lot->setRelation('fromFiatCurrency', null);
+        $lot->setRelation('toFiatCurrency', null);
+
+        $validator = new StartDealBuyerEscrowValidation($this->createMock(EscrowTokenValidationService::class));
+        $result = $validator->validate($lot, '', 100.0);
+
+        $this->assertNotNull($result);
+        $this->assertSame('buyer_escrow_token_required', $result['error_code']);
+    }
 }

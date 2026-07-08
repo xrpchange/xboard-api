@@ -7,7 +7,9 @@ namespace App\Support;
 use App\Models\ExchangeLot;
 
 /**
- * Buyer crypto-first legs on non-crypto→fiat paths require escrow-token server payout.
+ * Buyer crypto-first legs on non-crypto→fiat paths:
+ * - AML lots: escrow-token server payout is required.
+ * - Non-AML lots: required only when buyer pays Monero on the first leg.
  * crypto→fiat: buyer deposits from any wallet to seller token; manual buyer_crypto_tx + verify-external-payment.
  */
 final class EscrowTokenOnlyCryptoDealRules
@@ -25,7 +27,21 @@ final class EscrowTokenOnlyCryptoDealRules
             return false;
         }
 
-        return DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot) === true;
+        if (DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot) !== true) {
+            return false;
+        }
+
+        if ((bool) $lot->aml) {
+            return true;
+        }
+
+        try {
+            $buyerFirstLegCoreType = DealEscrowCryptoType::buyerCoreType($lot);
+        } catch (\InvalidArgumentException) {
+            return false;
+        }
+
+        return self::isMoneroCoreType($buyerFirstLegCoreType);
     }
 
     public static function sellerSecondLegRequiresEscrowTokenOnly(ExchangeLot $lot): bool

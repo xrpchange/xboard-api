@@ -180,6 +180,51 @@ class EscrowTokenOnlyCryptoDealRulesTest extends TestCase
         $this->assertSame('manual_crypto_tx_requires_escrow_payout', $reject['error_code']);
     }
 
+    public function test_non_aml_crypto_to_crypto_non_monero_buyer_does_not_require_server_payout(): void
+    {
+        $lot = new ExchangeLot([
+            'from_crypto_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+            'aml' => 0,
+        ]);
+        $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'xrp', 'is_native' => true, 'network' => 'native']);
+        $lot->setRelation('toCryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
+
+        $this->assertFalse(EscrowTokenOnlyCryptoDealRules::buyerFirstLegRequiresEscrowTokenServerPayout($lot));
+    }
+
+    public function test_non_aml_crypto_to_crypto_buyer_pays_monero_requires_server_payout(): void
+    {
+        $lot = new ExchangeLot([
+            'from_crypto_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+            'aml' => 0,
+        ]);
+        // Buyer pays to_currency first leg -> Monero.
+        $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
+        $lot->setRelation('toCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
+
+        $this->assertTrue(EscrowTokenOnlyCryptoDealRules::buyerFirstLegRequiresEscrowTokenServerPayout($lot));
+    }
+
+    public function test_non_aml_crypto_to_crypto_non_monero_buyer_allows_manual_buyer_crypto_tx(): void
+    {
+        $lot = new ExchangeLot([
+            'from_crypto_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+            'aml' => 0,
+        ]);
+        $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'xrp', 'is_native' => true, 'network' => 'native']);
+        $lot->setRelation('toCryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
+
+        $reject = EscrowTokenOnlyCryptoDealRules::rejectManualCryptoProofIfRequired($lot, [
+            't' => 'buyer_crypto_tx',
+            'tx_ref' => 'manual-hash',
+        ]);
+
+        $this->assertNull($reject);
+    }
+
     public function test_verify_external_payment_for_crypto_to_fiat_buyer_crypto_tx(): void
     {
         $lot = $this->makeXmrToFiatLot();
