@@ -7,7 +7,7 @@ namespace App\Support;
 use App\Models\ExchangeLot;
 
 /**
- * AML lots on non-crypto→fiat paths may still require escrow-token server payout.
+ * Buyer crypto-first legs on non-crypto→fiat paths require escrow-token server payout.
  * crypto→fiat: buyer deposits from any wallet to seller token; manual buyer_crypto_tx + verify-external-payment.
  */
 final class EscrowTokenOnlyCryptoDealRules
@@ -25,26 +25,7 @@ final class EscrowTokenOnlyCryptoDealRules
             return false;
         }
 
-        if (! (bool) $lot->aml) {
-            return false;
-        }
-
-        if (DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot) !== true) {
-            return false;
-        }
-
-        $buyerCoreType = self::buyerFirstLegCoreType($lot);
-        if ($buyerCoreType !== null && self::isMoneroCoreType($buyerCoreType)) {
-            $sellerCoreType = self::sellerEscrowCoreType($lot);
-            $cryptoToCryptoMoneroCollision =
-                self::isCryptoToCryptoDeal($lot) &&
-                $sellerCoreType !== null &&
-                ! self::isMoneroCoreType($sellerCoreType);
-
-            return $cryptoToCryptoMoneroCollision;
-        }
-
-        return true;
+        return DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot) === true;
     }
 
     public static function sellerSecondLegRequiresEscrowTokenOnly(ExchangeLot $lot): bool
@@ -150,33 +131,4 @@ final class EscrowTokenOnlyCryptoDealRules
         ];
     }
 
-    private static function buyerFirstLegCoreType(ExchangeLot $lot): ?string
-    {
-        try {
-            return DealEscrowCryptoType::buyerCoreType($lot);
-        } catch (\InvalidArgumentException) {
-            return null;
-        }
-    }
-
-    private static function sellerEscrowCoreType(ExchangeLot $lot): ?string
-    {
-        try {
-            return DealEscrowCryptoType::sellerCoreType($lot);
-        } catch (\InvalidArgumentException) {
-            return null;
-        }
-    }
-
-    private static function isCryptoToCryptoDeal(ExchangeLot $lot): bool
-    {
-        $from = DealBuyerFirstLeg::currencyTypeForLotSide($lot, 'from');
-        $to = DealBuyerFirstLeg::currencyTypeForLotSide($lot, 'to');
-        if ($from === null || $to === null) {
-            return false;
-        }
-
-        return in_array($from, ['crypto', 'stablecoin'], true)
-            && in_array($to, ['crypto', 'stablecoin'], true);
-    }
 }

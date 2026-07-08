@@ -126,7 +126,7 @@ class EscrowTokenOnlyCryptoDealRulesTest extends TestCase
         $this->assertTrue(EscrowTokenOnlyCryptoDealRules::buyerFirstLegRequiresEscrowTokenServerPayout($lot));
     }
 
-    public function test_aml_crypto_to_crypto_buyer_pays_monero_and_seller_escrow_monero_skips_buyer_server_payout(): void
+    public function test_aml_crypto_to_crypto_buyer_pays_monero_and_seller_escrow_monero_requires_buyer_server_payout(): void
     {
         $lot = new ExchangeLot([
             'from_crypto_currency_id' => 1,
@@ -136,7 +136,7 @@ class EscrowTokenOnlyCryptoDealRulesTest extends TestCase
         $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
         $lot->setRelation('toCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
 
-        $this->assertFalse(EscrowTokenOnlyCryptoDealRules::buyerFirstLegRequiresEscrowTokenServerPayout($lot));
+        $this->assertTrue(EscrowTokenOnlyCryptoDealRules::buyerFirstLegRequiresEscrowTokenServerPayout($lot));
     }
 
     public function test_rejects_manual_buyer_crypto_tx_when_buyer_token_is_forced(): void
@@ -160,14 +160,14 @@ class EscrowTokenOnlyCryptoDealRulesTest extends TestCase
         $this->assertSame('manual_crypto_tx_requires_escrow_payout', $reject['error_code']);
     }
 
-    public function test_allows_manual_buyer_crypto_tx_when_buyer_token_is_not_forced(): void
+    public function test_rejects_manual_buyer_crypto_tx_when_buyer_pays_crypto_even_without_monero_collision(): void
     {
         $lot = new ExchangeLot([
             'from_crypto_currency_id' => 1,
             'to_crypto_currency_id' => 2,
             'aml' => 1,
         ]);
-        // Buyer pays Monero and seller escrow is also Monero: forced-token route is not required.
+        // Buyer pays crypto first leg, so the server payout route is mandatory.
         $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
         $lot->setRelation('toCryptoCurrency', (object) ['code' => 'xmr', 'is_native' => true, 'network' => 'native']);
 
@@ -176,7 +176,8 @@ class EscrowTokenOnlyCryptoDealRulesTest extends TestCase
             'tx_ref' => 'manual-hash',
         ]);
 
-        $this->assertNull($reject);
+        $this->assertNotNull($reject);
+        $this->assertSame('manual_crypto_tx_requires_escrow_payout', $reject['error_code']);
     }
 
     public function test_verify_external_payment_for_crypto_to_fiat_buyer_crypto_tx(): void

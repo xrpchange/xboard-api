@@ -114,7 +114,7 @@ class StartDealBuyerEscrowValidationTest extends TestCase
         $this->assertNull($result);
     }
 
-    public function test_skips_aml_buyer_reservation_when_buyer_pays_monero_and_seller_escrow_is_monero(): void
+    public function test_requires_buyer_token_when_buyer_pays_monero_and_seller_escrow_is_monero(): void
     {
         $lot = new ExchangeLot([
             'aml' => true,
@@ -129,7 +129,8 @@ class StartDealBuyerEscrowValidationTest extends TestCase
         $validator = new StartDealBuyerEscrowValidation($this->createMock(EscrowTokenValidationService::class));
         $result = $validator->validate($lot, '', 100.0);
 
-        $this->assertNull($result);
+        $this->assertNotNull($result);
+        $this->assertSame('buyer_escrow_token_required', $result['error_code']);
     }
 
     public function test_keeps_aml_buyer_reservation_when_buyer_pays_monero_but_seller_escrow_is_not_monero(): void
