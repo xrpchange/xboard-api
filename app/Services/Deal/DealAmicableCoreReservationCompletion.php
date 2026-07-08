@@ -289,7 +289,9 @@ final class DealAmicableCoreReservationCompletion
     {
         $configKey = $this->isProductionCoreUrl($coreUrl) ? 'services.core_production' : 'services.core';
 
-        return max(10, (int) config(
+        // Final completion may include long-running Monero/Core operations.
+        // Keep a hard lower bound of 120s even if env timeout is configured too low.
+        return max(120, (int) config(
             $configKey.'.completion_timeout',
             config($configKey.'.payout_timeout', 150)
         ));
