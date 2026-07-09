@@ -4002,7 +4002,7 @@ class ExchangeLotController extends Controller
      */
     public function sellerDealEscrowBalance(Request $request, ExchangeLot $lot): JsonResponse
     {
-        if (! $this->requesterIsSellerForLot($request, $lot)) {
+        if (! $this->requesterIsSellerForLotDealOps($request, $lot)) {
             return response()->json(['success' => false, 'message' => 'Only the lot seller can load escrow balance.'], 403);
         }
 
@@ -4054,7 +4054,7 @@ class ExchangeLotController extends Controller
      */
     public function sellerCryptoPayoutToBuyer(Request $request, ExchangeLot $lot): JsonResponse
     {
-        if (! $this->requesterIsSellerForLot($request, $lot)) {
+        if (! $this->requesterIsSellerForLotDealOps($request, $lot)) {
             return response()->json(['success' => false, 'message' => 'Only the lot seller can send crypto payout.'], 403);
         }
 
@@ -4767,7 +4767,8 @@ class ExchangeLotController extends Controller
         $sellerTokenJsonForMail = is_string($sellerEscrowToken) && trim($sellerEscrowToken) !== ''
             ? trim($sellerEscrowToken)
             : trim((string) ($lot->wallet_address ?? ''));
-        if ($isMixedFiatCryptoDeal && $sellerTokenJsonForMail !== '' && str_starts_with($sellerTokenJsonForMail, '{')) {
+        // Bind seller escrow to the token chosen at deal step 1 (crypto→fiat first bind; other pairs may switch wallet).
+        if ($shouldCreateSellerReservation && $sellerTokenJsonForMail !== '' && str_starts_with($sellerTokenJsonForMail, '{')) {
             $decodedSeller = json_decode($sellerTokenJsonForMail, true);
             if (is_array($decodedSeller) && ! empty($decodedSeller['token_hash'])) {
                 $persistHash = strtolower(trim((string) $decodedSeller['token_hash']));
@@ -5047,6 +5048,38 @@ class ExchangeLotController extends Controller
         $lotWalletStr = $lotWalletRaw !== null ? $this->normalizeWalletAddressForComparison($lotWalletRaw) : '';
 
         return $requesterWalletStr !== '' && $lotWalletStr !== '' && hash_equals($lotWalletStr, $requesterWalletStr);
+    }
+
+    /**
+     * Seller auth for balance/payout: exact lot wallet match, or compatible escrow token after seller payment_details.
+     */
+    private function requesterIsSellerForLotDealOps(Request $request, ExchangeLot $lot): bool
+    {
+        if ($this->requesterIsSellerForLot($request, $lot)) {
+            return true;
+        }
+
+        $escrowTokenPublic = $request->input('escrow_token') ?? $request->header('X-Escrow-Token');
+        if (! is_string($escrowTokenPublic) || trim($escrowTokenPublic) === '' || ! str_starts_with(trim($escrowTokenPublic), '{')) {
+            return false;
+        }
+
+        try {
+            $requestCore = self::coreCryptoTypeFromEscrowTokenJson($escrowTokenPublic);
+            $sellerCore = self::coreCryptoTypeForSellerEscrow($lot);
+        } catch (\InvalidArgumentException $e) {
+            return false;
+        }
+
+        if ($requestCore !== $sellerCore) {
+            return false;
+        }
+
+        return Transaction::query()
+            ->where('exchange_lot_id', $lot->id)
+            ->where('tx_type', 'sale')
+            ->where('payment_details_set_by', 'seller')
+            ->exists();
     }
 
     private function requesterIsBuyerForLot(Request $request, ExchangeLot $lot): bool
