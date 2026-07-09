@@ -213,6 +213,21 @@ class ExchangeLotController extends Controller
     }
 
     /**
+     * Core may return generic CRYPTO_ERROR; extract stable seller payout code for localization.
+     */
+    private static function isSellerPayoutUnlockedBalanceErrorMessage(string $message): bool
+    {
+        $normalized = strtolower(trim($message));
+        if ($normalized === '') {
+            return false;
+        }
+
+        return str_contains($normalized, 'insufficient unlocked balance')
+            || str_contains($normalized, 'not enough unlocked money')
+            || str_contains($normalized, 'wallet-rpc authoritative');
+    }
+
+    /**
      * Buyer payout must use the deal's payment asset (lot), not a different USDT network from the token JSON alone.
      */
     private static function resolveBuyerDealPayoutCryptoType(ExchangeLot $lot, string $buyerEscrowToken): string
@@ -4210,6 +4225,13 @@ class ExchangeLotController extends Controller
             if (! $resp->successful()) {
                 $body = $responseBody;
                 $message = is_array($body) ? (string) ($body['message'] ?? 'Core payout failed') : $resp->body();
+                $errorCode = is_array($body) ? (string) ($body['error_code'] ?? 'core_payout_failed') : 'core_payout_failed';
+                if (
+                    $errorCode === 'CRYPTO_ERROR' &&
+                    self::isSellerPayoutUnlockedBalanceErrorMessage($message)
+                ) {
+                    $errorCode = 'seller_payout_unlocked_balance_insufficient';
+                }
                 $this->persistPayoutAmlAndAlertOperatorIfNeeded(
                     $lot,
                     $transaction,
@@ -4226,7 +4248,7 @@ class ExchangeLotController extends Controller
                     'lot_id' => $lot->id,
                     'transaction_id' => $transaction->id,
                     'core_http_status' => $resp->status(),
-                    'error_code' => is_array($body) ? ($body['error_code'] ?? 'core_payout_failed') : 'core_payout_failed',
+                    'error_code' => $errorCode,
                     'message' => $message,
                     'core_body_preview' => $responseBodyPreview,
                 ]);
@@ -4234,7 +4256,7 @@ class ExchangeLotController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => $message,
-                    'error_code' => is_array($body) ? ($body['error_code'] ?? 'core_payout_failed') : 'core_payout_failed',
+                    'error_code' => $errorCode,
                     'aml' => is_array($body) ? ($body['aml'] ?? null) : null,
                 ], $resp->status() >= 500 ? 502 : 422);
             }
