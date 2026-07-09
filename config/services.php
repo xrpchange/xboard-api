@@ -57,6 +57,11 @@ return [
         'completion_timeout' => env('CORE_COMPLETION_TIMEOUT', env('CORE_PAYOUT_TIMEOUT', 150)),
     ],
 
+    'deal_crypto_payout' => [
+        'retry_interval_seconds' => (int) env('DEAL_CRYPTO_PAYOUT_RETRY_SECONDS', 300),
+        'max_attempts' => (int) env('DEAL_CRYPTO_PAYOUT_MAX_ATTEMPTS', 288),
+    ],
+
     'core_production' => [
         'url' => env('CORE_PRODUCTION_URL'),  // REQUIRED: Must be set in .env (production Core URL)
         'key' => env('CORE_PRODUCTION_KEY', ''),

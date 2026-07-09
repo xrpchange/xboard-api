@@ -190,6 +190,7 @@ Route::prefix('v1')->middleware(\App\Http\Middleware\ValidateEscrowToken::class)
         Route::post('/{lot}/buyer-set-crypto-destination', [ExchangeLotController::class, 'buyerSetCryptoDestination']);
         Route::post('/{lot}/buyer-crypto-payout-to-seller', [ExchangeLotController::class, 'buyerCryptoPayoutToSeller']);
         Route::post('/{lot}/seller-deal-escrow-balance', [ExchangeLotController::class, 'sellerDealEscrowBalance']);
+        Route::get('/{lot}/seller-crypto-payout-status', [ExchangeLotController::class, 'sellerCryptoPayoutStatus']);
         Route::post('/{lot}/seller-crypto-payout-to-buyer', [ExchangeLotController::class, 'sellerCryptoPayoutToBuyer']);
         Route::post('/{lot}/buyer-cancel-deal', [ExchangeLotController::class, 'buyerCancelDealCompat']);
         Route::get('/{lot}/chat-messages', [ExchangeLotController::class, 'chatMessages']);

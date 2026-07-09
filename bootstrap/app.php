@@ -28,6 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('transactions:prune')->daily();
         $schedule->command('email-attachments-tmp:prune')->daily();
         $schedule->command('email-attachments-dates:prune')->daily();
+        $schedule->command('deal-crypto-payout:process')->everyFiveMinutes();
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

@@ -21,7 +21,7 @@ use App\Services\Deal\DealAmicableCoreReservationCompletion;
 use App\Services\Deal\DealCryptoTxCoreVerifier;
 use App\Services\Deal\DealInternalMailRateLimitService;
 use App\Services\Deal\DealWebPushNotifier;
-use App\Services\Deal\TrainingDealAbandonedLotRelease;
+use App\Services\Deal\SellerCryptoPayoutService;
 use App\Services\Deal\TrainingDealOrchestrator;
 use App\Services\DealAmlAdminAlertService;
 use App\Services\DealAmlPersistenceService;
@@ -45,7 +45,7 @@ use App\Support\CryptoToFiatDealSupport;
 use App\Support\DealEscrowCryptoType;
 use App\Support\DealEscrowPublicPart;
 use App\Support\EscrowTokenLotLimit;
-use App\Support\ExchangeLotDealCounters;
+use App\Support\MoneroUnlockedBalanceError;
 use App\Support\ExchangeLotTrainingSearchFilter;
 use App\Support\ExchangeLotTestMainFilter;
 use App\Support\StartDealBuyerEscrowValidation;
@@ -87,6 +87,7 @@ class ExchangeLotController extends Controller
         private TrainingDealAbandonedLotRelease $trainingDealAbandonedLotRelease,
         private BuyerCryptoDepositReservationService $buyerCryptoDepositReservation,
         private DealAmicableCoreReservationCompletion $amicableCoreReservationCompletion,
+        private SellerCryptoPayoutService $sellerCryptoPayoutService,
     ) {}
 
     /**
@@ -217,14 +218,7 @@ class ExchangeLotController extends Controller
      */
     private static function isSellerPayoutUnlockedBalanceErrorMessage(string $message): bool
     {
-        $normalized = strtolower(trim($message));
-        if ($normalized === '') {
-            return false;
-        }
-
-        return str_contains($normalized, 'insufficient unlocked balance')
-            || str_contains($normalized, 'not enough unlocked money')
-            || str_contains($normalized, 'wallet-rpc authoritative');
+        return MoneroUnlockedBalanceError::matches($message);
     }
 
     /**
@@ -4063,6 +4057,22 @@ class ExchangeLotController extends Controller
         ]);
     }
 
+    public function sellerCryptoPayoutStatus(Request $request, ExchangeLot $lot): JsonResponse
+    {
+        if (! $this->requesterIsSellerForLotDealOps($request, $lot)) {
+            return response()->json(['success' => false, 'message' => 'Only the lot seller can read payout status.'], 403);
+        }
+
+        $buyerEmail = trim((string) ($lot->buyer_lot_email ?? ''));
+        if ($buyerEmail === '') {
+            return response()->json(['success' => false, 'message' => 'No buyer in deal.'], 400);
+        }
+
+        $result = $this->sellerCryptoPayoutService->payoutStatusForLot($lot, $buyerEmail);
+
+        return response()->json($result['body'], $result['http_status']);
+    }
+
     /**
      * Seller: send reserved crypto to buyer address stored on the pending sale transaction (buyer-set-crypto-destination).
      * Core endpoint is API-only (X-Core-Key); destination is taken only from DB, not from client body.
@@ -4094,292 +4104,9 @@ class ExchangeLotController extends Controller
             ], 422);
         }
 
-        return DB::transaction(function () use ($lot, $buyerEmail, $sellerEscrowToken): JsonResponse {
-            $transaction = Transaction::query()
-                ->where('exchange_lot_id', $lot->id)
-                ->where('buyer_lot_email', $buyerEmail)
-                ->where('tx_type', 'sale')
-                ->where('status', 'pending')
-                ->orderByDesc('id')
-                ->lockForUpdate()
-                ->first();
+        $result = $this->sellerCryptoPayoutService->handleSellerRequest($lot, $sellerEscrowToken, $buyerEmail);
 
-            if ($transaction === null) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No pending sale transaction for this deal.',
-                    'error_code' => 'no_pending_tx',
-                ], 400);
-            }
-
-            if (! empty($transaction->seller_crypto_payout_tx_hash)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Crypto payout already completed for this transaction.',
-                    'error_code' => 'payout_already_sent',
-                    'transaction_id' => $transaction->id,
-                    'crypto_tx_id' => $transaction->seller_crypto_payout_tx_hash,
-                ], 409);
-            }
-
-            $dest = trim((string) ($transaction->crypto_address ?? ''));
-            if ($dest === '') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Buyer has not set a crypto destination address yet.',
-                    'error_code' => 'buyer_crypto_address_missing',
-                ], 400);
-            }
-
-            try {
-                $cryptoType = self::coreCryptoTypeFromEscrowTokenJson($sellerEscrowToken)
-                    ?? self::coreCryptoTypeForSellerEscrow($lot);
-            } catch (\InvalidArgumentException $e) {
-                return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
-            }
-
-            $amount = \App\Support\SellerEscrowReservedAmount::resolve($lot, $cryptoType);
-            if ($amount === null || $amount <= 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot compute crypto payout amount for this deal and token.',
-                    'error_code' => 'invalid_payout_amount',
-                ], 422);
-            }
-
-            $addrError = self::validateStablecoinPayoutDestinationAddress($dest, $cryptoType);
-            if ($addrError !== null) {
-                return response()->json([
-                    'success' => false,
-                    'message' => $addrError['message'],
-                    'error_code' => $addrError['error_code'],
-                ], 422);
-            }
-
-            [$coreUrl, $coreKey] = $this->escrowTokenValidation->getCoreUrlAndKeyForToken($sellerEscrowToken);
-            $timeout = (int) config('services.core.payout_timeout', 120);
-            $destinationPreview = strlen($dest) > 24 ? (substr($dest, 0, 24).'...') : $dest;
-            $payload = [
-                'exchange_lot_id' => (string) $lot->id,
-                'laravel_transaction_id' => $transaction->id,
-                'escrow_token' => $sellerEscrowToken,
-                'destination_address' => $dest,
-                'amount' => $amount,
-                'crypto_type' => $cryptoType,
-                'native_amount' => 0.0,
-                'aml_required' => (bool) $lot->aml,
-            ];
-            $payoutNetwork = self::coreNetworkFromCryptoType($cryptoType);
-            if ($payoutNetwork !== null) {
-                $payload['network'] = $payoutNetwork;
-            }
-
-            $req = Http::timeout($timeout)->asJson();
-            if ($coreKey !== '') {
-                $req = $req->withHeaders(['X-Core-Key' => $coreKey]);
-            }
-            $coreEndpoint = rtrim($coreUrl, '/').'/api/deal-payout-to-buyer-address';
-            Log::info('[exchange-lots] sellerCryptoPayoutToBuyer: core payout start', [
-                'lot_id' => $lot->id,
-                'transaction_id' => $transaction->id,
-                'core_endpoint' => $coreEndpoint,
-                'timeout_seconds' => $timeout,
-                'crypto_type' => $cryptoType,
-                'amount' => $amount,
-                'destination_preview' => $destinationPreview,
-                'aml_required' => (bool) $lot->aml,
-            ]);
-            $startedAt = microtime(true);
-            try {
-                $resp = $req->post($coreEndpoint, $payload);
-            } catch (\Throwable $e) {
-                Log::warning('[exchange-lots] sellerCryptoPayoutToBuyer: core payout exception', [
-                    'lot_id' => $lot->id,
-                    'transaction_id' => $transaction->id,
-                    'core_endpoint' => $coreEndpoint,
-                    'timeout_seconds' => $timeout,
-                    'took_ms' => (int) round((microtime(true) - $startedAt) * 1000),
-                    'exception_class' => $e::class,
-                    'exception' => $e->getMessage(),
-                ]);
-                throw $e;
-            }
-            $responseBody = $resp->json();
-            $responseBodyPreview = is_array($responseBody)
-                ? json_encode($responseBody, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-                : $resp->body();
-            if (is_string($responseBodyPreview) && strlen($responseBodyPreview) > 500) {
-                $responseBodyPreview = substr($responseBodyPreview, 0, 500).'...';
-            }
-            Log::info('[exchange-lots] sellerCryptoPayoutToBuyer: core payout response', [
-                'lot_id' => $lot->id,
-                'transaction_id' => $transaction->id,
-                'took_ms' => (int) round((microtime(true) - $startedAt) * 1000),
-                'core_http_status' => $resp->status(),
-                'core_successful' => $resp->successful(),
-                'core_transaction_id' => is_array($responseBody) ? ($responseBody['data']['transaction_id'] ?? null) : null,
-                'core_idempotent_replay' => is_array($responseBody) ? ($responseBody['data']['idempotent_replay'] ?? null) : null,
-                'core_body_preview' => $responseBodyPreview,
-            ]);
-
-            if (! $resp->successful()) {
-                $body = $responseBody;
-                $message = is_array($body) ? (string) ($body['message'] ?? 'Core payout failed') : $resp->body();
-                $errorCode = is_array($body) ? (string) ($body['error_code'] ?? 'core_payout_failed') : 'core_payout_failed';
-                if (
-                    $errorCode === 'CRYPTO_ERROR' &&
-                    self::isSellerPayoutUnlockedBalanceErrorMessage($message)
-                ) {
-                    $errorCode = 'seller_payout_unlocked_balance_insufficient';
-                }
-                $this->persistPayoutAmlAndAlertOperatorIfNeeded(
-                    $lot,
-                    $transaction,
-                    'seller_crypto_payout_to_buyer',
-                    'seller',
-                    $sellerEscrowToken,
-                    $cryptoType,
-                    $coreUrl,
-                    $coreKey,
-                    $resp->status(),
-                    is_array($body) ? $body : ['raw' => (string) $resp->body()],
-                );
-                Log::warning('[exchange-lots] sellerCryptoPayoutToBuyer: core payout non-success', [
-                    'lot_id' => $lot->id,
-                    'transaction_id' => $transaction->id,
-                    'core_http_status' => $resp->status(),
-                    'error_code' => $errorCode,
-                    'message' => $message,
-                    'core_body_preview' => $responseBodyPreview,
-                ]);
-
-                return response()->json([
-                    'success' => false,
-                    'message' => $message,
-                    'error_code' => $errorCode,
-                    'aml' => is_array($body) ? ($body['aml'] ?? null) : null,
-                ], $resp->status() >= 500 ? 502 : 422);
-            }
-
-            $body = $responseBody;
-            $cryptoTxId = '';
-            if (is_array($body) && isset($body['data']['transaction_id'])) {
-                $cryptoTxId = trim((string) $body['data']['transaction_id']);
-            }
-            if ($cryptoTxId === '') {
-                $cryptoTxId = 'unknown';
-            }
-
-            $transaction->seller_crypto_payout_tx_hash = $cryptoTxId;
-            $transaction->status = 'completed';
-            $this->persistPayoutAmlAndAlertOperatorIfNeeded(
-                $lot,
-                $transaction,
-                'seller_crypto_payout_to_buyer',
-                'seller',
-                $sellerEscrowToken,
-                $cryptoType,
-                $coreUrl,
-                $coreKey,
-                $resp->status(),
-                is_array($body) ? $body : null,
-            );
-            Log::info('[exchange-lots] sellerCryptoPayoutToBuyer: payout success', [
-                'lot_id' => $lot->id,
-                'transaction_id' => $transaction->id,
-                'crypto_tx_id' => $cryptoTxId,
-                'core_idempotent_replay' => is_array($body) ? ($body['data']['idempotent_replay'] ?? null) : null,
-            ]);
-
-            try {
-                $reqDel = Http::timeout((int) config('services.core.timeout', 10));
-                if ($coreKey !== '') {
-                    $reqDel = $reqDel->withHeaders(['X-Core-Key' => $coreKey]);
-                }
-                $reqDel->post(rtrim($coreUrl, '/').'/api/complete-reservation', [
-                    'exchange_lot_id' => (string) $lot->id,
-                    'escrow_token' => $sellerEscrowToken,
-                    'crypto_type' => $cryptoType,
-                    'aml_required' => (bool) $lot->aml,
-                ]);
-            } catch (\Throwable $e) {
-                Log::warning('[exchange-lots] sellerCryptoPayoutToBuyer: complete-reservation failed', [
-                    'lot_id' => $lot->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-
-            $coreTxCheck = EscrowTokenOnlyCryptoDealRules::buildEscrowPayoutCoreTxCheck(
-                $cryptoType,
-                $cryptoTxId,
-                $amount,
-                $dest,
-                'seller_second_leg',
-            );
-            $tagJson = json_encode([
-                't' => 'deal_completed_seller',
-                'lot_id' => (int) $lot->id,
-                'crypto_payout_tx' => $cryptoTxId,
-                'laravel_transaction_id' => $transaction->id,
-                'via_escrow_server' => true,
-                'core_tx_check' => $coreTxCheck,
-            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-
-            try {
-                $this->sendDealEmail(
-                    to: $buyerEmail,
-                    subject: 'Deal completed',
-                    fromAddress: config('mail.from.address', 'noreply@xdexboard.com'),
-                    fromName: config('mail.from.name', 'XBoard'),
-                    body: 'Seller sent crypto to the buyer address on file. Deal completed.',
-                    tagJson: $tagJson
-                );
-            } catch (\Throwable $e) {
-                Log::warning('[exchange-lots] sellerCryptoPayoutToBuyer: mailbox event send failed', [
-                    'lot_id' => $lot->id,
-                    'to' => $buyerEmail,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-
-            $sellerEmailForChat = $this->lotMailboxService->getMailboxEmailForAddress($lot->wallet_address ?? '', self::sellerMailboxCryptoCode($lot)) ?? $lot->seller_lot_email;
-            $chatPersisted = $this->insertDealChatMessage(
-                $lot,
-                'seller',
-                $sellerEmailForChat ?? config('mail.from.address', 'noreply@xdexboard.com'),
-                $buyerEmail,
-                'Seller sent crypto to the buyer address on file. Deal completed.',
-                $tagJson
-            );
-            $tagArr = json_decode($tagJson, true);
-            $this->syncDisputeStateFromDealTag($lot, 'seller', is_array($tagArr) ? $tagArr : null);
-            if (is_array($tagArr) && ($tagArr['t'] ?? '') === 'deal_completed_seller') {
-                $lot->refresh();
-                if (! $chatPersisted || ! $this->exchangeLotHasCompletedDealTagInChat($lot)) {
-                    Log::error('[exchange-lots] seller crypto payout: deal_completed_seller tag not in chat history', [
-                        'lot_id' => $lot->id,
-                        'chat_persisted' => $chatPersisted,
-                    ]);
-
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Seller payout was sent but completion could not be saved to chat history.',
-                        'error_code' => 'deal_chat_persist_failed',
-                    ], 500);
-                }
-                // Crypto payout: keep buyer_lot_email and pending-sale closure until buyer posts
-                // deal_completed_buyer or seller posts deal_completed_seller_timeout (LOT-002 / client stage flow).
-            }
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Crypto sent to buyer address. Waiting for buyer to confirm deal completion.',
-                'transaction_id' => $transaction->id,
-                'crypto_tx_id' => $cryptoTxId,
-                'destination_address' => $dest,
-                'core_response' => is_array($body) ? $body : [],
-            ]);
-        });
+        return response()->json($result['body'], $result['http_status']);
     }
 
     /**

@@ -9,8 +9,9 @@ The API runs daily Artisan commands to permanently delete old records and clean 
 | `transactions:prune` | `transactions` | `created_at` older than N days (default 15) |
 | `email-attachments-tmp:prune` | `email_attachments/{date}/tmp` | `date` = two days ago (1-day buffer) |
 | `email-attachments-dates:prune` | `email_attachments/{date}` | `date` older than N days (default 15) |
+| `deal-crypto-payout:process` | `deal_crypto_payout_jobs` | queued seller crypto payouts (retry every 5 min; XMR unlocked-balance deferral) |
 
-Both are registered in **`bootstrap/app.php`** and run once per day when the Laravel scheduler is executed.
+Prune commands run once per day; **`deal-crypto-payout:process`** runs **every 5 minutes** when the Laravel scheduler is executed.
 
 ### `transactions:prune` and lot accounting (`sold_crypto_amount`)
 
@@ -29,6 +30,8 @@ php artisan email-attachments-tmp:prune      # delete email_attachments/{date}/t
 php artisan email-attachments-tmp:prune --dry-run
 php artisan email-attachments-dates:prune    # delete email_attachments/{date} older than 15 days
 php artisan email-attachments-dates:prune --days=15 --dry-run
+php artisan deal-crypto-payout:process           # retry queued seller crypto payouts
+php artisan deal-crypto-payout:process --limit=20
 ```
 
 Options:
@@ -36,6 +39,9 @@ Options:
 - `deal-chat:prune` / `receipt-checksums:prune` / `transactions:prune`: `--days=15` — delete records older than this many days; `--dry-run` — show count only.
 - `email-attachments-tmp:prune`: `--dry-run` — log target date only, do not delete.
 - `email-attachments-dates:prune`: `--days=15` — delete date folders older than this many days; `--dry-run` — list only.
+- `deal-crypto-payout:process`: `--limit=50` — max jobs per run (default from config).
+
+Seller payout queue: when sync `seller-crypto-payout-to-buyer` fails with Monero **unlocked balance insufficient**, API enqueues a job and returns HTTP **202**. The worker retries until funds unlock or `max_attempts` is reached. Client polls `GET /exchange-lots/{lot}/seller-crypto-payout-status`.
 
 ### Server setup
 
