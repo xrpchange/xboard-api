@@ -22,6 +22,7 @@ use App\Services\Deal\DealCryptoTxCoreVerifier;
 use App\Services\Deal\DealInternalMailRateLimitService;
 use App\Services\Deal\DealWebPushNotifier;
 use App\Services\Deal\SellerCryptoPayoutService;
+use App\Services\Deal\TrainingDealAbandonedLotRelease;
 use App\Services\Deal\TrainingDealOrchestrator;
 use App\Services\DealAmlAdminAlertService;
 use App\Services\DealAmlPersistenceService;
