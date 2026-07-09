@@ -60,6 +60,20 @@ class BuyerCompensationDestinationSupportTest extends TestCase
         $this->assertSame('crypto_address_invalid', $error['error_code']);
     }
 
+    public function test_validate_xmr_address_accepts_testnet_standard_prefix(): void
+    {
+        $testnetAddr = '9'.str_repeat('B', 94);
+        $error = DealPayoutDestinationAddressValidation::validate($testnetAddr, 'xmr');
+        $this->assertNull($error);
+    }
+
+    public function test_validate_xmr_address_accepts_mainnet_subaddress_prefix(): void
+    {
+        $mainnetSub = '8'.str_repeat('B', 94);
+        $error = DealPayoutDestinationAddressValidation::validate($mainnetSub, 'xmr');
+        $this->assertNull($error);
+    }
+
     public function test_validate_tron_usdt_requires_t_address(): void
     {
         $error = DealPayoutDestinationAddressValidation::validate('0x'.str_repeat('a', 40), 'usdt_tron');

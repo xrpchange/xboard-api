@@ -7,6 +7,9 @@ namespace App\Support;
  */
 final class DealPayoutDestinationAddressValidation
 {
+    /** Mainnet 4/8; testnet 9/B; stagenet 5/7 — base58 length 95 typical (94–105 tolerated). */
+    private const XMR_ADDRESS_PATTERN = '/^[45789AB][1-9A-HJ-NP-Za-km-z]{94,105}$/';
+
     /**
      * @return array{message: string, error_code: string}|null
      */
@@ -77,9 +80,9 @@ final class DealPayoutDestinationAddressValidation
     private static function validateNativeCryptoAddress(string $address, string $coreType): ?array
     {
         if ($coreType === 'xmr') {
-            if (! preg_match('/^[48][1-9A-HJ-NP-Za-km-z]{94,105}$/', $address)) {
+            if (! preg_match(self::XMR_ADDRESS_PATTERN, $address)) {
                 return [
-                    'message' => 'Invalid Monero address. Expected a standard or subaddress (starts with 4 or 8).',
+                    'message' => 'Invalid Monero address. Expected standard or subaddress (mainnet 4/8, testnet 9/B, stagenet 5/7).',
                     'error_code' => 'crypto_address_invalid',
                 ];
             }
