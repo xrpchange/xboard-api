@@ -7543,21 +7543,6 @@ class ExchangeLotController extends Controller
                 'core_crypto_tx_verify_transport_failed' => 502,
                 default => 422,
             };
-            if (
-                ($verification['checks']['amount_matches'] ?? null) === false
-                && ($err['error_code'] ?? '') === 'crypto_tx_not_verified'
-            ) {
-                return [
-                    'deal_tag' => $dealTagData,
-                    'error' => [
-                        'message' => 'Crypto payment amount is lower than required for this deal.',
-                        'error_code' => 'crypto_tx_amount_too_low',
-                        'status' => 422,
-                        'verification' => $verification,
-                    ],
-                ];
-            }
-
             return [
                 'deal_tag' => $dealTagData,
                 'error' => [

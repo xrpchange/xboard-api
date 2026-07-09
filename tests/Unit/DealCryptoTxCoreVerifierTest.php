@@ -90,7 +90,22 @@ class DealCryptoTxCoreVerifierTest extends TestCase
         ]);
 
         $this->assertStringContainsString('recipient address does not match', $message);
-        $this->assertStringContainsString('amount does not match', $message);
+        $this->assertStringContainsString('amount is lower than required', $message);
+    }
+
+    public function test_build_not_verified_error_amount_only_uses_crypto_tx_amount_too_low(): void
+    {
+        $method = new \ReflectionMethod(DealCryptoTxCoreVerifier::class, 'buildNotVerifiedError');
+        $method->setAccessible(true);
+        $err = $method->invoke(null, [
+            'is_confirmed' => true,
+            'checks' => [
+                'address_matches' => true,
+                'amount_matches' => false,
+            ],
+        ], 'usdt_tron');
+
+        $this->assertSame('crypto_tx_amount_too_low', $err['error_code'] ?? null);
     }
 
     public function test_deployment_environment_follows_lot_is_test(): void

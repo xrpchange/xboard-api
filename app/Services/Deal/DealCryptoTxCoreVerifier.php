@@ -751,7 +751,7 @@ final class DealCryptoTxCoreVerifier
             $parts[] = 'recipient address does not match the deal';
         }
         if (($checks['amount_matches'] ?? null) === false) {
-            $parts[] = 'amount does not match the deal';
+            $parts[] = 'amount is lower than required for the deal';
         }
         if (($checks['confirmations_enough'] ?? null) === false) {
             $parts[] = 'not enough confirmations';
@@ -800,6 +800,13 @@ final class DealCryptoTxCoreVerifier
             return [
                 'message' => $message,
                 'error_code' => 'crypto_tx_address_and_amount_mismatch',
+            ];
+        }
+
+        if ($amountMismatch) {
+            return [
+                'message' => 'Crypto payment amount is lower than required for this deal.',
+                'error_code' => 'crypto_tx_amount_too_low',
             ];
         }
 
