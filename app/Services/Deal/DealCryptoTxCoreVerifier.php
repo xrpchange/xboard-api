@@ -158,6 +158,21 @@ final class DealCryptoTxCoreVerifier
             $payload['expected_amount'] = $expectedAmount;
         }
 
+        // Monero: RingCT hides on-chain recipients, so the daemon cannot confirm that
+        // a tx paid the deal's escrow token. When the lot carries the seller's escrow
+        // token (wallet_hash + wallet_address), pass them to Core so it can delegate
+        // to the balance service, which scans with the token's view key and can prove
+        // the tx produced an output for this token. This is the Monero address check.
+        $isMoneroBalanceVerify = strtolower($cryptoType) === 'xmr'
+            && $expectedAddress !== null && $expectedAddress !== '';
+        if ($isMoneroBalanceVerify) {
+            $payload['expected_address'] = $expectedAddress;
+            $escrowTokenHash = $this->escrowTokenHashForLot($lot, $tagType);
+            if ($escrowTokenHash !== null && $escrowTokenHash !== '') {
+                $payload['escrow_token_hash'] = $escrowTokenHash;
+            }
+        }
+
         $deploymentEnvironment = self::deploymentEnvironmentForLot($lot);
         $coreCfg = ApiDeploymentEnvironment::coreHttpConfig($deploymentEnvironment);
         $coreUrl = $coreCfg['url'];
@@ -232,10 +247,7 @@ final class DealCryptoTxCoreVerifier
         return [
             'verified' => $verified,
             'verification' => $verification,
-            'error' => $verified ? null : [
-                'message' => self::buildNotVerifiedMessage($data),
-                'error_code' => 'crypto_tx_not_verified',
-            ],
+            'error' => $verified ? null : self::buildNotVerifiedError($data, $cryptoType),
         ];
     }
 
@@ -495,10 +507,11 @@ final class DealCryptoTxCoreVerifier
             && $storedHash !== 'unknown'
             && strcasecmp($storedHash, $txRef) === 0;
 
+        $checkedAtUtc = now()->utc()->toIso8601String();
         $payoutRole = $tagType === 'buyer_crypto_tx' ? 'buyer_first_leg' : 'seller_second_leg';
         $verification = [
             'source' => 'escrow_token_payout',
-            'checked_at_utc' => now()->utc()->toIso8601String(),
+            'checked_at_utc' => $checkedAtUtc,
             'verified' => $verified,
             'status' => $verified ? 'escrow_payout_confirmed' : 'escrow_payout_not_found',
             'is_confirmed' => $verified,
@@ -513,6 +526,9 @@ final class DealCryptoTxCoreVerifier
                 'transaction_id' => $verified ? $storedHash : null,
                 'amount' => $verified ? $expectedAmount : null,
                 'to_address' => $verified ? $expectedAddress : null,
+                // escrow-token-payout path has no on-chain block time; expose the server check time as
+                // the closest authoritative timestamp so the client can still render a report.
+                'timestamp_utc' => $checkedAtUtc,
             ], static fn ($value) => $value !== null && $value !== ''),
             'expected' => array_filter([
                 'amount' => $expectedAmount,
@@ -625,6 +641,27 @@ final class DealCryptoTxCoreVerifier
         return null;
     }
 
+    /**
+     * For Monero, the escrow token whose view key the balance service uses to prove
+     * a tx paid the deal. buyer_crypto_tx → seller's escrow token (lot.wallet_hash);
+     * seller_transfer_tx → buyer's escrow token (lot.buyer_escrow_token_hash).
+     */
+    private function escrowTokenHashForLot(ExchangeLot $lot, string $tagType): ?string
+    {
+        if ($tagType === 'buyer_crypto_tx') {
+            $hash = strtolower(trim((string) ($lot->wallet_hash ?? '')));
+
+            return $hash !== '' ? $hash : null;
+        }
+        if ($tagType === 'seller_transfer_tx') {
+            $hash = strtolower(trim((string) ($lot->buyer_escrow_token_hash ?? '')));
+
+            return $hash !== '' ? $hash : null;
+        }
+
+        return null;
+    }
+
     private function expectedAmount(ExchangeLot $lot, string $tagType): ?float
     {
         if ($tagType === 'buyer_crypto_tx') {
@@ -724,5 +761,51 @@ final class DealCryptoTxCoreVerifier
         }
 
         return 'Transaction id was not verified on-chain by Core.';
+    }
+
+    /**
+     * Build a structured not-verified error with a specific error_code when possible.
+     * Address mismatch gets its own code so the client can show a targeted message
+     * instead of the generic "not verified" text.
+     */
+    private static function buildNotVerifiedError(array $data, string $cryptoType): array
+    {
+        $message = self::buildNotVerifiedMessage($data);
+        $checks = is_array($data['checks'] ?? null) ? $data['checks'] : [];
+        $addressMismatch = ($checks['address_matches'] ?? null) === false;
+        $amountMismatch = ($checks['amount_matches'] ?? null) === false;
+
+        // Monero balance-service path: tx was not found among the token's decrypted
+        // outputs (e.g. buyer submitted a wrong/foreign hash, or scan not yet done).
+        $observed = is_array($data['observed'] ?? null) ? $data['observed'] : [];
+        $status = is_string($data['status'] ?? null) ? strtolower(trim($data['status'])) : '';
+        $isMoneroNotFound = strtolower($cryptoType) === 'xmr'
+            && ($status === 'not_found' || ($observed['to_address'] ?? null) === null);
+
+        if ($isMoneroNotFound) {
+            return [
+                'message' => 'This Monero transaction was not found among the outputs of the deal escrow token. The transaction may belong to a different wallet or has not been scanned yet — try again in a minute.',
+                'error_code' => 'crypto_tx_not_found_for_token',
+            ];
+        }
+
+        if ($addressMismatch && ! $amountMismatch) {
+            return [
+                'message' => $message,
+                'error_code' => 'crypto_tx_address_mismatch',
+            ];
+        }
+
+        if ($addressMismatch && $amountMismatch) {
+            return [
+                'message' => $message,
+                'error_code' => 'crypto_tx_address_and_amount_mismatch',
+            ];
+        }
+
+        return [
+            'message' => $message,
+            'error_code' => 'crypto_tx_not_verified',
+        ];
     }
 }
