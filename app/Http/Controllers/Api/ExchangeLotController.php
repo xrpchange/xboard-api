@@ -5148,7 +5148,7 @@ class ExchangeLotController extends Controller
                 'success' => false,
                 'message' => 'message id is required.',
                 'error_code' => 'validation_error',
-            ], 422);
+            ], 422)->header('Cache-Control', 'no-store');
         }
 
         $result = $this->dealCryptoTxCoreVerifier->verifyChatMessage($lot, $messageId);
@@ -5167,13 +5167,13 @@ class ExchangeLotController extends Controller
                 'data' => $payload,
                 'message' => (string) ($error['message'] ?? 'Verification failed.'),
                 'error_code' => (string) ($error['error_code'] ?? 'crypto_tx_not_verified'),
-            ], $status);
+            ], $status)->header('Cache-Control', 'no-store');
         }
 
         return response()->json([
             'success' => true,
             'data' => $payload,
-        ]);
+        ])->header('Cache-Control', 'no-store');
     }
 
     /**
