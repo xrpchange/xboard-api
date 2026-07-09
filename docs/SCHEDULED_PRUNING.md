@@ -53,6 +53,8 @@ One-time install on the server:
 sudo bash /var/www/xboard-api/scripts/install-laravel-scheduler-cron.sh
 ```
 
+The install script also deploys **logrotate** for `storage/logs/*.log` (`scripts/logrotate-xboard-api.conf` → `/etc/logrotate.d/xboard-api`: daily, 7 days, gzip).
+
 Equivalent crontab line (`sudo crontab -u www-data -e`):
 
 ```cron

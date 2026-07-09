@@ -348,15 +348,13 @@ sudo ss -tlnp | grep 587   # должен слушаться
 
 **4. Тест отправки** — скрипт `temp/send_from_lot_mailbox_standalone.php` можно скопировать в document root (например `/var/www/game1-db.xrpchange.site/`) и запускать на сервере: `php send_from_lot_mailbox_standalone.php`.
 
-**5. Ограничение размера mail.log (не более 10 МБ):**
+**5. Ротация логов (mail + verifier):**
 
-Конфиг `scripts/email-server/logrotate-mail-10mb.conf`: при достижении 10 МБ лог обрезается (copytruncate, rotate 0). Установка на сервер:
-```bash
-sudo cp logrotate-mail-10mb.conf /etc/logrotate.d/mail-xboard
-```
-Первый раз (если лог уже огромный) — освободить место без копирования:  
-`sudo truncate -s 0 /var/log/mail.log`  
-Дальше logrotate по крону будет держать лог ≤ 10 МБ.
+- **Postfix** `/var/log/mail.log`: `scripts/email-server/logrotate-mail-10mb.conf` → `/etc/logrotate.d/mail-xboard` (на prod: `daily`, `rotate 7`, `size 10M`).
+- **PHP verifier** `/var/log/xboard-email/verifier.log`: `scripts/email-server/install-logrotate.sh` → `/etc/logrotate.d/xboard-email` (`daily`, `rotate 7`, `size 10M`).
+
+Если архив уже разросся (например `verifier.log.1` на гигабайты), удалите вручную после установки logrotate:  
+`sudo rm -f /var/log/xboard-email/verifier.log.[0-9]*`
 
 **6. Логи (если подключение к 587 или отправка не работают):**
 

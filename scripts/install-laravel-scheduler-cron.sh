@@ -6,6 +6,8 @@
 #   sudo bash /var/www/xboard-api/scripts/install-laravel-scheduler-cron.sh
 #
 # Runs as www-data — same user as PHP-FPM (file permissions, .env, storage/logs).
+#
+# Log rotation: scripts/logrotate-xboard-api.conf → /etc/logrotate.d/xboard-api
 
 set -euo pipefail
 
@@ -18,6 +20,15 @@ CRON_COMMENT="# xboard-api Laravel schedule:run (see bootstrap/app.php)"
 if [[ ! -f "$APP_DIR/artisan" ]]; then
   echo "artisan not found under $APP_DIR" >&2
   exit 1
+fi
+
+LOGROTATE_SRC="$APP_DIR/scripts/logrotate-xboard-api.conf"
+if [[ -f "$LOGROTATE_SRC" ]]; then
+  cp "$LOGROTATE_SRC" /etc/logrotate.d/xboard-api
+  chmod 644 /etc/logrotate.d/xboard-api
+  echo "Installed logrotate: /etc/logrotate.d/xboard-api (daily, rotate 7)"
+else
+  echo "WARN: logrotate config not found: $LOGROTATE_SRC" >&2
 fi
 
 if ! id "$CRON_USER" &>/dev/null; then
