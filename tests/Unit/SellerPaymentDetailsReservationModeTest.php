@@ -45,6 +45,7 @@ class SellerPaymentDetailsReservationModeTest extends TestCase
         $this->assertFalse(CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot));
         $this->assertTrue(CryptoToFiatDealSupport::buyerFiatFirstLegFiatToCrypto($lot));
         $this->assertFalse(\App\Support\DealSellerSecondLeg::sendsCrypto($lot));
+        $this->assertTrue(\App\Support\DealSellerSecondLeg::requiresPrePaymentDetailsReservation($lot));
     }
 
     public function test_usdt_to_usd_lot_fields_seller_sends_crypto_on_second_leg(): void

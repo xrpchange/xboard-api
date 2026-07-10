@@ -29,11 +29,11 @@ final class DealSellerSecondLeg
     /**
      * Seller must have a Core reservation before sending payment details:
      * - full reservation when seller second leg is crypto;
-     * - service_fee_only reservation when buyer pays crypto first (crypto->fiat).
+     * - service_fee_only or full lock on mixed fiat↔on-chain pairs (either field orientation).
      */
     public static function requiresPrePaymentDetailsReservation(ExchangeLot $lot): bool
     {
         return self::sendsCrypto($lot) === true
-            || CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot);
+            || CryptoToFiatDealSupport::isCryptoToFiatDeal($lot);
     }
 }
