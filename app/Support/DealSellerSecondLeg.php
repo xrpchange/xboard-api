@@ -18,7 +18,7 @@ final class DealSellerSecondLeg
             return false;
         }
         if (CryptoToFiatDealSupport::buyerFiatFirstLegFiatToCrypto($lot)) {
-            return true;
+            return false;
         }
 
         $fromType = DealBuyerFirstLeg::currencyTypeForLotSide($lot, 'from');

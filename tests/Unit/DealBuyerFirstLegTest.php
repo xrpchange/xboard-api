@@ -35,20 +35,20 @@ class DealBuyerFirstLegTest extends TestCase
         $this->assertTrue(DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot));
     }
 
-    public function test_fiat_to_crypto_buyer_pays_bank_not_on_chain(): void
+    public function test_fiat_to_crypto_buyer_pays_crypto_not_bank(): void
     {
         $lot = $this->lotWithTypes('fiat', 'crypto');
 
-        $this->assertTrue(DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot));
-        $this->assertFalse(DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot));
+        $this->assertFalse(DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot));
+        $this->assertTrue(DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot));
     }
 
-    public function test_fiat_to_stablecoin_buyer_pays_bank_not_on_chain(): void
+    public function test_fiat_to_stablecoin_buyer_pays_crypto_not_bank(): void
     {
         $lot = $this->lotWithTypes('fiat', 'stablecoin');
 
-        $this->assertTrue(DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot));
-        $this->assertFalse(DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot));
+        $this->assertFalse(DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot));
+        $this->assertTrue(DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot));
     }
 
     public function test_stablecoin_to_fiat_buyer_pays_crypto_not_bank(): void

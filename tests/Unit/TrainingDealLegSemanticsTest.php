@@ -17,8 +17,8 @@ class TrainingDealLegSemanticsTest extends TestCase
     {
         $lot = $this->trainingLot('fiat', 'stablecoin');
 
-        $this->assertTrue(TrainingDealLegSemantics::buyerFirstLegIsBankTransfer($lot));
-        $this->assertTrue(TrainingDealLegSemantics::buyerSecondLegReceivesCrypto($lot));
+        $this->assertFalse(TrainingDealLegSemantics::buyerFirstLegIsBankTransfer($lot));
+        $this->assertFalse(TrainingDealLegSemantics::buyerSecondLegReceivesCrypto($lot));
     }
 
     public function test_stablecoin_to_fiat_training_legs(): void

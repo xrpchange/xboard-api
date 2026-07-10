@@ -54,9 +54,9 @@ class DealEscrowCryptoTypeTest extends TestCase
         $lot->setRelation('toCryptoCurrency', null);
         $lot->setRelation('cryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
 
-        // USDT→USD field orientation: buyer pays USDT on-chain first; seller sends USDT on leg 2.
+        // USDT→USD field orientation: buyer pays USDT on-chain first; seller sends fiat (USD) on leg 2.
         $this->assertSame('usdt_tron', DealEscrowCryptoType::buyerCoreType($lot));
         $this->assertFalse(DealBuyerFirstLeg::buyerFirstLegIsBankTransfer($lot));
-        $this->assertTrue(\App\Support\DealSellerSecondLeg::sendsCrypto($lot));
+        $this->assertFalse(\App\Support\DealSellerSecondLeg::sendsCrypto($lot));
     }
 }

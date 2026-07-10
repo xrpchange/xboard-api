@@ -32,7 +32,7 @@ class SellerPaymentDetailsReservationPolicyTest extends TestCase
         $this->assertTrue(SellerPaymentDetailsReservationPolicy::serviceFeeOnlyPreReserve($lot));
     }
 
-    public function test_usd_to_usdt_crypto_payment_details_requires_full_reservation(): void
+    public function test_usd_to_usdt_crypto_payment_details_requires_service_fee_only_reservation(): void
     {
         $lot = new ExchangeLot([
             'from_fiat_currency_id' => 1,
@@ -43,7 +43,7 @@ class SellerPaymentDetailsReservationPolicyTest extends TestCase
         $lot->setRelation('fromCryptoCurrency', null);
 
         $this->assertTrue(SellerPaymentDetailsReservationPolicy::preReservationRequired($lot, 'crypto'));
-        $this->assertFalse(SellerPaymentDetailsReservationPolicy::serviceFeeOnlyPreReserve($lot));
+        $this->assertTrue(SellerPaymentDetailsReservationPolicy::serviceFeeOnlyPreReserve($lot));
     }
 
     public function test_crypto_to_crypto_bank_payment_details_does_not_require_reservation(): void
@@ -92,7 +92,7 @@ class SellerPaymentDetailsReservationPolicyTest extends TestCase
         $this->assertTrue(SellerPaymentDetailsReservationPolicy::serviceFeeOnlyPreReserve($lot));
     }
 
-    public function test_usd_to_usdt_bank_payment_details_requires_full_reservation(): void
+    public function test_usd_to_usdt_bank_payment_details_requires_service_fee_only_reservation(): void
     {
         $lot = new ExchangeLot([
             'from_fiat_currency_id' => 1,
@@ -102,7 +102,7 @@ class SellerPaymentDetailsReservationPolicyTest extends TestCase
         $lot->setRelation('toCryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
         $lot->setRelation('fromCryptoCurrency', null);
 
-        $this->assertTrue(SellerPaymentDetailsReservationPolicy::preReservationRequired($lot, 'bank'));
-        $this->assertFalse(SellerPaymentDetailsReservationPolicy::serviceFeeOnlyPreReserve($lot));
+        $this->assertFalse(SellerPaymentDetailsReservationPolicy::preReservationRequired($lot, 'bank'));
+        $this->assertTrue(SellerPaymentDetailsReservationPolicy::serviceFeeOnlyPreReserve($lot));
     }
 }

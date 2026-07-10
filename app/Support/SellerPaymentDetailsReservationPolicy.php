@@ -41,6 +41,10 @@ final class SellerPaymentDetailsReservationPolicy
 
     public static function serviceFeeOnlyPreReserve(ExchangeLot $lot): bool
     {
-        return CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot);
+        if (! CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)) {
+            return false;
+        }
+
+        return DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot) === true;
     }
 }

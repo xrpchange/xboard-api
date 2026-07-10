@@ -8,8 +8,8 @@ use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
 /**
- * Seller pre-reservation at send-payment-details: service_fee_only only when buyer pays crypto first
- * on crypto→fiat (from=crypto, to=fiat). Fiat→crypto mixed pairs require full lock (balance checked in Core).
+ * Seller pre-reservation at send-payment-details: service_fee_only when buyer pays crypto first
+ * on mixed fiat↔on-chain pairs (either field orientation). Full lock when seller second leg is crypto-only pairs.
  */
 #[Group('spec')]
 #[Group('spec-LOT-026')]
@@ -31,7 +31,7 @@ class SellerPaymentDetailsReservationModeTest extends TestCase
         $this->assertFalse(CryptoToFiatDealSupport::buyerFiatFirstLegFiatToCrypto($lot));
     }
 
-    public function test_usd_to_usdt_mixed_pair_seller_sends_crypto_on_second_leg(): void
+    public function test_usd_to_usdt_mixed_pair_seller_sends_fiat_on_second_leg(): void
     {
         $lot = new ExchangeLot([
             'from_fiat_currency_id' => 1,
@@ -44,8 +44,9 @@ class SellerPaymentDetailsReservationModeTest extends TestCase
         $this->assertTrue(CryptoToFiatDealSupport::isCryptoToFiatDeal($lot));
         $this->assertFalse(CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot));
         $this->assertTrue(CryptoToFiatDealSupport::buyerFiatFirstLegFiatToCrypto($lot));
-        $this->assertTrue(\App\Support\DealSellerSecondLeg::sendsCrypto($lot));
+        $this->assertFalse(\App\Support\DealSellerSecondLeg::sendsCrypto($lot));
         $this->assertTrue(\App\Support\DealSellerSecondLeg::requiresPrePaymentDetailsReservation($lot));
+        $this->assertTrue(\App\Support\SellerPaymentDetailsReservationPolicy::serviceFeeOnlyPreReserve($lot));
     }
 
     public function test_usdt_to_usd_lot_fields_seller_sends_fiat_on_second_leg(): void
