@@ -1,28 +1,45 @@
+---
+description: Production deploy xboard-api — git push + server pull only; never scp PHP
+alwaysApply: true
+---
+
 # Git-only server deploy (xboard-api)
 
-**Never copy PHP/Laravel source to production with `scp`, `rsync`, or manual file paste.**
+**Agents must never deploy Laravel/PHP to production by copying files** (`scp`, `rsync`, WinSCP, manual paste). That dirties `/var/www/xboard-api`, breaks the next `git fetch`/`checkout`, and is not a supported workflow.
 
-## Correct workflow
+## Correct workflow (agent)
 
-1. Commit on `main`.
-2. `git push origin main`
-3. On `server@xdexboard.com`:
+1. **Local:** implement + run tests (`php artisan test` or targeted `--group spec`).
+2. **Local:** commit on `main` (only when the user asked to commit/deploy).
+3. **Local:** `git push origin main`
+4. **Server** `server@xdexboard.com`:
    ```bash
    bash /var/www/xboard-api/scripts/server-git-pull-xboard-api.sh
    ```
+5. **Verify:**
+   ```bash
+   cd /var/www/xboard-api && git rev-parse --short HEAD && git status --short
+   ```
+   - `HEAD` = pushed commit (e.g. `cd086fb`).
+   - Working tree **clean** (no `M app/...`).
 
-The script checks out `origin/main`, runs `composer install`, `migrate --force`, config/route cache.
+Script does: `git fetch` → `git checkout -f origin/main` → `composer install --no-dev` → `migrate --force` → config/route cache.
 
 ## Forbidden
 
-- `scp app/… server@…:/var/www/xboard-api/…`
-- Patching controllers/services on the server outside git
-- Deploy “fixes” without push + pull
+- `scp app/… server@xdexboard.com:/var/www/xboard-api/…`
+- Editing PHP on the server outside git (“quick hotfix”)
+- Claiming “deployed” without push + pull + clean `git status`
+- Copying `.env` to production (server-only secrets)
 
-## Verify after deploy
+## If files were copied to the server by mistake
 
-```bash
-cd /var/www/xboard-api && git rev-parse --short HEAD && git status --short
-```
+Do **not** leave the tree dirty. After push to `main`, run the pull script above (`checkout -f` resets tracked files to `origin/main`). Confirm `git status --short` is empty. Do not `scp` again to “sync”.
 
-HEAD must match the pushed commit; working tree must be **clean**.
+## Client / web
+
+xboard-client web → `docs/WEB_CLIENT_DEPLOY.md` and `scripts/deploy-xdexboard-web-production.ps1` (static bundle to `/var/www/xdexboard-web/`). That is **not** the API deploy path.
+
+## Host
+
+Default production API: **`server@xdexboard.com`**, app dir **`/var/www/xboard-api`**. See `AGENTS.md`.
