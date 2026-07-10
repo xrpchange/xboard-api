@@ -14,6 +14,13 @@ final class DealSellerSecondLeg
 {
     public static function sendsCrypto(ExchangeLot $lot): ?bool
     {
+        if (CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot)) {
+            return false;
+        }
+        if (CryptoToFiatDealSupport::buyerFiatFirstLegFiatToCrypto($lot)) {
+            return true;
+        }
+
         $fromType = DealBuyerFirstLeg::currencyTypeForLotSide($lot, 'from');
         if ($fromType === null) {
             return null;

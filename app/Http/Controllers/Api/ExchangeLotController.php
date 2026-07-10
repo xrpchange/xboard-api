@@ -4270,12 +4270,12 @@ class ExchangeLotController extends Controller
         $buyerFirstLegPaysCrypto = DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot);
         $isMixedFiatCryptoDeal = CryptoToFiatDealSupport::isCryptoToFiatDeal($lot);
         $sellerSecondLegSendsCrypto = DealSellerSecondLeg::sendsCrypto($lot);
-        $sellerPreReservationRequired = $paymentType === 'crypto'
-            && DealSellerSecondLeg::requiresPrePaymentDetailsReservation($lot);
-        $skipFullSellerPreReservation = $paymentType === 'crypto'
-            && $buyerFirstLegPaysCrypto === true
-            && $sellerSecondLegSendsCrypto === false;
-        $serviceFeeOnlyPreReserve = $skipFullSellerPreReservation;
+        $sellerPreReservationRequired = \App\Support\SellerPaymentDetailsReservationPolicy::preReservationRequired(
+            $lot,
+            $paymentType,
+        );
+        $serviceFeeOnlyPreReserve = \App\Support\SellerPaymentDetailsReservationPolicy::serviceFeeOnlyPreReserve($lot);
+        $skipFullSellerPreReservation = $serviceFeeOnlyPreReserve;
         if ($sellerPreReservationRequired && (! is_string($sellerEscrowToken) || trim($sellerEscrowToken) === '')) {
             return response()->json([
                 'success' => false,

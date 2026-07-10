@@ -31,7 +31,7 @@ class SellerPaymentDetailsReservationModeTest extends TestCase
         $this->assertFalse(CryptoToFiatDealSupport::buyerFiatFirstLegFiatToCrypto($lot));
     }
 
-    public function test_usd_to_usdt_mixed_pair_seller_sends_fiat_on_second_leg(): void
+    public function test_usd_to_usdt_mixed_pair_seller_sends_crypto_on_second_leg(): void
     {
         $lot = new ExchangeLot([
             'from_fiat_currency_id' => 1,
@@ -44,11 +44,11 @@ class SellerPaymentDetailsReservationModeTest extends TestCase
         $this->assertTrue(CryptoToFiatDealSupport::isCryptoToFiatDeal($lot));
         $this->assertFalse(CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot));
         $this->assertTrue(CryptoToFiatDealSupport::buyerFiatFirstLegFiatToCrypto($lot));
-        $this->assertFalse(\App\Support\DealSellerSecondLeg::sendsCrypto($lot));
+        $this->assertTrue(\App\Support\DealSellerSecondLeg::sendsCrypto($lot));
         $this->assertTrue(\App\Support\DealSellerSecondLeg::requiresPrePaymentDetailsReservation($lot));
     }
 
-    public function test_usdt_to_usd_lot_fields_seller_sends_crypto_on_second_leg(): void
+    public function test_usdt_to_usd_lot_fields_seller_sends_fiat_on_second_leg(): void
     {
         $lot = new ExchangeLot([
             'from_crypto_currency_id' => 1,
@@ -59,7 +59,7 @@ class SellerPaymentDetailsReservationModeTest extends TestCase
         $lot->setRelation('fromFiatCurrency', null);
 
         $this->assertTrue(CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot));
-        $this->assertTrue(\App\Support\DealSellerSecondLeg::sendsCrypto($lot));
+        $this->assertFalse(\App\Support\DealSellerSecondLeg::sendsCrypto($lot));
     }
 
     public function test_crypto_to_crypto_requires_pre_payment_details_reservation(): void
