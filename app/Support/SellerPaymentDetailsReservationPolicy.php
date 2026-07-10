@@ -9,8 +9,9 @@ use App\Models\ExchangeLot;
 /**
  * Core seller reservation at send-payment-details (LOT-026).
  *
- * crypto→fiat (buyer pays on-chain first): seller sends bank details (`payment_type=bank`)
- * but still needs `service_fee_only` on the seller escrow token before payment_details.
+ * Mixed fiat↔crypto and on-chain seller legs always lock Core before payment_details.
+ * `payment_type=bank` covers fiat-first mixed pairs (USD→USDT) and legacy clients that
+ * sent bank on crypto→fiat; `payment_type=crypto` covers all other reservation paths.
  */
 final class SellerPaymentDetailsReservationPolicy
 {
@@ -24,8 +25,18 @@ final class SellerPaymentDetailsReservationPolicy
             return true;
         }
 
-        return $paymentType === 'bank'
-            && CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot);
+        if ($paymentType !== 'bank') {
+            return false;
+        }
+
+        // crypto→crypto: bank payment_details is invalid — no reservation.
+        if (! CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)) {
+            return false;
+        }
+
+        // Mixed pair: buyer fiat-first (bank leg 1) or buyer crypto-first (bank wrongly sent on crypto→fiat).
+        return DealBuyerFirstLeg::buyerFirstLegPaysCrypto($lot) === false
+            || CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot);
     }
 
     public static function serviceFeeOnlyPreReserve(ExchangeLot $lot): bool

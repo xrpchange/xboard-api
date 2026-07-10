@@ -4366,6 +4366,13 @@ class ExchangeLotController extends Controller
                 ], $reservationResponse->status() >= 500 ? 502 : $reservationResponse->status());
             }
             $reservationResponseBody = $reservationResponse->json();
+            Log::info('[exchange-lots] sendPaymentDetails: Core seller reservation created', [
+                'lot_id' => $lot->id,
+                'payment_type' => $paymentType,
+                'service_fee_only' => $serviceFeeOnlyPreReserve,
+                'reserved_amount' => $reservedAmount,
+                'crypto_type' => $coreSellerCryptoType,
+            ]);
         }
 
         $txHash = 'pd-'.$lot->id.'-'.now()->format('YmdHis').'-'.bin2hex(random_bytes(4));

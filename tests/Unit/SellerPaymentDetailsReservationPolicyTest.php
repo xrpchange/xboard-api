@@ -59,4 +59,50 @@ class SellerPaymentDetailsReservationPolicyTest extends TestCase
 
         $this->assertFalse(SellerPaymentDetailsReservationPolicy::preReservationRequired($lot, 'bank'));
     }
+
+    public function test_usdt_to_usd_bank_payment_details_requires_service_fee_only_reservation(): void
+    {
+        $lot = new ExchangeLot([
+            'from_crypto_currency_id' => 1,
+            'to_fiat_currency_id' => 2,
+            'from_currency' => 'usdt_tron',
+            'to_currency' => 'USD',
+        ]);
+        $lot->setRelation('fromCryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
+        $lot->setRelation('toFiatCurrency', (object) ['code' => 'USD']);
+        $lot->setRelation('fromFiatCurrency', null);
+
+        $this->assertTrue(SellerPaymentDetailsReservationPolicy::preReservationRequired($lot, 'bank'));
+        $this->assertTrue(SellerPaymentDetailsReservationPolicy::serviceFeeOnlyPreReserve($lot));
+    }
+
+    public function test_usdt_to_usd_crypto_payment_details_requires_service_fee_only_reservation(): void
+    {
+        $lot = new ExchangeLot([
+            'crypto_currency_id' => 9,
+            'to_fiat_currency_id' => 2,
+            'from_currency' => 'usdt_tron',
+            'to_currency' => 'USD',
+        ]);
+        $lot->setRelation('cryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
+        $lot->setRelation('toFiatCurrency', (object) ['code' => 'USD']);
+        $lot->setRelation('fromCryptoCurrency', null);
+
+        $this->assertTrue(SellerPaymentDetailsReservationPolicy::preReservationRequired($lot, 'crypto'));
+        $this->assertTrue(SellerPaymentDetailsReservationPolicy::serviceFeeOnlyPreReserve($lot));
+    }
+
+    public function test_usd_to_usdt_bank_payment_details_requires_full_reservation(): void
+    {
+        $lot = new ExchangeLot([
+            'from_fiat_currency_id' => 1,
+            'to_crypto_currency_id' => 2,
+        ]);
+        $lot->setRelation('fromFiatCurrency', (object) ['code' => 'USD']);
+        $lot->setRelation('toCryptoCurrency', (object) ['code' => 'usdt_tron', 'is_native' => false, 'network' => 'tron']);
+        $lot->setRelation('fromCryptoCurrency', null);
+
+        $this->assertTrue(SellerPaymentDetailsReservationPolicy::preReservationRequired($lot, 'bank'));
+        $this->assertFalse(SellerPaymentDetailsReservationPolicy::serviceFeeOnlyPreReserve($lot));
+    }
 }
