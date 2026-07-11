@@ -14,9 +14,7 @@ final class DealSellerSecondLeg
 {
     public static function sendsCrypto(ExchangeLot $lot): ?bool
     {
-        if (CryptoToFiatDealSupport::buyerCryptoFirstLegCryptoToFiat($lot)) {
-            return false;
-        }
+        // fiat→crypto: seller sends fiat on second leg.
         if (CryptoToFiatDealSupport::buyerFiatFirstLegFiatToCrypto($lot)) {
             return false;
         }
@@ -27,7 +25,7 @@ final class DealSellerSecondLeg
         }
 
         return match ($fromType) {
-            'crypto', 'stablecoin' => true,
+            'crypto', 'stablecoin' => true,  // crypto→fiat: seller sends crypto
             'fiat' => false,
             default => null,
         };
