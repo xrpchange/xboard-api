@@ -23,8 +23,10 @@ final class DealBuyerFirstLeg
         $toOnChain = in_array($toType, ['crypto', 'stablecoin'], true);
 
         return match (true) {
-            $fromOnChain && $toType === 'fiat' => false,
-            $fromType === 'fiat' && $toOnChain => true,
+            // crypto→fiat (sell crypto for fiat): seller gives bank details first.
+            $fromOnChain && $toType === 'fiat' => true,
+            // fiat→crypto (sell fiat for crypto): seller gives crypto wallet address first.
+            $fromType === 'fiat' && $toOnChain => false,
             $fromOnChain && $toType === 'stablecoin' => false,
             $fromOnChain && $toType === 'crypto' => false,
             default => null,
