@@ -24,7 +24,7 @@ final class DealBuyerFirstLeg
 
         return match (true) {
             $fromOnChain && $toType === 'fiat' => false,
-            $fromType === 'fiat' && $toOnChain => false,
+            $fromType === 'fiat' && $toOnChain => true,
             $fromOnChain && $toType === 'stablecoin' => false,
             $fromOnChain && $toType === 'crypto' => false,
             default => null,
