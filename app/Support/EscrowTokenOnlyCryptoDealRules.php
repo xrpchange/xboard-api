@@ -23,7 +23,7 @@ final class EscrowTokenOnlyCryptoDealRules
 
     public static function buyerFirstLegRequiresEscrowTokenServerPayout(ExchangeLot $lot): bool
     {
-        if (CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)) {
+        if (CryptoToFiatDealSupport::isCryptoToFiatDeal($lot) && ! (bool) $lot->aml) {
             return false;
         }
 

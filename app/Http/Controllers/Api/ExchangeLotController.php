@@ -3736,7 +3736,7 @@ class ExchangeLotController extends Controller
             ], 403);
         }
 
-        if (CryptoToFiatDealSupport::isCryptoToFiatDeal($lot)) {
+        if (CryptoToFiatDealSupport::isCryptoToFiatDeal($lot) && ! (bool) $lot->aml) {
             return response()->json([
                 'success' => false,
                 'message' => 'This deal expects an external crypto deposit to the seller escrow token address. Use buyer_crypto_tx with your on-chain transaction id.',
