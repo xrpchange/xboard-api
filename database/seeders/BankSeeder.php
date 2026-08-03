@@ -151,6 +151,18 @@ class BankSeeder extends Seeder
             ['name' => 'ING Bank Slaski', 'swift_code' => 'INGBPLPW', 'allowed_domain' => 'ing.pl', 'currencies' => ['PLN', 'EUR', 'USD']],
             ['name' => 'Bank Pekao', 'swift_code' => 'PEKAPLPW', 'allowed_domain' => 'pko.pl', 'currencies' => ['PLN', 'EUR', 'USD']],
         ],
+        // Czech retail banks that support email payment / balance notifications (DKIM whitelist via allowed_domain).
+        'CZE' => [
+            ['name' => 'Ceska sporitelna', 'swift_code' => 'GIBACZPX', 'allowed_domain' => 'csas.cz', 'currencies' => ['CZK', 'EUR', 'USD']],
+            ['name' => 'CSOB', 'swift_code' => 'CEKOCZPP', 'allowed_domain' => 'csob.cz', 'currencies' => ['CZK', 'EUR', 'USD']],
+            ['name' => 'Komercni banka', 'swift_code' => 'KOMBCZPP', 'allowed_domain' => 'kb.cz', 'currencies' => ['CZK', 'EUR', 'USD']],
+            ['name' => 'MONETA Money Bank', 'swift_code' => 'AGBACZPP', 'allowed_domain' => 'moneta.cz', 'currencies' => ['CZK', 'EUR', 'USD']],
+            ['name' => 'Fio banka', 'swift_code' => 'FIOBCZPP', 'allowed_domain' => 'fio.cz', 'currencies' => ['CZK', 'EUR', 'USD']],
+            ['name' => 'Air Bank', 'swift_code' => 'AIRACZPP', 'allowed_domain' => 'airbank.cz', 'currencies' => ['CZK', 'EUR', 'USD']],
+            ['name' => 'Raiffeisenbank CZ', 'swift_code' => 'RZBCCZPP', 'allowed_domain' => 'rb.cz', 'currencies' => ['CZK', 'EUR', 'USD']],
+            ['name' => 'mBank CZ', 'swift_code' => 'BREXCZPP', 'allowed_domain' => 'mbank.cz', 'currencies' => ['CZK', 'EUR', 'USD']],
+            ['name' => 'UniCredit Bank CZ', 'swift_code' => 'BACXCZPP', 'allowed_domain' => 'unicreditbank.cz', 'currencies' => ['CZK', 'EUR', 'USD']],
+        ],
         'TUR' => [
             ['name' => 'Garanti BBVA', 'swift_code' => 'GARBTRIS', 'allowed_domain' => 'garanti.com.tr', 'currencies' => ['TRY', 'USD', 'EUR']],
             ['name' => 'Ziraat Bank', 'swift_code' => 'TCZBTR2A', 'allowed_domain' => 'ziraatbank.com.tr', 'currencies' => ['TRY', 'USD', 'EUR']],

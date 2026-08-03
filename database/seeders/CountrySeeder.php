@@ -36,6 +36,7 @@ class CountrySeeder extends Seeder
             ['name' => 'Sweden', 'code' => 'SWE', 'phone_code' => '+46'],
             ['name' => 'Norway', 'code' => 'NOR', 'phone_code' => '+47'],
             ['name' => 'Poland', 'code' => 'POL', 'phone_code' => '+48'],
+            ['name' => 'Czechia', 'code' => 'CZE', 'phone_code' => '+420'],
             ['name' => 'Turkey', 'code' => 'TUR', 'phone_code' => '+90'],
             ['name' => 'Saudi Arabia', 'code' => 'SAU', 'phone_code' => '+966'],
             ['name' => 'United Arab Emirates', 'code' => 'ARE', 'phone_code' => '+971'],

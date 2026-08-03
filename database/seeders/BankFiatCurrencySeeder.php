@@ -38,6 +38,7 @@ class BankFiatCurrencySeeder extends Seeder
         'SWE' => 'SEK',
         'NOR' => 'NOK',
         'POL' => 'PLN',
+        'CZE' => 'CZK',
         'TUR' => 'TRY',
         'SAU' => 'SAR',
         'ARE' => 'AED',

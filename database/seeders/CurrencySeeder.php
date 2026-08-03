@@ -41,6 +41,7 @@ class CurrencySeeder extends Seeder
             ['code' => 'SEK', 'name' => 'Swedish Krona', 'symbol' => 'kr'],
             ['code' => 'NOK', 'name' => 'Norwegian Krone', 'symbol' => 'kr'],
             ['code' => 'PLN', 'name' => 'Polish Zloty', 'symbol' => 'zł'],
+            ['code' => 'CZK', 'name' => 'Czech Koruna', 'symbol' => 'Kč'],
             ['code' => 'TRY', 'name' => 'Turkish Lira', 'symbol' => '₺'],
             ['code' => 'SAR', 'name' => 'Saudi Riyal', 'symbol' => '﷼'],
             ['code' => 'AED', 'name' => 'UAE Dirham', 'symbol' => 'د.إ'],
