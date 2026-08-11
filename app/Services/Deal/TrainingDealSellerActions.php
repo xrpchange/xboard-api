@@ -375,7 +375,7 @@ final class TrainingDealSellerActions
                 'amount' => $amount,
                 'crypto_type' => $cryptoType,
                 'native_amount' => 0.0,
-                'aml_required' => false,
+                'aml_required' => (bool) $lot->aml,
             ];
             $network = DealEscrowCryptoType::coreNetworkFromCryptoType($cryptoType);
             if ($network !== null) {
@@ -425,7 +425,7 @@ final class TrainingDealSellerActions
                     'exchange_lot_id' => (string) $lot->id,
                     'escrow_token' => $publicToken,
                     'crypto_type' => $cryptoType,
-                    'aml_required' => false,
+                    'aml_required' => (bool) $lot->aml,
                 ]);
             } catch (\Throwable $e) {
                 Log::warning('[training-deal] seller_transfer: complete-reservation failed', [
@@ -492,7 +492,7 @@ final class TrainingDealSellerActions
                     'exchange_lot_id' => (string) $lot->id,
                     'escrow_token' => $publicToken,
                     'crypto_type' => $cryptoType,
-                    'aml_required' => false,
+                    'aml_required' => (bool) $lot->aml,
                 ]);
             } catch (\Throwable $e) {
                 Log::warning('[training-deal] fiat seller_transfer: complete-reservation failed', [
@@ -780,7 +780,7 @@ final class TrainingDealSellerActions
                 'exchange_lot_id' => (string) $lot->id,
                 'escrow_token' => $publicToken,
                 'crypto_type' => $cryptoType,
-                'aml_required' => false,
+                'aml_required' => (bool) $lot->aml,
             ]);
             if ($resp->successful()) {
                 Log::info('[training-deal] seller reservation released', ['lot_id' => $lot->id]);
