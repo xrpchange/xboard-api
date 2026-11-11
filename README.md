@@ -19,7 +19,7 @@ The system consists of two main components:
 - **XBoard** - Public API for P2P exchange bulletin board
 - **XRPChangeCore** - Core system for blockchain operations and collateral tokens
 
-📋 **[Complete System Overview → PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)**
+📋 **[Complete System Overview](https://github.com/xrpchange/xboard-api/blob/main/PROJECT_OVERVIEW.md)**
 
 ### 🔑 Core Principles
 
@@ -142,20 +142,7 @@ Application will be available at: http://localhost:8000
 
 ### 🚀 Production Deployment
 
-1. **Nginx with SSL setup**
-```bash
-# Follow instructions in NGINX_SSL_SETUP.md
-```
-
-2. **XRPChangeCore setup**
-```bash
-# Follow instructions in CORE_NGINX_SETUP.md
-```
-
-3. **Cron jobs setup**
-```bash
-# Follow instructions in CRON_SSL_SETUP.md
-```
+Deployment details are in `docs/` — see [docs/](docs/) for available guides.
 
 ## API Documentation
 
@@ -195,7 +182,7 @@ After starting the server, documentation is available at:
 
 **Administrator mode (client Developer settings):** `admin_mode_password` (Core) unlocks the client and gates disclosure such as **`admin_email`**; it does **not** replace **email verification code + `admin_password`** for mutating Core settings. See **`docs/ADMIN_MODE_SECURITY.md`**.
 
-**Deal AML (crypto payout):** screening in Core; state and user-fault charges on `transactions.aml_check_json` only. Provider failures → operator email (`AML_ADMIN_ALERT_EMAIL` or Core `admin_email`). See **`docs/AML_DEAL_PERSISTENCE.md`** and **`xboard-core/docs/AML_DEAL_FLOW.md`**.
+**Deal AML (crypto payout):** screening in Core; state and user-fault charges on `transactions.aml_check_json` only. Provider failures → operator email (`AML_ADMIN_ALERT_EMAIL` or Core `admin_email`). See **`docs/AML_DEAL_PERSISTENCE.md`** and [Core AML flow](https://github.com/xrpchange/xboard-core/blob/main/docs/AML_DEAL_FLOW.md).
 
 ### Fee Wallet Admin Flow (clean / dirty)
 
